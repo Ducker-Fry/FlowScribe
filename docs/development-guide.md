@@ -66,6 +66,15 @@ Build a portable Windows executable:
 
 See [Packaging](packaging.md) for release details.
 
+Create a tagged release:
+
+```powershell
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+See [Release Automation](release-automation.md) for the GitHub Actions release workflow.
+
 ## Development Workflow
 
 1. Update requirements or architecture notes when changing behavior.

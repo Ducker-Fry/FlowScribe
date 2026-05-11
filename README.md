@@ -164,6 +164,7 @@ See [Packaging](docs/packaging.md) for release details.
 - [Release Installation](docs/release-installation.md)
 - [Development Guide](docs/development-guide.md)
 - [Packaging](docs/packaging.md)
+- [Release Automation](docs/release-automation.md)
 - [Architecture](docs/architecture.md)
 - [Project Process](docs/project-process.md)
 - [Roadmap](docs/roadmap.md)

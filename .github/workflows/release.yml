@@ -1,0 +1,128 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, for example v0.1.1"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    name: Build Windows release
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            "RELEASE_VERSION=${{ inputs.version }}" | Out-File -FilePath $env:GITHUB_ENV -Append
+          } else {
+            "RELEASE_VERSION=${env:GITHUB_REF_NAME}" | Out-File -FilePath $env:GITHUB_ENV -Append
+          }
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev]
+
+      - name: Run tests
+        run: python -m pytest
+
+      - name: Run lint
+        run: python -m ruff check src tests
+
+      - name: Install ffmpeg
+        shell: pwsh
+        run: choco install ffmpeg -y --no-progress
+
+      - name: Build executable
+        shell: pwsh
+        run: .\scripts\build_exe.ps1 -Python python
+
+      - name: Verify packaged executable
+        shell: pwsh
+        run: .\dist\FlowScribe\FlowScribe.exe doctor -o release-smoke-test --model small
+
+      - name: Create release archive
+        shell: pwsh
+        run: |
+          $zipName = "FlowScribe-$env:RELEASE_VERSION-windows-x64.zip"
+          $zipPath = Join-Path "dist" $zipName
+          if (Test-Path $zipPath) {
+            Remove-Item -LiteralPath $zipPath -Force
+          }
+          Compress-Archive -LiteralPath "dist\FlowScribe" -DestinationPath $zipPath -CompressionLevel Optimal
+          "RELEASE_ZIP=$zipPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "RELEASE_ZIP_NAME=$zipName" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Write release notes
+        shell: pwsh
+        run: |
+          $notesPath = Join-Path "dist" "release-notes-$env:RELEASE_VERSION.md"
+          $notes = @'
+          # FlowScribe {{VERSION}}
+
+          Windows portable release for FlowScribe.
+
+          ## What's Included
+
+          - Local audio/video transcription CLI.
+          - TXT and Markdown transcript output.
+          - Chinese, English, and mixed-language workflows.
+          - `flowscribe doctor` environment diagnostics.
+          - Chinese-oriented preset: `--preset zh`.
+          - Portable Windows one-folder build.
+          - Bundled `ffmpeg.exe` and `ffprobe.exe`.
+
+          ## Download
+
+          Download `{{ZIP_NAME}}`, unzip it, and run:
+
+          ```powershell
+          .\FlowScribe\FlowScribe.exe doctor
+          ```
+
+          ## Notes
+
+          - Windows x64 portable build.
+          - Whisper models are not bundled in the executable.
+          - The first transcription with a selected model may download model files from Hugging Face.
+          - `tiny` is recommended only for smoke tests.
+          - `small` is the recommended starting model for real use.
+          - Use `medium` or larger models when accuracy matters more than speed.
+
+          ## Legal Boundary
+
+          FlowScribe is intended for personal learning, accessibility, research notes, and lawful information processing. Do not use it to bypass DRM, crack applications, or redistribute copyrighted transcripts without permission.
+          '@
+          $notes = $notes.Replace("{{VERSION}}", $env:RELEASE_VERSION).Replace("{{ZIP_NAME}}", $env:RELEASE_ZIP_NAME)
+          $notes | Set-Content -LiteralPath $notesPath -Encoding UTF8
+          "RELEASE_NOTES=$notesPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Create GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$env:RELEASE_VERSION" "$env:RELEASE_ZIP" `
+            --title "FlowScribe $env:RELEASE_VERSION" `
+            --notes-file "$env:RELEASE_NOTES" `
+            --verify-tag

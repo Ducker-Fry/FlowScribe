@@ -9,6 +9,7 @@
 - Added `flowscribe doctor` environment diagnostics for Python, ffmpeg, ffprobe, faster-whisper, output writes, and model access.
 - Added PyInstaller one-folder packaging script and packaging documentation.
 - Added GitHub Actions CI for automated tests and lint checks.
+- Added GitHub Actions release automation for tagged Windows builds.
 - Added TXT and Markdown transcript outputs.
 - Added transcription quality options: `--beam-size`, `--vad-filter`, `--initial-prompt`, and `--task`.
 - Added Chinese-oriented preset: `--preset zh`.
