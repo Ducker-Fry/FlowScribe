@@ -95,6 +95,12 @@ Use the Chinese preset:
 flowscribe transcribe "D:\media\lecture.mp4" -o outputs --preset zh
 ```
 
+Write timestamped Markdown, JSON, and SRT:
+
+```powershell
+flowscribe transcribe "D:\media\lecture.mp4" -o outputs --timestamps --format txt,md,json,srt
+```
+
 Run environment diagnostics:
 
 ```powershell
@@ -122,7 +128,9 @@ Outputs:
 ```text
 outputs/
 |-- lecture.txt
-`-- lecture.md
+|-- lecture.md
+|-- lecture.json
+`-- lecture.srt
 ```
 
 ## Portable Windows Build
@@ -162,6 +170,8 @@ See [Packaging](docs/packaging.md) for release details.
 --vad-filter        Enable voice activity detection
 --initial-prompt    Guide terminology and mixed-language behavior
 --task transcribe   Keep source language; this is the default
+--timestamps        Include segment timestamps in timestamp-aware outputs
+--format txt,md     Comma-separated output formats: txt,md,json,srt
 --overwrite         Replace existing transcript files
 --keep-audio        Keep prepared WAV files for debugging
 ```

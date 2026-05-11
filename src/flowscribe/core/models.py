@@ -24,12 +24,22 @@ class PreparedAudio:
 
 
 @dataclass(frozen=True)
+class TranscriptWord:
+    """A future word- or character-level timing unit."""
+
+    text: str
+    start_seconds: float | None = None
+    end_seconds: float | None = None
+
+
+@dataclass(frozen=True)
 class TranscriptSegment:
     """One transcript segment produced by a speech-to-text provider."""
 
     text: str
     start_seconds: float | None = None
     end_seconds: float | None = None
+    words: tuple[TranscriptWord, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -65,8 +75,21 @@ class Transcript:
 class OutputArtifacts:
     """Files written for a transcript."""
 
-    txt_path: Path
-    md_path: Path
+    paths: tuple[Path, ...]
+
+    @property
+    def txt_path(self) -> Path | None:
+        return self._find_by_suffix(".txt")
+
+    @property
+    def md_path(self) -> Path | None:
+        return self._find_by_suffix(".md")
+
+    def _find_by_suffix(self, suffix: str) -> Path | None:
+        for path in self.paths:
+            if path.suffix.lower() == suffix:
+                return path
+        return None
 
 
 @dataclass(frozen=True)

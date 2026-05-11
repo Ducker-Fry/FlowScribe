@@ -15,8 +15,10 @@ from flowscribe.core.runner import JobRunner
 from flowscribe.input.local_source import LocalFileSource
 from flowscribe.media.audio_extractor import FfmpegAudioExtractor
 from flowscribe.output.artifact_writer import TranscriptArtifactWriter
+from flowscribe.output.json_writer import JsonTranscriptWriter
 from flowscribe.output.md_writer import MarkdownTranscriptWriter
 from flowscribe.output.paths import OutputPathBuilder
+from flowscribe.output.srt_writer import SrtTranscriptWriter
 from flowscribe.output.txt_writer import TxtTranscriptWriter
 from flowscribe.transcription.local_whisper import LocalWhisperTranscriber
 
@@ -83,8 +85,14 @@ def main(argv: list[str] | None = None) -> int:
             preset=settings.preset,
         ),
         artifact_writer=TranscriptArtifactWriter(
+            formats=options.output_formats,
             txt_writer=TxtTranscriptWriter(path_builder),
-            md_writer=MarkdownTranscriptWriter(path_builder),
+            md_writer=MarkdownTranscriptWriter(
+                path_builder,
+                include_timestamps=options.timestamps,
+            ),
+            json_writer=JsonTranscriptWriter(path_builder),
+            srt_writer=SrtTranscriptWriter(path_builder),
         ),
         work_dir=settings.work_dir,
         output_dir=settings.output_dir,

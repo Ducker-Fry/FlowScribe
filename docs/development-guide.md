@@ -58,6 +58,12 @@ Run a Chinese-oriented transcription:
 flowscribe transcribe "D:\media\lecture.mp4" -o outputs --model small --preset zh --overwrite
 ```
 
+Run a timestamped multi-format transcription:
+
+```powershell
+flowscribe transcribe "D:\media\lecture.mp4" -o outputs --timestamps --format txt,md,json,srt
+```
+
 Build a portable Windows executable:
 
 ```powershell

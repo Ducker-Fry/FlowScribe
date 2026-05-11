@@ -21,6 +21,8 @@ class CliOptions:
     beam_size: int
     vad_filter: bool
     initial_prompt: str | None
+    timestamps: bool
+    output_formats: tuple[str, ...]
     recursive: bool
     overwrite: bool
     keep_audio: bool
@@ -119,6 +121,17 @@ def parse_transcribe_args(argv: list[str] | None = None, *, prog: str = "flowscr
         help="Optional prompt to guide transcription terminology and language behavior.",
     )
     parser.add_argument(
+        "--timestamps",
+        action="store_true",
+        help="Include segment-level timestamps in timestamp-aware output formats.",
+    )
+    parser.add_argument(
+        "--format",
+        dest="output_formats",
+        default="txt,md",
+        help="Comma-separated output formats. Supported: txt,md,json,srt. Default: txt,md",
+    )
+    parser.add_argument(
         "-r",
         "--recursive",
         action="store_true",
@@ -147,6 +160,8 @@ def parse_transcribe_args(argv: list[str] | None = None, *, prog: str = "flowscr
         beam_size=namespace.beam_size,
         vad_filter=namespace.vad_filter,
         initial_prompt=namespace.initial_prompt,
+        timestamps=namespace.timestamps,
+        output_formats=parse_output_formats(namespace.output_formats),
         recursive=namespace.recursive,
         overwrite=namespace.overwrite,
         keep_audio=namespace.keep_audio,
@@ -194,3 +209,19 @@ def parse_simple_command_args(command: str, argv: list[str]) -> SimpleCommandOpt
     )
     parser.parse_args(argv)
     return SimpleCommandOptions(command=command)
+
+
+def parse_output_formats(value: str) -> tuple[str, ...]:
+    supported = {"txt", "md", "json", "srt"}
+    formats = tuple(dict.fromkeys(part.strip().lower() for part in value.split(",") if part.strip()))
+    if not formats:
+        raise argparse.ArgumentTypeError("At least one output format is required.")
+
+    unsupported = [output_format for output_format in formats if output_format not in supported]
+    if unsupported:
+        joined = ", ".join(unsupported)
+        supported_joined = ",".join(sorted(supported))
+        raise argparse.ArgumentTypeError(
+            f"Unsupported output format(s): {joined}. Supported: {supported_joined}"
+        )
+    return formats

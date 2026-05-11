@@ -5,6 +5,10 @@
 - Implemented the first local-file transcription CLI.
 - Added explicit CLI subcommands: `transcribe`, `version`, `formats`, and `models`.
 - Added placeholders for future `url` and `capture` commands.
+- Added segment-level timestamp output with `--timestamps`.
+- Added selectable output formats with `--format txt,md,json,srt`.
+- Added JSON and SRT transcript writers.
+- Added `TranscriptWord` and segment word placeholders for future word-level timing.
 - Added local file and folder discovery for supported media formats.
 - Added ffprobe-based audio stream detection and ffmpeg-based WAV preparation.
 - Added faster-whisper local transcription provider.

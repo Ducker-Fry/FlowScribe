@@ -85,6 +85,12 @@ flowscribe transcribe "D:\media" -o outputs --recursive
 
 The older form `flowscribe "D:\media\lecture.mp4" -o outputs` is still supported, but `flowscribe transcribe ...` is recommended.
 
+Write timestamped Markdown, JSON, and SRT:
+
+```powershell
+flowscribe transcribe "D:\media\lecture.mp4" -o outputs --timestamps --format txt,md,json,srt
+```
+
 ### 4. Language Usage
 
 Automatic language detection:
@@ -191,11 +197,13 @@ FlowScribe creates:
 
 ```text
 outputs/
-├── lecture.txt
-└── lecture.md
+|-- lecture.txt
+|-- lecture.md
+|-- lecture.json
+`-- lecture.srt
 ```
 
-The TXT file contains the raw transcript. The Markdown file contains metadata and the transcript. Metadata includes the model, language, task, beam size, VAD setting, preset, and initial prompt.
+The TXT file contains the raw transcript. The Markdown file contains metadata and the transcript. When `--timestamps` is enabled, Markdown includes segment-level timestamps. The JSON file stores structured transcript data for future tools and GUI features. The SRT file can be used as a subtitle file.
 
 ### 8. Troubleshooting
 
@@ -314,6 +322,12 @@ flowscribe transcribe "D:\media" -o outputs --recursive
 
 旧写法 `flowscribe "D:\media\lecture.mp4" -o outputs` 仍然可用，但推荐使用更清晰的 `flowscribe transcribe ...`。
 
+输出带时间戳的 Markdown、JSON 和 SRT：
+
+```powershell
+flowscribe transcribe "D:\media\lecture.mp4" -o outputs --timestamps --format txt,md,json,srt
+```
+
 ### 4. 语言设置
 
 自动识别语言：
@@ -420,11 +434,13 @@ lecture.mp4
 
 ```text
 outputs/
-├── lecture.txt
-└── lecture.md
+|-- lecture.txt
+|-- lecture.md
+|-- lecture.json
+`-- lecture.srt
 ```
 
-TXT 文件是原始文字稿。Markdown 文件包含元信息和文字稿。元信息会记录模型、语言、任务类型、beam size、VAD 设置、预设和初始提示词。
+TXT 文件是原始文字稿。Markdown 文件包含元信息和文字稿。启用 `--timestamps` 后，Markdown 会按段落显示时间范围。JSON 文件保存结构化转写数据，方便未来 GUI 做点击跳转。SRT 文件可作为字幕文件使用。
 
 ### 8. 常见问题
 

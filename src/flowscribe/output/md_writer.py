@@ -7,11 +7,18 @@ from pathlib import Path
 from flowscribe.core.errors import OutputError
 from flowscribe.core.models import Transcript
 from flowscribe.output.paths import OutputPathBuilder
+from flowscribe.output.time_format import format_timestamp
 
 
 class MarkdownTranscriptWriter:
-    def __init__(self, path_builder: OutputPathBuilder | None = None) -> None:
+    def __init__(
+        self,
+        path_builder: OutputPathBuilder | None = None,
+        *,
+        include_timestamps: bool = False,
+    ) -> None:
         self._path_builder = path_builder or OutputPathBuilder()
+        self._include_timestamps = include_timestamps
 
     def write(self, transcript: Transcript, output_dir: Path) -> Path:
         path = self._path_builder.build(transcript.source, output_dir, ".md")
@@ -52,8 +59,22 @@ class MarkdownTranscriptWriter:
                 "",
                 "## Transcript",
                 "",
-                transcript.text,
+                self._render_transcript(transcript),
                 "",
             ]
         )
         return "\n".join(lines)
+
+    def _render_transcript(self, transcript: Transcript) -> str:
+        if not self._include_timestamps:
+            return transcript.text
+
+        lines = []
+        for segment in transcript.segments:
+            text = segment.text.strip()
+            if not text:
+                continue
+            start = format_timestamp(segment.start_seconds)
+            end = format_timestamp(segment.end_seconds)
+            lines.append(f"[{start} - {end}] {text}")
+        return "\n\n".join(lines)

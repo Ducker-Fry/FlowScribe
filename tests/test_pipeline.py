@@ -24,7 +24,7 @@ class FakeArtifactWriter:
         md = output_dir / "sample.md"
         txt.write_text(transcript.text, encoding="utf-8")
         md.write_text(transcript.text, encoding="utf-8")
-        return OutputArtifacts(txt_path=txt, md_path=md)
+        return OutputArtifacts(paths=(txt, md))
 
 
 def test_pipeline_processes_item_and_removes_prepared_audio(tmp_path: Path) -> None:
@@ -40,5 +40,6 @@ def test_pipeline_processes_item_and_removes_prepared_audio(tmp_path: Path) -> N
 
     artifacts = pipeline.process(item)
 
+    assert artifacts.txt_path is not None
     assert artifacts.txt_path.read_text(encoding="utf-8") == "transcribed"
     assert not (tmp_path / "work" / "sample" / "prepared.wav").exists()

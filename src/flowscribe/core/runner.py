@@ -39,7 +39,7 @@ class JobRunner:
                 self._progress(f"Failed: {item.path} - {exc}")
                 continue
             outputs.append(artifacts)
-            self._progress(f"Wrote: {artifacts.txt_path}")
-            self._progress(f"Wrote: {artifacts.md_path}")
+            for path in artifacts.paths:
+                self._progress(f"Wrote: {path}")
 
         return JobResult(outputs=tuple(outputs), failures=tuple(failures))

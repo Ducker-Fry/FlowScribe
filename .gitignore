@@ -18,6 +18,7 @@ dist/
 /outputs/
 /outputs*/
 /exe-outputs/
+/outputs-timestamps/
 *.log
 
 # Local media samples
