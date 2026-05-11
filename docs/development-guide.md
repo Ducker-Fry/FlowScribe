@@ -38,6 +38,12 @@ Show CLI help:
 flowscribe --help
 ```
 
+Run environment diagnostics:
+
+```powershell
+flowscribe doctor -o outputs --model small
+```
+
 Run a quick transcription smoke test:
 
 ```powershell

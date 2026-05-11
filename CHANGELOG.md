@@ -6,6 +6,7 @@
 - Added local file and folder discovery for supported media formats.
 - Added ffprobe-based audio stream detection and ffmpeg-based WAV preparation.
 - Added faster-whisper local transcription provider.
+- Added `flowscribe doctor` environment diagnostics for Python, ffmpeg, ffprobe, faster-whisper, output writes, and model access.
 - Added TXT and Markdown transcript outputs.
 - Added transcription quality options: `--beam-size`, `--vad-filter`, `--initial-prompt`, and `--task`.
 - Added Chinese-oriented preset: `--preset zh`.

@@ -51,6 +51,12 @@ Check that the command is available:
 flowscribe --help
 ```
 
+Check whether your local environment is ready:
+
+```powershell
+flowscribe doctor
+```
+
 ### 3. Basic Usage
 
 Transcribe one video:
@@ -183,6 +189,14 @@ The TXT file contains the raw transcript. The Markdown file contains metadata an
 
 ### 8. Troubleshooting
 
+Run the built-in environment check first:
+
+```powershell
+flowscribe doctor -o outputs --model small
+```
+
+It checks Python, `ffmpeg`, `ffprobe`, `faster-whisper`, output directory writes, and whether the selected model appears reachable for download.
+
 No audio stream found:
 
 The file contains video only. This is common with some DASH downloads where audio and video are stored separately. Use a file that includes audio, or merge the audio and video first.
@@ -254,6 +268,12 @@ python -m pip install -e .[dev]
 
 ```powershell
 flowscribe --help
+```
+
+检查本地环境是否准备好：
+
+```powershell
+flowscribe doctor
 ```
 
 ### 3. 基础用法
@@ -387,6 +407,14 @@ outputs/
 TXT 文件是原始文字稿。Markdown 文件包含元信息和文字稿。元信息会记录模型、语言、任务类型、beam size、VAD 设置、预设和初始提示词。
 
 ### 8. 常见问题
+
+先运行内置环境检查：
+
+```powershell
+flowscribe doctor -o outputs --model small
+```
+
+它会检查 Python、`ffmpeg`、`ffprobe`、`faster-whisper`、输出目录写入能力，以及所选模型是否看起来可以下载。
 
 提示没有音频流：
 

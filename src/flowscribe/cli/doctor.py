@@ -1,0 +1,161 @@
+"""Environment checks for FlowScribe."""
+
+from __future__ import annotations
+
+import importlib.metadata
+import shutil
+import subprocess
+import sys
+import tempfile
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
+from pathlib import Path
+
+
+@dataclass(frozen=True)
+class DoctorCheck:
+    name: str
+    ok: bool
+    message: str
+
+    @property
+    def marker(self) -> str:
+        return "OK" if self.ok else "FAIL"
+
+
+def run_doctor(*, output_dir: Path, model_name: str, print_result: bool = True) -> int:
+    checks = [
+        check_python_version(),
+        check_command("ffmpeg"),
+        check_command("ffprobe"),
+        check_faster_whisper_import(),
+        check_output_dir(output_dir),
+        check_model_download(model_name),
+    ]
+
+    if print_result:
+        print("FlowScribe doctor")
+        print("=================")
+        for check in checks:
+            print(f"[{check.marker}] {check.name}: {check.message}")
+
+    return 0 if all(check.ok for check in checks) else 1
+
+
+def check_python_version() -> DoctorCheck:
+    version = sys.version_info
+    current = f"{version.major}.{version.minor}.{version.micro}"
+    if version >= (3, 10):
+        return DoctorCheck("Python", True, f"{current} is supported")
+    return DoctorCheck("Python", False, f"{current} is unsupported; Python 3.10+ is required")
+
+
+def check_command(command: str) -> DoctorCheck:
+    executable = shutil.which(command)
+    if executable is None:
+        return DoctorCheck(command, False, f"{command} was not found on PATH")
+
+    try:
+        completed = subprocess.run(
+            [executable, "-version"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return DoctorCheck(command, False, f"found at {executable}, but execution failed: {exc}")
+
+    first_line = (completed.stdout or completed.stderr).splitlines()[0]
+    return DoctorCheck(command, True, f"{first_line} ({executable})")
+
+
+def check_faster_whisper_import() -> DoctorCheck:
+    try:
+        __import__("faster_whisper")
+    except ImportError as exc:
+        return DoctorCheck(
+            "faster-whisper",
+            False,
+            f"not importable: {exc}. Run `python -m pip install -e .[dev]`.",
+        )
+
+    try:
+        version = importlib.metadata.version("faster-whisper")
+    except importlib.metadata.PackageNotFoundError:
+        version = "installed"
+    return DoctorCheck("faster-whisper", True, f"importable, version {version}")
+
+
+def check_output_dir(output_dir: Path) -> DoctorCheck:
+    path = output_dir.expanduser().resolve()
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path,
+            prefix=".flowscribe-doctor-",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temp_path = Path(handle.name)
+            handle.write("FlowScribe doctor write test")
+        temp_path.unlink(missing_ok=True)
+    except OSError as exc:
+        return DoctorCheck("Output directory", False, f"{path} is not writable: {exc}")
+
+    return DoctorCheck("Output directory", True, f"{path} is writable")
+
+
+def check_model_download(model_name: str) -> DoctorCheck:
+    model_path = Path(model_name).expanduser()
+    if model_path.exists():
+        return DoctorCheck("Model access", True, f"local model path exists: {model_path.resolve()}")
+
+    repo_id = resolve_faster_whisper_repo(model_name)
+    if repo_id is None:
+        return DoctorCheck(
+            "Model access",
+            False,
+            f"cannot infer Hugging Face repo for model `{model_name}`; use a local path or known model name",
+        )
+
+    url = f"https://huggingface.co/{repo_id}/resolve/main/config.json"
+    request = urllib.request.Request(url, method="HEAD")
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            status = getattr(response, "status", 200)
+    except urllib.error.HTTPError as exc:
+        return DoctorCheck("Model access", False, f"{repo_id} is not reachable: HTTP {exc.code}")
+    except urllib.error.URLError as exc:
+        return DoctorCheck("Model access", False, f"{repo_id} is not reachable: {exc.reason}")
+    except TimeoutError:
+        return DoctorCheck("Model access", False, f"{repo_id} check timed out")
+
+    if 200 <= status < 400:
+        return DoctorCheck("Model access", True, f"{repo_id} is reachable")
+    return DoctorCheck("Model access", False, f"{repo_id} returned HTTP {status}")
+
+
+def resolve_faster_whisper_repo(model_name: str) -> str | None:
+    known = {
+        "tiny",
+        "tiny.en",
+        "base",
+        "base.en",
+        "small",
+        "small.en",
+        "medium",
+        "medium.en",
+        "large-v1",
+        "large-v2",
+        "large-v3",
+        "large-v3-turbo",
+    }
+    if model_name in known:
+        return f"Systran/faster-whisper-{model_name}"
+    if "/" in model_name:
+        return model_name
+    return None

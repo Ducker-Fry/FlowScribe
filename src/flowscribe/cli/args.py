@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 
 @dataclass(frozen=True)
 class CliOptions:
+    command: str
     inputs: list[Path]
     output_dir: Path
     work_dir: Path | None
@@ -24,7 +26,21 @@ class CliOptions:
     keep_audio: bool
 
 
-def parse_args(argv: list[str] | None = None) -> CliOptions:
+@dataclass(frozen=True)
+class DoctorOptions:
+    command: str
+    output_dir: Path
+    model_name: str
+
+
+def parse_args(argv: list[str] | None = None) -> CliOptions | DoctorOptions:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] == "doctor":
+        return parse_doctor_args(argv[1:])
+    return parse_transcribe_args(argv)
+
+
+def parse_transcribe_args(argv: list[str] | None = None) -> CliOptions:
     parser = argparse.ArgumentParser(
         prog="flowscribe",
         description="Turn local audio/video files into raw TXT and Markdown transcripts.",
@@ -107,6 +123,7 @@ def parse_args(argv: list[str] | None = None) -> CliOptions:
     )
     namespace = parser.parse_args(argv)
     return CliOptions(
+        command="transcribe",
         inputs=namespace.inputs,
         output_dir=namespace.output_dir,
         work_dir=namespace.work_dir,
@@ -120,4 +137,31 @@ def parse_args(argv: list[str] | None = None) -> CliOptions:
         recursive=namespace.recursive,
         overwrite=namespace.overwrite,
         keep_audio=namespace.keep_audio,
+    )
+
+
+def parse_doctor_args(argv: list[str] | None = None) -> DoctorOptions:
+    parser = argparse.ArgumentParser(
+        prog="flowscribe doctor",
+        description="Check whether the local FlowScribe environment is ready.",
+    )
+    parser.add_argument(
+        "-o",
+        "--output-dir",
+        type=Path,
+        default=Path("outputs"),
+        help="Directory to test for transcript output writes. Default: outputs",
+    )
+    parser.add_argument(
+        "-m",
+        "--model",
+        dest="model_name",
+        default="small",
+        help="Local faster-whisper model name or path to check. Default: small",
+    )
+    namespace = parser.parse_args(argv)
+    return DoctorOptions(
+        command="doctor",
+        output_dir=namespace.output_dir,
+        model_name=namespace.model_name,
     )

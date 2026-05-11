@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 
 from flowscribe.cli.args import parse_args
+from flowscribe.cli.doctor import run_doctor
 from flowscribe.config.settings import AppSettings
 from flowscribe.core.errors import FlowScribeError
 from flowscribe.core.pipeline import LocalTranscriptionPipeline
@@ -20,6 +21,9 @@ from flowscribe.transcription.local_whisper import LocalWhisperTranscriber
 
 def main(argv: list[str] | None = None) -> int:
     options = parse_args(argv)
+    if options.command == "doctor":
+        return run_doctor(output_dir=options.output_dir, model_name=options.model_name)
+
     settings = AppSettings.from_options(
         output_dir=options.output_dir,
         work_dir=options.work_dir,

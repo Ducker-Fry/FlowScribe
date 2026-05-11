@@ -52,6 +52,12 @@ Check the CLI:
 flowscribe --help
 ```
 
+Check the local environment:
+
+```powershell
+flowscribe doctor
+```
+
 ## Quick Start
 
 Transcribe one local file:
@@ -70,6 +76,12 @@ Use the Chinese preset:
 
 ```powershell
 flowscribe "D:\media\lecture.mp4" -o outputs --preset zh
+```
+
+Run environment diagnostics:
+
+```powershell
+flowscribe doctor -o outputs --model small
 ```
 
 Use a larger model for better accuracy:
