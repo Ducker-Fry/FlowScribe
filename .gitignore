@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 .venv/
+.venv-build/
 venv/
 .env
 .pytest_cache/
@@ -10,13 +11,15 @@ venv/
 # Build artifacts
 build/
 dist/
+*.spec
 *.egg-info/
 
 # Runtime outputs
-outputs/
-outputs*/
+/outputs/
+/outputs*/
+/exe-outputs/
 *.log
 
 # Local media samples
-samples/
-media/
+/samples/
+/media/

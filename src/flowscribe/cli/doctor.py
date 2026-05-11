@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib.metadata
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -11,6 +10,8 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
+
+from flowscribe.media.tools import resolve_tool_path
 
 
 @dataclass(frozen=True)
@@ -52,8 +53,8 @@ def check_python_version() -> DoctorCheck:
 
 
 def check_command(command: str) -> DoctorCheck:
-    executable = shutil.which(command)
-    if executable is None:
+    executable = resolve_tool_path(command)
+    if executable == command:
         return DoctorCheck(command, False, f"{command} was not found on PATH")
 
     try:
