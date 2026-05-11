@@ -56,6 +56,14 @@ Run a Chinese-oriented transcription:
 flowscribe "D:\media\lecture.mp4" -o outputs --model small --preset zh --overwrite
 ```
 
+Build a portable Windows executable:
+
+```powershell
+.\scripts\build_exe.ps1
+```
+
+See [Packaging](packaging.md) for release details.
+
 ## Development Workflow
 
 1. Update requirements or architecture notes when changing behavior.

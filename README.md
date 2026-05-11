@@ -13,6 +13,8 @@ FlowScribe is a local-first command-line transcription tool that turns local aud
 - Support Chinese, English, and mixed-language workflows.
 - Tune transcription with `--beam-size`, `--vad-filter`, `--initial-prompt`, and `--task`.
 - Use `--preset zh` for Chinese-oriented defaults.
+- Check user environments with `flowscribe doctor`.
+- Build a portable Windows one-folder executable with PyInstaller.
 
 ## Current Scope
 
@@ -33,11 +35,19 @@ Out of scope for v0.1:
 
 ## Requirements
 
+Developer install from source:
+
 - Python 3.10 or newer.
 - `ffmpeg` and `ffprobe` available on `PATH`.
 - Windows PowerShell or another terminal.
 
-## Installation
+Portable Windows release:
+
+- Download and unzip the release folder.
+- `ffmpeg.exe` and `ffprobe.exe` are included in the release folder.
+- Whisper models are not bundled; the first model run may download model files.
+
+## Installation From Source
 
 ```powershell
 cd E:\Draft\FlowScribe
@@ -94,9 +104,36 @@ Outputs:
 
 ```text
 outputs/
-├── lecture.txt
-└── lecture.md
+|-- lecture.txt
+`-- lecture.md
 ```
+
+## Portable Windows Build
+
+Build a one-folder executable:
+
+```powershell
+.\scripts\build_exe.ps1
+```
+
+The release folder will be:
+
+```text
+dist/FlowScribe/
+|-- FlowScribe.exe
+|-- ffmpeg.exe
+|-- ffprobe.exe
+|-- README-USER.txt
+`-- supporting runtime files
+```
+
+Test the packaged executable:
+
+```powershell
+.\dist\FlowScribe\FlowScribe.exe doctor
+```
+
+See [Packaging](docs/packaging.md) for release details.
 
 ## Useful Options
 
@@ -118,6 +155,7 @@ outputs/
 
 - [User Guide](docs/user-guide.md)
 - [Development Guide](docs/development-guide.md)
+- [Packaging](docs/packaging.md)
 - [Architecture](docs/architecture.md)
 - [Project Process](docs/project-process.md)
 - [Roadmap](docs/roadmap.md)
@@ -129,18 +167,18 @@ outputs/
 
 ```text
 FlowScribe/
-├── docs/                  Project documentation
-├── examples/              Example commands and future fixtures
-├── scripts/               Developer helper scripts
-├── src/flowscribe/        Application source code
-│   ├── cli/               Command-line interface
-│   ├── config/            Runtime settings and presets
-│   ├── core/              Domain models, ports, pipeline, runner
-│   ├── input/             Local file discovery
-│   ├── media/             ffprobe/ffmpeg integration
-│   ├── output/            TXT and Markdown writers
-│   └── transcription/     Local faster-whisper provider
-└── tests/                 Automated tests
+|-- docs/                  Project documentation
+|-- examples/              Example commands and future fixtures
+|-- scripts/               Developer helper scripts
+|-- src/flowscribe/        Application source code
+|   |-- cli/               Command-line interface
+|   |-- config/            Runtime settings and presets
+|   |-- core/              Domain models, ports, pipeline, runner
+|   |-- input/             Local file discovery
+|   |-- media/             ffprobe/ffmpeg integration
+|   |-- output/            TXT and Markdown writers
+|   `-- transcription/     Local faster-whisper provider
+`-- tests/                 Automated tests
 ```
 
 ## Legal and Ethical Boundaries
