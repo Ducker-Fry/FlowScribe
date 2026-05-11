@@ -32,6 +32,8 @@ Run lint checks:
 python -m ruff check src tests
 ```
 
+The same checks run automatically on GitHub Actions for pushes and pull requests to `main`.
+
 Show CLI help:
 
 ```powershell
