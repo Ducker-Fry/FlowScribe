@@ -1,0 +1,200 @@
+﻿flowchart LR
+    %% FlowScribe v1 concrete code module relationship
+    %% Goal: local media file -> extract audio -> transcribe -> write txt/md
+
+    subgraph CLI["src/flowscribe/cli"]
+        cli_main["main.py\nmain()"]
+        cli_args["args.py\nCliOptions\nparse_args()"]
+    end
+
+    subgraph CONFIG["src/flowscribe/config"]
+        settings["settings.py\nAppSettings"]
+    end
+
+    subgraph CORE["src/flowscribe/core"]
+        models["models.py\nMediaItem\nPreparedAudio\nTranscript\nTranscriptSegment\nJobResult"]
+        ports["ports.py\nInputSource\nMediaPreparer\nTranscriber\nTranscriptWriter"]
+        pipeline["pipeline.py\nLocalTranscriptionPipeline"]
+        runner["runner.py\nJobRunner"]
+        errors["errors.py\nFlowScribeError"]
+    end
+
+    subgraph INPUT["src/flowscribe/input"]
+        local_source["local_source.py\nLocalFileSource"]
+        file_filter["file_filter.py\nis_supported_media()"]
+    end
+
+    subgraph MEDIA["src/flowscribe/media"]
+        ffmpeg_probe["ffmpeg_probe.py\nFfmpegProbe"]
+        audio_extractor["audio_extractor.py\nFfmpegAudioExtractor"]
+    end
+
+    subgraph TRANSCRIPTION["src/flowscribe/transcription"]
+        whisper_provider["local_whisper.py\nLocalWhisperTranscriber"]
+    end
+
+    subgraph OUTPUT["src/flowscribe/output"]
+        path_builder["paths.py\nOutputPathBuilder"]
+        txt_writer["txt_writer.py\nTxtTranscriptWriter"]
+        md_writer["md_writer.py\nMarkdownTranscriptWriter"]
+    end
+
+    subgraph EXTERNAL["External Tools / Libraries"]
+        ffmpeg["ffmpeg / ffprobe"]
+        whisper["faster-whisper\nor local Whisper engine"]
+        filesystem["File System"]
+    end
+
+    user["User / PowerShell"] --> cli_main
+    cli_main --> cli_args
+    cli_main --> settings
+    cli_main --> runner
+
+    runner --> pipeline
+    runner --> models
+    runner --> errors
+
+    pipeline --> ports
+    pipeline --> models
+    pipeline --> local_source
+    pipeline --> audio_extractor
+    pipeline --> whisper_provider
+    pipeline --> txt_writer
+    pipeline --> md_writer
+
+    local_source -.implements.-> ports
+    audio_extractor -.implements.-> ports
+    whisper_provider -.implements.-> ports
+    txt_writer -.implements.-> ports
+    md_writer -.implements.-> ports
+
+    local_source --> file_filter
+    local_source --> models
+    local_source --> filesystem
+
+    audio_extractor --> ffmpeg_probe
+    audio_extractor --> models
+    audio_extractor --> ffmpeg
+    ffmpeg_probe --> ffmpeg
+
+    whisper_provider --> models
+    whisper_provider --> whisper
+
+    txt_writer --> path_builder
+    md_writer --> path_builder
+    txt_writer --> models
+    md_writer --> models
+    txt_writer --> filesystem
+    md_writer --> filesystem
+
+    classDef cli fill:#e8f1ff,stroke:#2563eb,color:#0f172a;
+    classDef core fill:#fff7ed,stroke:#f97316,color:#1f2937;
+    classDef adapter fill:#ecfdf5,stroke:#16a34a,color:#052e16;
+    classDef external fill:#f4f4f5,stroke:#71717a,color:#18181b;
+    classDef error fill:#fef2f2,stroke:#dc2626,color:#450a0a;
+
+    class cli_main,cli_args,settings cli;
+    class models,ports,pipeline,runner core;
+    class local_source,file_filter,ffmpeg_probe,audio_extractor,whisper_provider,path_builder,txt_writer,md_writer adapter;
+    class ffmpeg,whisper,filesystem external;
+    class errors error;
+flowchart LR
+    %% FlowScribe v1 concrete code module relationship
+    %% Goal: local media file -> extract audio -> transcribe -> write txt/md
+
+    subgraph CLI["src/flowscribe/cli"]
+        cli_main["main.py\nmain()"]
+        cli_args["args.py\nCliOptions\nparse_args()"]
+    end
+
+    subgraph CONFIG["src/flowscribe/config"]
+        settings["settings.py\nAppSettings"]
+    end
+
+    subgraph CORE["src/flowscribe/core"]
+        models["models.py\nMediaItem\nPreparedAudio\nTranscript\nTranscriptSegment\nJobResult"]
+        ports["ports.py\nInputSource\nMediaPreparer\nTranscriber\nTranscriptWriter"]
+        pipeline["pipeline.py\nLocalTranscriptionPipeline"]
+        runner["runner.py\nJobRunner"]
+        errors["errors.py\nFlowScribeError"]
+    end
+
+    subgraph INPUT["src/flowscribe/input"]
+        local_source["local_source.py\nLocalFileSource"]
+        file_filter["file_filter.py\nis_supported_media()"]
+    end
+
+    subgraph MEDIA["src/flowscribe/media"]
+        ffmpeg_probe["ffmpeg_probe.py\nFfmpegProbe"]
+        audio_extractor["audio_extractor.py\nFfmpegAudioExtractor"]
+    end
+
+    subgraph TRANSCRIPTION["src/flowscribe/transcription"]
+        whisper_provider["local_whisper.py\nLocalWhisperTranscriber"]
+    end
+
+    subgraph OUTPUT["src/flowscribe/output"]
+        path_builder["paths.py\nOutputPathBuilder"]
+        txt_writer["txt_writer.py\nTxtTranscriptWriter"]
+        md_writer["md_writer.py\nMarkdownTranscriptWriter"]
+    end
+
+    subgraph EXTERNAL["External Tools / Libraries"]
+        ffmpeg["ffmpeg / ffprobe"]
+        whisper["faster-whisper\nor local Whisper engine"]
+        filesystem["File System"]
+    end
+
+    user["User / PowerShell"] --> cli_main
+    cli_main --> cli_args
+    cli_main --> settings
+    cli_main --> runner
+
+    runner --> pipeline
+    runner --> models
+    runner --> errors
+
+    pipeline --> ports
+    pipeline --> models
+    pipeline --> local_source
+    pipeline --> audio_extractor
+    pipeline --> whisper_provider
+    pipeline --> txt_writer
+    pipeline --> md_writer
+
+    local_source -.implements.-> ports
+    audio_extractor -.implements.-> ports
+    whisper_provider -.implements.-> ports
+    txt_writer -.implements.-> ports
+    md_writer -.implements.-> ports
+
+    local_source --> file_filter
+    local_source --> models
+    local_source --> filesystem
+
+    audio_extractor --> ffmpeg_probe
+    audio_extractor --> models
+    audio_extractor --> ffmpeg
+    ffmpeg_probe --> ffmpeg
+
+    whisper_provider --> models
+    whisper_provider --> whisper
+
+    txt_writer --> path_builder
+    md_writer --> path_builder
+    txt_writer --> models
+    md_writer --> models
+    txt_writer --> filesystem
+    md_writer --> filesystem
+
+    classDef cli fill:#e8f1ff,stroke:#2563eb,color:#0f172a;
+    classDef core fill:#fff7ed,stroke:#f97316,color:#1f2937;
+    classDef adapter fill:#ecfdf5,stroke:#16a34a,color:#052e16;
+    classDef external fill:#f4f4f5,stroke:#71717a,color:#18181b;
+    classDef error fill:#fef2f2,stroke:#dc2626,color:#450a0a;
+
+    class cli_main,cli_args,settings cli;
+    class models,ports,pipeline,runner core;
+    class local_source,file_filter,ffmpeg_probe,audio_extractor,whisper_provider,path_builder,txt_writer,md_writer adapter;
+    class ffmpeg,whisper,filesystem external;
+    class errors error;

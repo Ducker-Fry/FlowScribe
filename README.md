@@ -1,25 +1,29 @@
-﻿# FlowScribe
+# FlowScribe
 
-FlowScribe is an extensible local-first media transcription toolkit. Its first goal is simple: turn local audio and video files into clean raw transcripts in TXT and Markdown formats. Over time, it is designed to grow into a broader input pipeline for URLs, system audio capture, desktop workflows, and optional external speech-to-text providers.
+FlowScribe is a local-first command-line transcription tool that turns local audio and video files into raw TXT and Markdown transcripts. It is designed as an extensible open-source project: the current CLI focuses on local files, while the architecture leaves room for URL input, system audio capture, desktop GUI, and optional external speech-to-text providers.
 
-## Project Goals
+## Features
 
-- Convert local audio and video files into raw verbatim transcripts.
-- Support Chinese, English, and mixed-language media.
-- Start with a fast command-line workflow for validation and batch processing.
-- Keep the core architecture extensible for future GUI, URL ingestion, system audio capture, and cloud transcription providers.
-- Store results as ordinary files first, with database support reserved for later versions.
+- Transcribe local audio and video files.
+- Process a single file, multiple files, or a folder.
+- Recursively scan folders.
+- Prepare audio with `ffmpeg`.
+- Transcribe locally with `faster-whisper`.
+- Export raw transcripts as `.txt` and `.md`.
+- Support Chinese, English, and mixed-language workflows.
+- Tune transcription with `--beam-size`, `--vad-filter`, `--initial-prompt`, and `--task`.
+- Use `--preset zh` for Chinese-oriented defaults.
 
 ## Current Scope
 
-Version 0 focuses on local files only:
+FlowScribe v0.1 focuses on:
 
 - Input: local audio/video files and folders.
 - Processing: normalize media into transcription-ready audio.
 - Transcription: local speech recognition.
 - Output: `.txt` and `.md` transcript files.
 
-Out of scope for the first version:
+Out of scope for v0.1:
 
 - Summary generation.
 - Opinion extraction.
@@ -27,28 +31,110 @@ Out of scope for the first version:
 - Desktop GUI.
 - DRM circumvention or protected media extraction.
 
+## Requirements
+
+- Python 3.10 or newer.
+- `ffmpeg` and `ffprobe` available on `PATH`.
+- Windows PowerShell or another terminal.
+
+## Installation
+
+```powershell
+cd E:\Draft\FlowScribe
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e .[dev]
+```
+
+Check the CLI:
+
+```powershell
+flowscribe --help
+```
+
+## Quick Start
+
+Transcribe one local file:
+
+```powershell
+flowscribe "D:\media\lecture.mp4" -o outputs
+```
+
+Transcribe a folder:
+
+```powershell
+flowscribe "D:\media" -o outputs --recursive
+```
+
+Use the Chinese preset:
+
+```powershell
+flowscribe "D:\media\lecture.mp4" -o outputs --preset zh
+```
+
+Use a larger model for better accuracy:
+
+```powershell
+flowscribe "D:\media\lecture.mp4" -o outputs --model medium --preset zh
+```
+
+Outputs:
+
+```text
+outputs/
+├── lecture.txt
+└── lecture.md
+```
+
+## Useful Options
+
+```text
+--model small       Local faster-whisper model name or path
+--language zh       Optional language hint, such as zh or en
+--preset zh         Chinese-oriented transcription preset
+--beam-size 5       Decoding beam size; larger can improve accuracy
+--vad-filter        Enable voice activity detection
+--initial-prompt    Guide terminology and mixed-language behavior
+--task transcribe   Keep source language; this is the default
+--overwrite         Replace existing transcript files
+--keep-audio        Keep prepared WAV files for debugging
+```
+
+`tiny` is useful for quick smoke tests. For real Chinese or mixed-language transcription, start with `small`; use `medium` or larger models when accuracy matters more than speed.
+
+## Documentation
+
+- [User Guide](docs/user-guide.md)
+- [Development Guide](docs/development-guide.md)
+- [Architecture](docs/architecture.md)
+- [Project Process](docs/project-process.md)
+- [Roadmap](docs/roadmap.md)
+- [Test Plan](docs/test-plan.md)
+- [Ethics and Boundaries](docs/ethics-and-boundaries.md)
+- [v1 Module Diagram](docs/v1-local-pipeline.mmd)
+
 ## Repository Layout
 
 ```text
 FlowScribe/
-├── docs/                  Project planning and architecture documents
-├── examples/              Sample commands and placeholder fixtures
+├── docs/                  Project documentation
+├── examples/              Example commands and future fixtures
 ├── scripts/               Developer helper scripts
 ├── src/flowscribe/        Application source code
 │   ├── cli/               Command-line interface
-│   ├── config/            Configuration loading and defaults
-│   ├── core/              Shared orchestration and domain models
-│   ├── input/             Input source adapters
-│   ├── media/             Media probing and audio preparation
-│   ├── output/            Transcript writers
-│   └── transcription/     Local and future provider-based transcribers
+│   ├── config/            Runtime settings and presets
+│   ├── core/              Domain models, ports, pipeline, runner
+│   ├── input/             Local file discovery
+│   ├── media/             ffprobe/ffmpeg integration
+│   ├── output/            TXT and Markdown writers
+│   └── transcription/     Local faster-whisper provider
 └── tests/                 Automated tests
 ```
 
-## Development Status
+## Legal and Ethical Boundaries
 
-This repository currently contains the initial project scaffold and planning documents. Implementation will proceed from a minimal local-file CLI pipeline.
+FlowScribe is intended for personal learning, accessibility, research notes, and lawful information processing. It should not be used to bypass DRM, crack applications, or redistribute copyrighted transcripts without permission.
 
 ## License
 
-License to be decided before public release.
+FlowScribe is licensed under the MIT License. See [LICENSE](LICENSE).

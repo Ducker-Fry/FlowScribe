@@ -1,82 +1,134 @@
-﻿# Architecture
+# Architecture
 
-FlowScribe is designed around a pipeline architecture with high cohesion and low coupling. Each module owns one responsibility and communicates through stable domain objects instead of direct implementation dependencies.
+FlowScribe uses a small pipeline architecture with high cohesion and low coupling. The CLI wires concrete adapters together, while the core layer defines the domain models and interfaces that keep input, media processing, transcription, and output independent.
 
-## Architectural Goals
-
-- Extensible input sources.
-- Swappable transcription engines.
-- Independent output writers.
-- Batch-friendly execution.
-- Clear boundaries for future GUI and API layers.
-- Local-first behavior by default.
-
-## Pipeline Overview
+## Current v0.1 Pipeline
 
 ```text
-Input Source
-    -> Media Preparation
-    -> Transcription
-    -> Transcript Assembly
-    -> Output Writing
+CLI
+  -> AppSettings
+  -> LocalFileSource
+  -> LocalTranscriptionPipeline
+       -> FfmpegAudioExtractor
+       -> LocalWhisperTranscriber
+       -> TranscriptArtifactWriter
+            -> TxtTranscriptWriter
+            -> MarkdownTranscriptWriter
+  -> JobResult
 ```
 
-## Module Responsibilities
+The user-facing behavior is:
 
-### CLI Layer
+```text
+local file/folder
+  -> discover supported media files
+  -> detect audio stream with ffprobe
+  -> extract 16 kHz mono WAV with ffmpeg
+  -> transcribe with faster-whisper
+  -> write TXT and Markdown transcripts
+```
 
-The CLI parses user commands, loads configuration, and starts jobs. It should not contain business logic.
+## Code Modules
 
-### Core Layer
+### `src/flowscribe/cli`
 
-The core layer coordinates jobs and defines shared domain models such as media items, transcript segments, job results, and errors.
+- `main.py`: application entry point. It parses options, creates settings, wires adapters, and runs the job.
+- `args.py`: command-line option definitions and `CliOptions`.
 
-### Input Layer
+The CLI should remain thin. It should not contain transcription, media, or output formatting logic.
 
-The input layer discovers media sources. In v0.1 this means local files and folders. Future adapters may support URLs and system audio recordings.
+### `src/flowscribe/config`
 
-### Media Layer
+- `settings.py`: runtime settings and preset resolution.
 
-The media layer validates files, probes metadata, and prepares audio for transcription. It hides media tooling details from the rest of the application.
+The Chinese preset is resolved here so provider-specific code does not need to know how CLI presets are interpreted.
 
-### Transcription Layer
+### `src/flowscribe/core`
 
-The transcription layer converts prepared audio into transcript segments. It should expose a provider interface so local models and external APIs can coexist later.
+- `models.py`: domain objects such as `MediaItem`, `PreparedAudio`, `Transcript`, `TranscriptionOptions`, and `JobResult`.
+- `ports.py`: protocol interfaces for input sources, media preparers, transcribers, and writers.
+- `pipeline.py`: single-item transcription pipeline.
+- `runner.py`: batch orchestration and recoverable item-level failures.
+- `errors.py`: project-specific exceptions.
 
-### Output Layer
+The core layer owns the application vocabulary. Concrete adapters should depend on core models and ports, not on each other.
 
-The output layer writes transcripts to TXT, Markdown, and future formats. It should not know how media was acquired or transcribed.
+### `src/flowscribe/input`
 
-### Config Layer
+- `file_filter.py`: supported media extension detection.
+- `local_source.py`: local file and folder discovery.
 
-The config layer manages defaults, model choices, output paths, and future provider settings.
+Future URL input and system audio capture should be added as new input adapters rather than changing the core pipeline.
+
+### `src/flowscribe/media`
+
+- `ffmpeg_probe.py`: audio stream detection through `ffprobe`.
+- `audio_extractor.py`: transcription-ready WAV preparation through `ffmpeg`.
+
+This layer hides media tooling details from the transcription layer.
+
+### `src/flowscribe/transcription`
+
+- `local_whisper.py`: local faster-whisper provider.
+
+The provider accepts model, language, task, beam size, VAD, prompt, and preset metadata. Future providers such as WhisperX, FunASR, SenseVoice, or external APIs should implement the same transcriber role.
+
+### `src/flowscribe/output`
+
+- `paths.py`: safe output path generation.
+- `txt_writer.py`: raw text output.
+- `md_writer.py`: Markdown output with metadata.
+- `artifact_writer.py`: writes all v0.1 artifacts for one transcript.
+
+Output writers should not know how input was discovered or how transcription was performed.
+
+## Dependency Direction
+
+```text
+CLI -> Config
+CLI -> Core
+CLI -> Concrete adapters
+Concrete adapters -> Core models / ports
+Concrete adapters -> External tools or libraries
+```
+
+The intended rule is:
+
+- Core does not import CLI.
+- Core does not import concrete adapters.
+- Input, media, transcription, and output modules do not depend on each other directly unless they have a narrow local helper relationship.
+- New capabilities should be added by introducing new adapters that satisfy existing core interfaces.
 
 ## Extension Points
 
 ### New Input Source
 
-Add a new adapter under `input/` that returns the same media item model used by local files.
+Add a new adapter under `src/flowscribe/input`.
 
 Examples:
 
 - URL input.
-- Browser download handoff.
-- System audio capture.
-- Application audio recording.
+- Browser handoff.
+- System audio recording.
+- Application audio capture through user-controlled system audio.
+
+The adapter should return `MediaItem` or a future source model without changing output writers or transcription providers.
 
 ### New Transcription Provider
 
-Add a provider under `transcription/` that implements the shared transcriber interface.
+Add a provider under `src/flowscribe/transcription`.
 
 Examples:
 
-- Local faster-whisper provider.
-- OpenAI API provider.
-- Other cloud speech-to-text provider.
+- WhisperX provider.
+- FunASR/SenseVoice provider for stronger Chinese recognition.
+- OpenAI or other cloud speech-to-text API provider.
+
+The provider should return `Transcript` and record relevant `TranscriptionOptions`.
 
 ### New Output Format
 
-Add a writer under `output/` that accepts transcript data and writes a new artifact.
+Add a writer under `src/flowscribe/output`.
 
 Examples:
 
@@ -85,19 +137,11 @@ Examples:
 - JSON.
 - DOCX.
 
-## Dependency Direction
-
-Dependencies should point inward:
-
-```text
-CLI -> Core -> Input / Media / Transcription / Output
-```
-
-Implementation modules should depend on shared interfaces and data models, not on each other directly.
+The writer should consume `Transcript` only.
 
 ## Non-Goals
 
 - Do not bypass DRM or protected media controls.
 - Do not build summary or opinion extraction into the transcription core.
-- Do not make GUI code depend directly on low-level media or transcription implementations.
-- Do not require a database for the first version.
+- Do not make future GUI code depend directly on low-level media or transcription implementations.
+- Do not require a database for the first local-file CLI version.

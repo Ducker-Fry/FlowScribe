@@ -1,14 +1,14 @@
-﻿[build-system]
+[build-system]
 requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "flowscribe"
-version = "0.0.0"
+version = "0.1.0"
 description = "Local-first media transcription toolkit for turning audio and video into raw readable transcripts."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "LicenseRef-Proprietary-Until-Decided" }
+license = { text = "MIT" }
 authors = [
   { name = "FlowScribe contributors" }
 ]
@@ -22,7 +22,9 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
 ]
-dependencies = []
+dependencies = [
+  "faster-whisper>=1.0",
+]
 
 [project.optional-dependencies]
 dev = [

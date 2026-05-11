@@ -4,6 +4,8 @@ __pycache__/
 .venv/
 venv/
 .env
+.pytest_cache/
+.ruff_cache/
 
 # Build artifacts
 build/
@@ -12,6 +14,7 @@ dist/
 
 # Runtime outputs
 outputs/
+outputs*/
 *.log
 
 # Local media samples
