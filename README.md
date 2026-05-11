@@ -1,5 +1,11 @@
 # FlowScribe
 
+[![Release](https://img.shields.io/github/v/release/Ducker-Fry/FlowScribe?display_name=tag)](https://github.com/Ducker-Fry/FlowScribe/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](pyproject.toml)
+[![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)](docs/packaging.md)
+[![Local First](https://img.shields.io/badge/local--first-transcription-green)](docs/ethics-and-boundaries.md)
+
 FlowScribe is a local-first command-line transcription tool that turns local audio and video files into raw TXT and Markdown transcripts. It is designed as an extensible open-source project: the current CLI focuses on local files, while the architecture leaves room for URL input, system audio capture, desktop GUI, and optional external speech-to-text providers.
 
 ## Features
@@ -154,6 +160,7 @@ See [Packaging](docs/packaging.md) for release details.
 ## Documentation
 
 - [User Guide](docs/user-guide.md)
+- [Release Installation](docs/release-installation.md)
 - [Development Guide](docs/development-guide.md)
 - [Packaging](docs/packaging.md)
 - [Architecture](docs/architecture.md)

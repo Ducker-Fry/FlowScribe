@@ -1,0 +1,47 @@
+name: Feature request
+description: Suggest a useful improvement for FlowScribe.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user problem would this feature solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should FlowScribe do?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Input source
+        - Transcription provider
+        - Output format
+        - Packaging
+        - Documentation
+        - GUI
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any other approaches?
+  - type: checkboxes
+    id: boundaries
+    attributes:
+      label: Boundaries
+      options:
+        - label: This feature does not require DRM bypassing or client cracking.
+          required: true
+        - label: This feature can be implemented without uploading user media by default.
+          required: false
