@@ -62,6 +62,12 @@ Chinese-oriented transcription:
 .\FlowScribe\FlowScribe.exe "D:\media\lecture.mp4" -o outputs --model small --preset zh
 ```
 
+Recommended command style:
+
+```powershell
+.\FlowScribe\FlowScribe.exe transcribe "D:\media\lecture.mp4" -o outputs --model small --preset zh
+```
+
 English transcription:
 
 ```powershell

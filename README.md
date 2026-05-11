@@ -80,19 +80,19 @@ flowscribe doctor
 Transcribe one local file:
 
 ```powershell
-flowscribe "D:\media\lecture.mp4" -o outputs
+flowscribe transcribe "D:\media\lecture.mp4" -o outputs
 ```
 
 Transcribe a folder:
 
 ```powershell
-flowscribe "D:\media" -o outputs --recursive
+flowscribe transcribe "D:\media" -o outputs --recursive
 ```
 
 Use the Chinese preset:
 
 ```powershell
-flowscribe "D:\media\lecture.mp4" -o outputs --preset zh
+flowscribe transcribe "D:\media\lecture.mp4" -o outputs --preset zh
 ```
 
 Run environment diagnostics:
@@ -105,6 +105,16 @@ Use a larger model for better accuracy:
 
 ```powershell
 flowscribe "D:\media\lecture.mp4" -o outputs --model medium --preset zh
+```
+
+The legacy form `flowscribe "D:\media\lecture.mp4" -o outputs` is still supported for compatibility, but `flowscribe transcribe ...` is the recommended command style.
+
+Useful information commands:
+
+```powershell
+flowscribe version
+flowscribe formats
+flowscribe models
 ```
 
 Outputs:

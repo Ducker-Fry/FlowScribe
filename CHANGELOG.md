@@ -3,6 +3,8 @@
 ## 0.1.0 - 2026-05-11
 
 - Implemented the first local-file transcription CLI.
+- Added explicit CLI subcommands: `transcribe`, `version`, `formats`, and `models`.
+- Added placeholders for future `url` and `capture` commands.
 - Added local file and folder discovery for supported media formats.
 - Added ffprobe-based audio stream detection and ffmpeg-based WAV preparation.
 - Added faster-whisper local transcription provider.

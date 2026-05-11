@@ -62,26 +62,28 @@ flowscribe doctor
 Transcribe one video:
 
 ```powershell
-flowscribe "D:\media\lecture.mp4" -o outputs
+flowscribe transcribe "D:\media\lecture.mp4" -o outputs
 ```
 
 Transcribe one audio file:
 
 ```powershell
-flowscribe "D:\media\recording.wav" -o outputs
+flowscribe transcribe "D:\media\recording.wav" -o outputs
 ```
 
 Transcribe all supported files in a folder:
 
 ```powershell
-flowscribe "D:\media" -o outputs
+flowscribe transcribe "D:\media" -o outputs
 ```
 
 Scan folders recursively:
 
 ```powershell
-flowscribe "D:\media" -o outputs --recursive
+flowscribe transcribe "D:\media" -o outputs --recursive
 ```
+
+The older form `flowscribe "D:\media\lecture.mp4" -o outputs` is still supported, but `flowscribe transcribe ...` is recommended.
 
 ### 4. Language Usage
 
@@ -167,6 +169,14 @@ Make sure transcription does not translate the content:
 
 ```powershell
 flowscribe "D:\media\lecture.mp4" -o outputs --task transcribe
+```
+
+Information commands:
+
+```powershell
+flowscribe version
+flowscribe formats
+flowscribe models
 ```
 
 ### 7. Output Files
@@ -281,26 +291,28 @@ flowscribe doctor
 转写单个视频：
 
 ```powershell
-flowscribe "D:\media\lecture.mp4" -o outputs
+flowscribe transcribe "D:\media\lecture.mp4" -o outputs
 ```
 
 转写单个音频：
 
 ```powershell
-flowscribe "D:\media\recording.wav" -o outputs
+flowscribe transcribe "D:\media\recording.wav" -o outputs
 ```
 
 转写文件夹中的所有支持文件：
 
 ```powershell
-flowscribe "D:\media" -o outputs
+flowscribe transcribe "D:\media" -o outputs
 ```
 
 递归扫描子文件夹：
 
 ```powershell
-flowscribe "D:\media" -o outputs --recursive
+flowscribe transcribe "D:\media" -o outputs --recursive
 ```
+
+旧写法 `flowscribe "D:\media\lecture.mp4" -o outputs` 仍然可用，但推荐使用更清晰的 `flowscribe transcribe ...`。
 
 ### 4. 语言设置
 
@@ -386,6 +398,14 @@ flowscribe "D:\media\lecture.mp4" -o outputs --initial-prompt "这是一段计�
 
 ```powershell
 flowscribe "D:\media\lecture.mp4" -o outputs --task transcribe
+```
+
+信息类命令：
+
+```powershell
+flowscribe version
+flowscribe formats
+flowscribe models
 ```
 
 ### 7. 输出文件

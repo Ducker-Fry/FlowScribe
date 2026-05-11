@@ -33,16 +33,29 @@ class DoctorOptions:
     model_name: str
 
 
-def parse_args(argv: list[str] | None = None) -> CliOptions | DoctorOptions:
+@dataclass(frozen=True)
+class SimpleCommandOptions:
+    command: str
+
+
+def parse_args(argv: list[str] | None = None) -> CliOptions | DoctorOptions | SimpleCommandOptions:
     argv = sys.argv[1:] if argv is None else argv
-    if argv and argv[0] == "doctor":
+    if not argv:
+        return parse_transcribe_args(argv)
+
+    command = argv[0]
+    if command == "transcribe":
+        return parse_transcribe_args(argv[1:], prog="flowscribe transcribe")
+    if command == "doctor":
         return parse_doctor_args(argv[1:])
+    if command in {"version", "formats", "models", "url", "capture"}:
+        return parse_simple_command_args(command, argv[1:])
     return parse_transcribe_args(argv)
 
 
-def parse_transcribe_args(argv: list[str] | None = None) -> CliOptions:
+def parse_transcribe_args(argv: list[str] | None = None, *, prog: str = "flowscribe") -> CliOptions:
     parser = argparse.ArgumentParser(
-        prog="flowscribe",
+        prog=prog,
         description="Turn local audio/video files into raw TXT and Markdown transcripts.",
     )
     parser.add_argument(
@@ -165,3 +178,19 @@ def parse_doctor_args(argv: list[str] | None = None) -> DoctorOptions:
         output_dir=namespace.output_dir,
         model_name=namespace.model_name,
     )
+
+
+def parse_simple_command_args(command: str, argv: list[str]) -> SimpleCommandOptions:
+    descriptions = {
+        "version": "Show FlowScribe version information.",
+        "formats": "List supported local media file extensions.",
+        "models": "Show recommended local transcription models.",
+        "url": "Placeholder for future URL transcription input.",
+        "capture": "Placeholder for future system audio capture.",
+    }
+    parser = argparse.ArgumentParser(
+        prog=f"flowscribe {command}",
+        description=descriptions[command],
+    )
+    parser.parse_args(argv)
+    return SimpleCommandOptions(command=command)

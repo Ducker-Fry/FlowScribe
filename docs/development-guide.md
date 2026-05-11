@@ -49,13 +49,13 @@ flowscribe doctor -o outputs --model small
 Run a quick transcription smoke test:
 
 ```powershell
-flowscribe "D:\media\sample.wav" -o outputs --model tiny --overwrite
+flowscribe transcribe "D:\media\sample.wav" -o outputs --model tiny --overwrite
 ```
 
 Run a Chinese-oriented transcription:
 
 ```powershell
-flowscribe "D:\media\lecture.mp4" -o outputs --model small --preset zh --overwrite
+flowscribe transcribe "D:\media\lecture.mp4" -o outputs --model small --preset zh --overwrite
 ```
 
 Build a portable Windows executable:

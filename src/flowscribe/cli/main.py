@@ -6,8 +6,10 @@ import sys
 
 from flowscribe.cli.args import parse_args
 from flowscribe.cli.doctor import run_doctor
+from flowscribe import __version__
 from flowscribe.config.settings import AppSettings
 from flowscribe.core.errors import FlowScribeError
+from flowscribe.input.file_filter import SUPPORTED_MEDIA_EXTENSIONS
 from flowscribe.core.pipeline import LocalTranscriptionPipeline
 from flowscribe.core.runner import JobRunner
 from flowscribe.input.local_source import LocalFileSource
@@ -23,6 +25,34 @@ def main(argv: list[str] | None = None) -> int:
     options = parse_args(argv)
     if options.command == "doctor":
         return run_doctor(output_dir=options.output_dir, model_name=options.model_name)
+    if options.command == "version":
+        print(f"FlowScribe {__version__}")
+        print(f"Python {sys.version.split()[0]}")
+        return 0
+    if options.command == "formats":
+        print("Supported local media extensions:")
+        for extension in sorted(SUPPORTED_MEDIA_EXTENSIONS):
+            print(f"- {extension}")
+        return 0
+    if options.command == "models":
+        print("Recommended local transcription models:")
+        print("- tiny: quick smoke tests only; fastest and least accurate")
+        print("- small: recommended starting point for real use")
+        print("- medium: better accuracy, slower and heavier")
+        print("- large-v3 / large-v3-turbo: highest local accuracy, requires more resources")
+        print("")
+        print("Examples:")
+        print("  flowscribe transcribe video.mp4 --model small --preset zh")
+        print("  flowscribe transcribe video.mp4 --model medium --language en")
+        return 0
+    if options.command == "url":
+        print("URL input is planned but not implemented yet.")
+        print("Future example: flowscribe url \"https://example.com/video\" -o outputs")
+        return 2
+    if options.command == "capture":
+        print("System audio capture is planned but not implemented yet.")
+        print("Future example: flowscribe capture --duration 10m -o outputs")
+        return 2
 
     settings = AppSettings.from_options(
         output_dir=options.output_dir,

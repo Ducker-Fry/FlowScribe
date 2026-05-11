@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from flowscribe.cli.args import DoctorOptions, parse_args
+from flowscribe.cli.args import CliOptions, DoctorOptions, SimpleCommandOptions, parse_args
 from flowscribe.cli.doctor import check_output_dir, resolve_faster_whisper_repo
 
 
@@ -11,6 +11,30 @@ def test_parse_doctor_args() -> None:
     assert options.command == "doctor"
     assert options.output_dir == Path("health-out")
     assert options.model_name == "tiny"
+
+
+def test_parse_transcribe_subcommand_args() -> None:
+    options = parse_args(["transcribe", "video.mp4", "-o", "out"])
+
+    assert isinstance(options, CliOptions)
+    assert options.command == "transcribe"
+    assert options.inputs == [Path("video.mp4")]
+    assert options.output_dir == Path("out")
+
+
+def test_parse_legacy_transcribe_args() -> None:
+    options = parse_args(["video.mp4", "-o", "out"])
+
+    assert isinstance(options, CliOptions)
+    assert options.command == "transcribe"
+    assert options.inputs == [Path("video.mp4")]
+
+
+def test_parse_simple_command_args() -> None:
+    options = parse_args(["version"])
+
+    assert isinstance(options, SimpleCommandOptions)
+    assert options.command == "version"
 
 
 def test_doctor_output_dir_check_writes_temp_file(tmp_path: Path) -> None:
