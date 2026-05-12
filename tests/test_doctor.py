@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from flowscribe.cli.args import CliOptions, DoctorOptions, SimpleCommandOptions, parse_args
+from flowscribe.cli.args import CliOptions, DoctorOptions, SearchOptions, SimpleCommandOptions, parse_args
 from flowscribe.cli.doctor import check_output_dir, resolve_faster_whisper_repo
 
 
@@ -48,6 +48,16 @@ def test_parse_simple_command_args() -> None:
 
     assert isinstance(options, SimpleCommandOptions)
     assert options.command == "version"
+
+
+def test_parse_search_args() -> None:
+    options = parse_args(["search", "lesson.json", "keyword", "--context-chars", "12"])
+
+    assert isinstance(options, SearchOptions)
+    assert options.command == "search"
+    assert options.transcript == Path("lesson.json")
+    assert options.query == "keyword"
+    assert options.context_chars == 12
 
 
 def test_doctor_output_dir_check_writes_temp_file(tmp_path: Path) -> None:

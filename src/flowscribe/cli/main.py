@@ -19,7 +19,9 @@ from flowscribe.output.json_writer import JsonTranscriptWriter
 from flowscribe.output.md_writer import MarkdownTranscriptWriter
 from flowscribe.output.paths import OutputPathBuilder
 from flowscribe.output.srt_writer import SrtTranscriptWriter
+from flowscribe.output.time_format import format_timestamp
 from flowscribe.output.txt_writer import TxtTranscriptWriter
+from flowscribe.search.transcript_search import search_transcript_file
 from flowscribe.transcription.local_whisper import LocalWhisperTranscriber
 
 
@@ -27,6 +29,8 @@ def main(argv: list[str] | None = None) -> int:
     options = parse_args(argv)
     if options.command == "doctor":
         return run_doctor(output_dir=options.output_dir, model_name=options.model_name)
+    if options.command == "search":
+        return run_search(options)
     if options.command == "version":
         print(f"FlowScribe {__version__}")
         print(f"Python {sys.version.split()[0]}")
@@ -114,6 +118,32 @@ def main(argv: list[str] | None = None) -> int:
         for failure in result.failures:
             print(f"- {failure.source}: {failure.message}")
         return 1
+    return 0
+
+
+def run_search(options) -> int:
+    try:
+        hits = search_transcript_file(
+            options.transcript,
+            options.query,
+            context_chars=options.context_chars,
+        )
+    except FlowScribeError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+
+    if not hits:
+        print(f"No matches found for: {options.query}")
+        return 1
+
+    for index, hit in enumerate(hits, start=1):
+        print(f"[{index}]")
+        print(f"File: {hit.file}")
+        print(f"Match: {hit.matched_text}")
+        print(f"Time: {format_timestamp(hit.start_seconds)} - {format_timestamp(hit.end_seconds)}")
+        print(f"Context: {hit.context}")
+        if index < len(hits):
+            print("")
     return 0
 
 

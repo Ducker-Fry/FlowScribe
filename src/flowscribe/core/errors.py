@@ -21,3 +21,7 @@ class TranscriptionError(FlowScribeError):
 
 class OutputError(FlowScribeError):
     """Raised when transcript artifacts cannot be written."""
+
+
+class SearchError(FlowScribeError):
+    """Raised when transcript search input cannot be processed."""

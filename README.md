@@ -135,6 +135,15 @@ flowscribe formats
 flowscribe models
 ```
 
+Search a transcript JSON and locate a keyword:
+
+```powershell
+flowscribe search outputs\lecture.json "机器学习"
+```
+
+When word timestamps are available, search results use word-level timing. Otherwise,
+FlowScribe falls back to the matched segment's timestamp range.
+
 Outputs:
 
 ```text

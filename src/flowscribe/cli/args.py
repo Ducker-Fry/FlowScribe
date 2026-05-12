@@ -37,11 +37,21 @@ class DoctorOptions:
 
 
 @dataclass(frozen=True)
+class SearchOptions:
+    command: str
+    transcript: Path
+    query: str
+    context_chars: int
+
+
+@dataclass(frozen=True)
 class SimpleCommandOptions:
     command: str
 
 
-def parse_args(argv: list[str] | None = None) -> CliOptions | DoctorOptions | SimpleCommandOptions:
+def parse_args(
+    argv: list[str] | None = None,
+) -> CliOptions | DoctorOptions | SearchOptions | SimpleCommandOptions:
     argv = sys.argv[1:] if argv is None else argv
     if not argv:
         return parse_transcribe_args(argv)
@@ -51,6 +61,8 @@ def parse_args(argv: list[str] | None = None) -> CliOptions | DoctorOptions | Si
         return parse_transcribe_args(argv[1:], prog="flowscribe transcribe")
     if command == "doctor":
         return parse_doctor_args(argv[1:])
+    if command == "search":
+        return parse_search_args(argv[1:])
     if command in {"version", "formats", "models", "url", "capture"}:
         return parse_simple_command_args(command, argv[1:])
     return parse_transcribe_args(argv)
@@ -202,6 +214,28 @@ def parse_doctor_args(argv: list[str] | None = None) -> DoctorOptions:
         command="doctor",
         output_dir=namespace.output_dir,
         model_name=namespace.model_name,
+    )
+
+
+def parse_search_args(argv: list[str] | None = None) -> SearchOptions:
+    parser = argparse.ArgumentParser(
+        prog="flowscribe search",
+        description="Search a FlowScribe transcript JSON file and locate keyword timestamps.",
+    )
+    parser.add_argument("transcript", type=Path, help="Transcript JSON file to search.")
+    parser.add_argument("query", help="Keyword or phrase to locate.")
+    parser.add_argument(
+        "--context-chars",
+        type=int,
+        default=24,
+        help="Number of context characters to show around each hit. Default: 24",
+    )
+    namespace = parser.parse_args(argv)
+    return SearchOptions(
+        command="search",
+        transcript=namespace.transcript,
+        query=namespace.query,
+        context_chars=namespace.context_chars,
     )
 
 
