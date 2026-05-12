@@ -42,6 +42,7 @@ class JsonTranscriptWriter:
                 "vad_filter": options.vad_filter,
                 "initial_prompt": options.initial_prompt,
                 "preset": options.preset,
+                "word_timestamps": options.word_timestamps,
             },
             "text": transcript.text,
             "segments": [
@@ -54,6 +55,7 @@ class JsonTranscriptWriter:
                             "text": word.text,
                             "start_seconds": word.start_seconds,
                             "end_seconds": word.end_seconds,
+                            "confidence": word.confidence,
                         }
                         for word in segment.words
                     ],

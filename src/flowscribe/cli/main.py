@@ -66,6 +66,7 @@ def main(argv: list[str] | None = None) -> int:
         beam_size=options.beam_size,
         vad_filter=options.vad_filter,
         initial_prompt=options.initial_prompt,
+        word_timestamps=options.word_timestamps,
         recursive=options.recursive,
         overwrite=options.overwrite,
         keep_audio=options.keep_audio,
@@ -83,6 +84,7 @@ def main(argv: list[str] | None = None) -> int:
             vad_filter=settings.vad_filter,
             initial_prompt=settings.initial_prompt,
             preset=settings.preset,
+            word_timestamps=settings.word_timestamps,
         ),
         artifact_writer=TranscriptArtifactWriter(
             formats=options.output_formats,

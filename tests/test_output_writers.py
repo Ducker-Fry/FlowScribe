@@ -1,7 +1,13 @@
 import json
 from pathlib import Path
 
-from flowscribe.core.models import MediaItem, Transcript, TranscriptSegment, TranscriptionOptions
+from flowscribe.core.models import (
+    MediaItem,
+    Transcript,
+    TranscriptSegment,
+    TranscriptWord,
+    TranscriptionOptions,
+)
 from flowscribe.output.artifact_writer import TranscriptArtifactWriter
 from flowscribe.output.json_writer import JsonTranscriptWriter
 from flowscribe.output.md_writer import MarkdownTranscriptWriter
@@ -15,7 +21,19 @@ def build_transcript(tmp_path: Path) -> Transcript:
     return Transcript(
         source=source,
         segments=(
-            TranscriptSegment(text="Hello world.", start_seconds=0.0, end_seconds=1.5),
+            TranscriptSegment(
+                text="Hello world.",
+                start_seconds=0.0,
+                end_seconds=1.5,
+                words=(
+                    TranscriptWord(
+                        text="Hello",
+                        start_seconds=0.0,
+                        end_seconds=0.5,
+                        confidence=0.91,
+                    ),
+                ),
+            ),
             TranscriptSegment(text="Second segment.", start_seconds=1.5, end_seconds=3.25),
         ),
         language="en",
@@ -28,6 +46,7 @@ def build_transcript(tmp_path: Path) -> Transcript:
             vad_filter=True,
             initial_prompt="preserve source languages",
             preset=None,
+            word_timestamps=True,
         ),
     )
 
@@ -57,7 +76,15 @@ def test_transcript_artifact_writer_writes_selected_formats(tmp_path: Path) -> N
 
     payload = json.loads((tmp_path / "lesson.json").read_text(encoding="utf-8"))
     assert payload["segments"][0]["start_seconds"] == 0.0
-    assert payload["segments"][0]["words"] == []
+    assert payload["options"]["word_timestamps"] is True
+    assert payload["segments"][0]["words"] == [
+        {
+            "text": "Hello",
+            "start_seconds": 0.0,
+            "end_seconds": 0.5,
+            "confidence": 0.91,
+        }
+    ]
 
     srt = (tmp_path / "lesson.srt").read_text(encoding="utf-8")
     assert "1\n00:00:00,000 --> 00:00:01,500\nHello world." in srt

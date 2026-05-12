@@ -25,11 +25,12 @@ class PreparedAudio:
 
 @dataclass(frozen=True)
 class TranscriptWord:
-    """A future word- or character-level timing unit."""
+    """A word- or character-level timing unit returned by a transcription provider."""
 
     text: str
     start_seconds: float | None = None
     end_seconds: float | None = None
+    confidence: float | None = None
 
 
 @dataclass(frozen=True)
@@ -53,6 +54,7 @@ class TranscriptionOptions:
     vad_filter: bool
     initial_prompt: str | None = None
     preset: str | None = None
+    word_timestamps: bool = False
 
 
 @dataclass(frozen=True)

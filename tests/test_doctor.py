@@ -14,13 +14,24 @@ def test_parse_doctor_args() -> None:
 
 
 def test_parse_transcribe_subcommand_args() -> None:
-    options = parse_args(["transcribe", "video.mp4", "-o", "out", "--format", "txt,md,json,srt"])
+    options = parse_args(
+        [
+            "transcribe",
+            "video.mp4",
+            "-o",
+            "out",
+            "--format",
+            "txt,md,json,srt",
+            "--word-timestamps",
+        ]
+    )
 
     assert isinstance(options, CliOptions)
     assert options.command == "transcribe"
     assert options.inputs == [Path("video.mp4")]
     assert options.output_dir == Path("out")
     assert options.output_formats == ("txt", "md", "json", "srt")
+    assert options.word_timestamps is True
 
 
 def test_parse_legacy_transcribe_args() -> None:

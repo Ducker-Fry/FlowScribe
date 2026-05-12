@@ -50,6 +50,7 @@ class MarkdownTranscriptWriter:
                     f"- Task: `{options.task}`",
                     f"- Beam Size: `{options.beam_size}`",
                     f"- VAD Filter: `{options.vad_filter}`",
+                    f"- Word Timestamps: `{options.word_timestamps}`",
                     f"- Preset: `{options.preset or 'none'}`",
                     f"- Initial Prompt: `{options.initial_prompt or 'none'}`",
                 ]

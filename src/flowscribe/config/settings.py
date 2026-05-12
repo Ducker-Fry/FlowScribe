@@ -22,6 +22,7 @@ class AppSettings:
     beam_size: int
     vad_filter: bool
     initial_prompt: str | None
+    word_timestamps: bool
     recursive: bool
     overwrite: bool
     keep_audio: bool
@@ -40,6 +41,7 @@ class AppSettings:
         beam_size: int,
         vad_filter: bool,
         initial_prompt: str | None,
+        word_timestamps: bool,
         recursive: bool,
         overwrite: bool,
         keep_audio: bool,
@@ -69,6 +71,7 @@ class AppSettings:
             beam_size=beam_size,
             vad_filter=effective_vad_filter,
             initial_prompt=effective_initial_prompt,
+            word_timestamps=word_timestamps,
             recursive=recursive,
             overwrite=overwrite,
             keep_audio=keep_audio,

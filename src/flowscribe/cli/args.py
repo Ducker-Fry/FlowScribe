@@ -22,6 +22,7 @@ class CliOptions:
     vad_filter: bool
     initial_prompt: str | None
     timestamps: bool
+    word_timestamps: bool
     output_formats: tuple[str, ...]
     recursive: bool
     overwrite: bool
@@ -126,6 +127,14 @@ def parse_transcribe_args(argv: list[str] | None = None, *, prog: str = "flowscr
         help="Include segment-level timestamps in timestamp-aware output formats.",
     )
     parser.add_argument(
+        "--word-timestamps",
+        action="store_true",
+        help=(
+            "Request word-level timestamps from the transcription provider. "
+            "This is most useful with --format json."
+        ),
+    )
+    parser.add_argument(
         "--format",
         dest="output_formats",
         default="txt,md",
@@ -161,6 +170,7 @@ def parse_transcribe_args(argv: list[str] | None = None, *, prog: str = "flowscr
         vad_filter=namespace.vad_filter,
         initial_prompt=namespace.initial_prompt,
         timestamps=namespace.timestamps,
+        word_timestamps=namespace.word_timestamps,
         output_formats=parse_output_formats(namespace.output_formats),
         recursive=namespace.recursive,
         overwrite=namespace.overwrite,

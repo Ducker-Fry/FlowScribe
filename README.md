@@ -17,6 +17,8 @@ FlowScribe is a local-first command-line transcription tool that turns local aud
 - Prepare audio with `ffmpeg`.
 - Transcribe locally with `faster-whisper`.
 - Export raw transcripts as `.txt` and `.md`.
+- Export structured `.json` and subtitle `.srt` files.
+- Request word-level timing data for future text-to-video navigation.
 - Support Chinese, English, and mixed-language workflows.
 - Tune transcription with `--beam-size`, `--vad-filter`, `--initial-prompt`, and `--task`.
 - Use `--preset zh` for Chinese-oriented defaults.
@@ -101,6 +103,12 @@ Write timestamped Markdown, JSON, and SRT:
 flowscribe transcribe "D:\media\lecture.mp4" -o outputs --timestamps --format txt,md,json,srt
 ```
 
+Write JSON with word-level timing data:
+
+```powershell
+flowscribe transcribe "D:\media\lecture.mp4" -o outputs --word-timestamps --format json
+```
+
 Run environment diagnostics:
 
 ```powershell
@@ -171,6 +179,7 @@ See [Packaging](docs/packaging.md) for release details.
 --initial-prompt    Guide terminology and mixed-language behavior
 --task transcribe   Keep source language; this is the default
 --timestamps        Include segment timestamps in timestamp-aware outputs
+--word-timestamps   Include provider word timing data in JSON output
 --format txt,md     Comma-separated output formats: txt,md,json,srt
 --overwrite         Replace existing transcript files
 --keep-audio        Keep prepared WAV files for debugging
