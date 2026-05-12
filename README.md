@@ -109,6 +109,10 @@ Write JSON with word-level timing data:
 flowscribe transcribe "D:\media\lecture.mp4" -o outputs --word-timestamps --format json
 ```
 
+For Chinese transcripts, FlowScribe keeps provider timing units in `raw_words` and writes
+natural Chinese words in `words` when alignment is possible. For example, provider tokens
+such as `牛` and `奶` can be merged into one navigable word, `牛奶`.
+
 Run environment diagnostics:
 
 ```powershell

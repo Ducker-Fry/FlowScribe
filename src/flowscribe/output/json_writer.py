@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from flowscribe.core.errors import OutputError
-from flowscribe.core.models import Transcript
+from flowscribe.core.models import Transcript, TranscriptWord
 from flowscribe.output.paths import OutputPathBuilder
 
 
@@ -50,16 +50,17 @@ class JsonTranscriptWriter:
                     "text": segment.text,
                     "start_seconds": segment.start_seconds,
                     "end_seconds": segment.end_seconds,
-                    "words": [
-                        {
-                            "text": word.text,
-                            "start_seconds": word.start_seconds,
-                            "end_seconds": word.end_seconds,
-                            "confidence": word.confidence,
-                        }
-                        for word in segment.words
-                    ],
+                    "raw_words": [self._word_to_payload(word) for word in segment.raw_words],
+                    "words": [self._word_to_payload(word) for word in segment.words],
                 }
                 for segment in transcript.segments
             ],
+        }
+
+    def _word_to_payload(self, word: TranscriptWord) -> dict:
+        return {
+            "text": word.text,
+            "start_seconds": word.start_seconds,
+            "end_seconds": word.end_seconds,
+            "confidence": word.confidence,
         }

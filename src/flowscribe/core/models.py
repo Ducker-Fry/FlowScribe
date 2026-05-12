@@ -40,6 +40,7 @@ class TranscriptSegment:
     text: str
     start_seconds: float | None = None
     end_seconds: float | None = None
+    raw_words: tuple[TranscriptWord, ...] = ()
     words: tuple[TranscriptWord, ...] = ()
 
 

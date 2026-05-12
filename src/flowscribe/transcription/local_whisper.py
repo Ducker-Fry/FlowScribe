@@ -10,6 +10,7 @@ from flowscribe.core.models import (
     TranscriptWord,
     TranscriptionOptions,
 )
+from flowscribe.nlp.segmenter import align_chinese_words
 
 
 class LocalWhisperTranscriber:
@@ -47,13 +48,9 @@ class LocalWhisperTranscriber:
                 initial_prompt=self._initial_prompt,
                 word_timestamps=self._word_timestamps,
             )
+            language = getattr(info, "language", None) or self._language
             transcript_segments = tuple(
-                TranscriptSegment(
-                    text=segment.text.strip(),
-                    start_seconds=float(segment.start),
-                    end_seconds=float(segment.end),
-                    words=self._build_words(segment),
-                )
+                self._build_segment(segment, language=language)
                 for segment in segments
                 if segment.text.strip()
             )
@@ -64,7 +61,6 @@ class LocalWhisperTranscriber:
         except Exception as exc:
             raise TranscriptionError(f"Local transcription failed for {audio.path}: {exc}") from exc
 
-        language = getattr(info, "language", None) or self._language
         options = TranscriptionOptions(
             model_name=self._model_name,
             language=self._language,
@@ -90,7 +86,23 @@ class LocalWhisperTranscriber:
             self._model = WhisperModel(self._model_name, device="auto", compute_type="auto")
         return self._model
 
-    def _build_words(self, segment) -> tuple[TranscriptWord, ...]:
+    def _build_segment(self, segment, *, language: str | None) -> TranscriptSegment:
+        text = segment.text.strip()
+        raw_words = self._build_raw_words(segment)
+        words = (
+            align_chinese_words(text, raw_words)
+            if self._should_align_chinese_words(language)
+            else raw_words
+        )
+        return TranscriptSegment(
+            text=text,
+            start_seconds=float(segment.start),
+            end_seconds=float(segment.end),
+            raw_words=raw_words,
+            words=words,
+        )
+
+    def _build_raw_words(self, segment) -> tuple[TranscriptWord, ...]:
         if not self._word_timestamps:
             return ()
 
@@ -110,6 +122,9 @@ class LocalWhisperTranscriber:
                 )
             )
         return tuple(transcript_words)
+
+    def _should_align_chinese_words(self, language: str | None) -> bool:
+        return self._preset == "zh" or language == "zh" or self._language == "zh"
 
     @staticmethod
     def _optional_float(value) -> float | None:

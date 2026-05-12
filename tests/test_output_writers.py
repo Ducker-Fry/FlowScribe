@@ -33,6 +33,14 @@ def build_transcript(tmp_path: Path) -> Transcript:
                         confidence=0.91,
                     ),
                 ),
+                raw_words=(
+                    TranscriptWord(
+                        text="Hello",
+                        start_seconds=0.0,
+                        end_seconds=0.5,
+                        confidence=0.91,
+                    ),
+                ),
             ),
             TranscriptSegment(text="Second segment.", start_seconds=1.5, end_seconds=3.25),
         ),
@@ -77,6 +85,14 @@ def test_transcript_artifact_writer_writes_selected_formats(tmp_path: Path) -> N
     payload = json.loads((tmp_path / "lesson.json").read_text(encoding="utf-8"))
     assert payload["segments"][0]["start_seconds"] == 0.0
     assert payload["options"]["word_timestamps"] is True
+    assert payload["segments"][0]["raw_words"] == [
+        {
+            "text": "Hello",
+            "start_seconds": 0.0,
+            "end_seconds": 0.5,
+            "confidence": 0.91,
+        }
+    ]
     assert payload["segments"][0]["words"] == [
         {
             "text": "Hello",
