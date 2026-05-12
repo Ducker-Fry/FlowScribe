@@ -85,21 +85,44 @@ def test_transcript_artifact_writer_writes_selected_formats(tmp_path: Path) -> N
     assert "[00:00:00.000 - 00:00:01.500] Hello world." in markdown
 
     payload = json.loads((tmp_path / "lesson.json").read_text(encoding="utf-8"))
+    assert payload["schema_version"] == "1.1"
+    assert payload["generator"]["name"] == "FlowScribe"
+    assert payload["source"] == str(tmp_path / "lesson.mp4")
+    assert payload["source_info"]["name"] == "lesson.mp4"
+    assert payload["duration_seconds"] == 3.25
+    assert payload["segment_count"] == 2
+    assert payload["word_count"] == 1
+    assert payload["raw_word_count"] == 1
+    assert payload["segments"][0]["id"] == "seg-0001"
+    assert payload["segments"][0]["index"] == 1
+    assert payload["segments"][0]["start"] == 0.0
+    assert payload["segments"][0]["end"] == 1.5
+    assert payload["segments"][0]["duration_seconds"] == 1.5
     assert payload["segments"][0]["start_seconds"] == 0.0
     assert payload["options"]["word_timestamps"] is True
     assert payload["segments"][0]["raw_words"] == [
         {
+            "index": 1,
+            "word": "Hello",
             "text": "Hello",
+            "start": 0.0,
+            "end": 0.5,
             "start_seconds": 0.0,
             "end_seconds": 0.5,
+            "duration_seconds": 0.5,
             "confidence": 0.91,
         }
     ]
     assert payload["segments"][0]["words"] == [
         {
+            "index": 1,
+            "word": "Hello",
             "text": "Hello",
+            "start": 0.0,
+            "end": 0.5,
             "start_seconds": 0.0,
             "end_seconds": 0.5,
+            "duration_seconds": 0.5,
             "confidence": 0.91,
         }
     ]

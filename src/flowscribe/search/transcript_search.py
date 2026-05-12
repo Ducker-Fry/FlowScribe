@@ -81,8 +81,8 @@ def _search_segment(
             file=path,
             query=query,
             matched_text=text[index : index + len(query)],
-            start_seconds=_optional_float(segment.get("start_seconds")),
-            end_seconds=_optional_float(segment.get("end_seconds")),
+            start_seconds=_time_value(segment, "start"),
+            end_seconds=_time_value(segment, "end"),
             context=_context(text, index, len(query), context_chars=context_chars),
         )
         for index in _find_all(text, query)
@@ -104,13 +104,13 @@ def _search_timed_words(
     indexed_words = [
         word
         for word in words
-        if isinstance(word, dict) and str(word.get("text") or "").strip()
+        if isinstance(word, dict) and _word_text(word)
     ]
     if not indexed_words:
         return ()
 
     compact_query = _compact(query)
-    compact_text = "".join(_compact(str(word.get("text") or "")) for word in indexed_words)
+    compact_text = "".join(_compact(_word_text(word)) for word in indexed_words)
     hits: list[SearchHit] = []
     for compact_index in _find_all(compact_text, compact_query):
         start_word, end_word = _locate_word_span(indexed_words, compact_index, len(compact_query))
@@ -120,8 +120,8 @@ def _search_timed_words(
                 file=path,
                 query=query,
                 matched_text=query,
-                start_seconds=_optional_float(start_word.get("start_seconds")),
-                end_seconds=_optional_float(end_word.get("end_seconds")),
+                start_seconds=_time_value(start_word, "start"),
+                end_seconds=_time_value(end_word, "end"),
                 context=_context(
                     text,
                     text_index,
@@ -153,7 +153,7 @@ def _locate_word_span(words: list[dict], compact_index: int, length: int) -> tup
     span_end = compact_index + length
 
     for word in words:
-        word_length = len(_compact(str(word.get("text") or "")))
+        word_length = len(_compact(_word_text(word)))
         next_offset = offset + word_length
         if offset <= compact_index < next_offset:
             start_word = word
@@ -188,6 +188,17 @@ def _context(text: str, index: int, length: int, *, context_chars: int) -> str:
 
 def _compact(text: str) -> str:
     return "".join(text.split())
+
+
+def _word_text(word: dict) -> str:
+    return str(word.get("word") or word.get("text") or "").strip()
+
+
+def _time_value(item: dict, base_name: str) -> float | None:
+    value = item.get(base_name)
+    if value is None:
+        value = item.get(f"{base_name}_seconds")
+    return _optional_float(value)
 
 
 def _original_index_for_compact_index(text: str, compact_index: int) -> int:

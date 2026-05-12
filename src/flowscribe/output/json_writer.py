@@ -6,8 +6,11 @@ import json
 from pathlib import Path
 
 from flowscribe.core.errors import OutputError
-from flowscribe.core.models import Transcript, TranscriptWord
+from flowscribe import __version__
+from flowscribe.core.models import Transcript, TranscriptSegment, TranscriptWord
 from flowscribe.output.paths import OutputPathBuilder
+
+JSON_SCHEMA_VERSION = "1.1"
 
 
 class JsonTranscriptWriter:
@@ -27,11 +30,31 @@ class JsonTranscriptWriter:
 
     def _to_payload(self, transcript: Transcript) -> dict:
         options = transcript.options
+        source = transcript.source.path
+        segments = [
+            self._segment_to_payload(index, segment)
+            for index, segment in enumerate(transcript.segments, start=1)
+        ]
         return {
-            "source": str(transcript.source.path),
+            "schema_version": JSON_SCHEMA_VERSION,
+            "generator": {
+                "name": "FlowScribe",
+                "version": __version__,
+            },
+            "source": str(source),
+            "source_info": {
+                "path": str(source),
+                "name": source.name,
+                "stem": source.stem,
+                "suffix": source.suffix,
+            },
             "language": transcript.language,
             "model": transcript.model_name,
             "created_at": transcript.created_at.isoformat(timespec="seconds"),
+            "duration_seconds": self._duration_seconds(transcript),
+            "segment_count": len(transcript.segments),
+            "word_count": sum(len(segment.words) for segment in transcript.segments),
+            "raw_word_count": sum(len(segment.raw_words) for segment in transcript.segments),
             "options": None
             if options is None
             else {
@@ -45,22 +68,59 @@ class JsonTranscriptWriter:
                 "word_timestamps": options.word_timestamps,
             },
             "text": transcript.text,
-            "segments": [
-                {
-                    "text": segment.text,
-                    "start_seconds": segment.start_seconds,
-                    "end_seconds": segment.end_seconds,
-                    "raw_words": [self._word_to_payload(word) for word in segment.raw_words],
-                    "words": [self._word_to_payload(word) for word in segment.words],
-                }
-                for segment in transcript.segments
+            "segments": segments,
+        }
+
+    def _segment_to_payload(self, index: int, segment: TranscriptSegment) -> dict:
+        return {
+            "id": f"seg-{index:04d}",
+            "index": index,
+            "text": segment.text,
+            "start": segment.start_seconds,
+            "end": segment.end_seconds,
+            "start_seconds": segment.start_seconds,
+            "end_seconds": segment.end_seconds,
+            "duration_seconds": self._span_duration(segment.start_seconds, segment.end_seconds),
+            "raw_words": [
+                self._word_to_payload(word, index=word_index)
+                for word_index, word in enumerate(segment.raw_words, start=1)
+            ],
+            "words": [
+                self._word_to_payload(word, index=word_index)
+                for word_index, word in enumerate(segment.words, start=1)
             ],
         }
 
-    def _word_to_payload(self, word: TranscriptWord) -> dict:
+    def _word_to_payload(self, word: TranscriptWord, *, index: int) -> dict:
         return {
+            "index": index,
+            "word": word.text,
             "text": word.text,
+            "start": word.start_seconds,
+            "end": word.end_seconds,
             "start_seconds": word.start_seconds,
             "end_seconds": word.end_seconds,
+            "duration_seconds": self._span_duration(word.start_seconds, word.end_seconds),
             "confidence": word.confidence,
         }
+
+    def _duration_seconds(self, transcript: Transcript) -> float | None:
+        starts = [
+            segment.start_seconds
+            for segment in transcript.segments
+            if segment.start_seconds is not None
+        ]
+        ends = [
+            segment.end_seconds
+            for segment in transcript.segments
+            if segment.end_seconds is not None
+        ]
+        if not starts or not ends:
+            return None
+        return self._span_duration(min(starts), max(ends))
+
+    @staticmethod
+    def _span_duration(start: float | None, end: float | None) -> float | None:
+        if start is None or end is None:
+            return None
+        return max(0.0, end - start)

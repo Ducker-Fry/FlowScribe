@@ -203,3 +203,32 @@ def test_fixture_cross_word_keyword_uses_span_start_and_end_times() -> None:
     assert len(hits) == 1
     assert hits[0].start_seconds == 201.0
     assert hits[0].end_seconds == 202.4
+
+
+def test_search_accepts_stable_json_start_end_and_word_alias(tmp_path: Path) -> None:
+    path = tmp_path / "stable.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.1",
+                "segments": [
+                    {
+                        "text": "alpha keyword",
+                        "start": 5.0,
+                        "end": 8.0,
+                        "words": [
+                            {"word": "alpha", "start": 5.0, "end": 5.5},
+                            {"word": "keyword", "start": 5.5, "end": 6.2},
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    hits = search_transcript_file(path, "keyword")
+
+    assert len(hits) == 1
+    assert hits[0].start_seconds == 5.5
+    assert hits[0].end_seconds == 6.2

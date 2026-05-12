@@ -221,6 +221,7 @@ See [Packaging](docs/packaging.md) for release details.
 - [Packaging](docs/packaging.md)
 - [Release Automation](docs/release-automation.md)
 - [Architecture](docs/architecture.md)
+- [JSON Format](docs/json-format.md)
 - [Project Process](docs/project-process.md)
 - [Roadmap](docs/roadmap.md)
 - [Test Plan](docs/test-plan.md)
