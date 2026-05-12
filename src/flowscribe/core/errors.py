@@ -25,3 +25,7 @@ class OutputError(FlowScribeError):
 
 class SearchError(FlowScribeError):
     """Raised when transcript search input cannot be processed."""
+
+
+class DownloadError(FlowScribeError):
+    """Raised when remote media cannot be safely downloaded."""

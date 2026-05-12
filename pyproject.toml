@@ -25,6 +25,7 @@ classifiers = [
 dependencies = [
   "faster-whisper>=1.0",
   "jieba>=0.42",
+  "yt-dlp>=2025.1",
 ]
 
 [project.optional-dependencies]

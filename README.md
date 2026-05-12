@@ -7,11 +7,12 @@
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)](docs/packaging.md)
 [![Local First](https://img.shields.io/badge/local--first-transcription-green)](docs/ethics-and-boundaries.md)
 
-FlowScribe is a local-first command-line transcription tool that turns local audio and video files into raw TXT and Markdown transcripts. It is designed as an extensible open-source project: the current CLI focuses on local files, while the architecture leaves room for URL input, system audio capture, desktop GUI, and optional external speech-to-text providers.
+FlowScribe is a local-first command-line transcription tool that turns local media and public URL audio into readable transcripts. It is designed as an extensible open-source project: the current CLI focuses on local files and audio-first URL input, while the architecture leaves room for system audio capture, desktop GUI, and optional external speech-to-text providers.
 
 ## Features
 
 - Transcribe local audio and video files.
+- Transcribe public URLs with audio-first downloading/extraction.
 - Process a single file, multiple files, or a folder.
 - Recursively scan folders.
 - Prepare audio with `ffmpeg`.
@@ -29,7 +30,7 @@ FlowScribe is a local-first command-line transcription tool that turns local aud
 
 FlowScribe v0.1 focuses on:
 
-- Input: local audio/video files and folders.
+- Input: local audio/video files, folders, and public audio-first URLs.
 - Processing: normalize media into transcription-ready audio.
 - Transcription: local speech recognition.
 - Output: `.txt` and `.md` transcript files.
@@ -41,6 +42,7 @@ Out of scope for v0.1:
 - Database-backed library management.
 - Desktop GUI.
 - DRM circumvention or protected media extraction.
+- Default high-resolution video downloading from URL pages.
 
 ## Requirements
 
@@ -90,6 +92,16 @@ Transcribe a folder:
 ```powershell
 flowscribe transcribe "D:\media" -o outputs --recursive
 ```
+
+Transcribe a public URL with audio-first handling:
+
+```powershell
+flowscribe url "https://example.com/video-or-audio" -o outputs
+```
+
+URL input defaults to audio-first behavior. FlowScribe downloads or extracts audio for
+transcription and does not intentionally keep high-resolution video files. Use
+`--keep-media` only when you want to keep the downloaded/extracted intermediate media.
 
 Use the Chinese preset:
 
@@ -209,6 +221,15 @@ See [Packaging](docs/packaging.md) for release details.
 --format txt,md     Comma-separated output formats: txt,md,json,srt,vtt
 --overwrite         Replace existing transcript files
 --keep-audio        Keep prepared WAV files for debugging
+--keep-media        URL input only: keep downloaded/extracted media
+```
+
+URL safety options:
+
+```text
+--max-download-mb 2048     Limit downloaded audio/intermediate media size
+--max-duration 04:00:00    Limit remote media duration
+--download-timeout 30      Limit network/download operations
 ```
 
 `tiny` is useful for quick smoke tests. For real Chinese or mixed-language transcription, start with `small`; use `medium` or larger models when accuracy matters more than speed.
@@ -239,7 +260,7 @@ FlowScribe/
 |   |-- cli/               Command-line interface
 |   |-- config/            Runtime settings and presets
 |   |-- core/              Domain models, ports, pipeline, runner
-|   |-- input/             Local file discovery
+|   |-- input/             Local file discovery and URL source handling
 |   |-- media/             ffprobe/ffmpeg integration
 |   |-- output/            TXT and Markdown writers
 |   `-- transcription/     Local faster-whisper provider

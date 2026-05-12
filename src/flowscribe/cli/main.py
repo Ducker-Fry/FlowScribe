@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sys
 
 from flowscribe.cli.args import parse_args
@@ -10,10 +11,12 @@ from flowscribe.cli.doctor import run_doctor
 from flowscribe import __version__
 from flowscribe.config.settings import AppSettings
 from flowscribe.core.errors import FlowScribeError
+from flowscribe.core.models import MediaItem
 from flowscribe.input.file_filter import SUPPORTED_MEDIA_EXTENSIONS
 from flowscribe.core.pipeline import LocalTranscriptionPipeline
 from flowscribe.core.runner import JobRunner
 from flowscribe.input.local_source import LocalFileSource
+from flowscribe.input.url_downloader import UrlAudioDownloader
 from flowscribe.media.audio_extractor import FfmpegAudioExtractor
 from flowscribe.output.artifact_writer import TranscriptArtifactWriter
 from flowscribe.output.json_writer import JsonTranscriptWriter
@@ -33,6 +36,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_doctor(output_dir=options.output_dir, model_name=options.model_name)
     if options.command == "search":
         return run_search(options)
+    if options.command == "url":
+        return run_url(options)
     if options.command == "version":
         print(f"FlowScribe {__version__}")
         print(f"Python {sys.version.split()[0]}")
@@ -53,16 +58,35 @@ def main(argv: list[str] | None = None) -> int:
         print("  flowscribe transcribe video.mp4 --model small --preset zh")
         print("  flowscribe transcribe video.mp4 --model medium --language en")
         return 0
-    if options.command == "url":
-        print("URL input is planned but not implemented yet.")
-        print("Future example: flowscribe url \"https://example.com/video\" -o outputs")
-        return 2
     if options.command == "capture":
         print("System audio capture is planned but not implemented yet.")
         print("Future example: flowscribe capture --duration 10m -o outputs")
         return 2
 
-    settings = AppSettings.from_options(
+    settings = build_settings(options)
+
+    path_builder = OutputPathBuilder(overwrite=settings.overwrite)
+    input_source = LocalFileSource(options.inputs, recursive=settings.recursive)
+    pipeline = build_pipeline(settings, options.output_formats, options.timestamps, path_builder)
+    runner = JobRunner(input_source=input_source, pipeline=pipeline, progress=print)
+
+    try:
+        result = runner.run()
+    except FlowScribeError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+
+    print(f"Done. Succeeded: {result.succeeded}. Failed: {result.failed}.")
+    if result.failures:
+        print("Failures:")
+        for failure in result.failures:
+            print(f"- {failure.source}: {failure.message}")
+        return 1
+    return 0
+
+
+def build_settings(options) -> AppSettings:
+    return AppSettings.from_options(
         output_dir=options.output_dir,
         work_dir=options.work_dir,
         model_name=options.model_name,
@@ -78,9 +102,14 @@ def main(argv: list[str] | None = None) -> int:
         keep_audio=options.keep_audio,
     )
 
-    path_builder = OutputPathBuilder(overwrite=settings.overwrite)
-    input_source = LocalFileSource(options.inputs, recursive=settings.recursive)
-    pipeline = LocalTranscriptionPipeline(
+
+def build_pipeline(
+    settings: AppSettings,
+    output_formats: tuple[str, ...],
+    timestamps: bool,
+    path_builder: OutputPathBuilder,
+) -> LocalTranscriptionPipeline:
+    return LocalTranscriptionPipeline(
         media_preparer=FfmpegAudioExtractor(sample_rate=settings.sample_rate),
         transcriber=LocalWhisperTranscriber(
             model_name=settings.model_name,
@@ -93,11 +122,11 @@ def main(argv: list[str] | None = None) -> int:
             word_timestamps=settings.word_timestamps,
         ),
         artifact_writer=TranscriptArtifactWriter(
-            formats=options.output_formats,
+            formats=output_formats,
             txt_writer=TxtTranscriptWriter(path_builder),
             md_writer=MarkdownTranscriptWriter(
                 path_builder,
-                include_timestamps=options.timestamps,
+                include_timestamps=timestamps,
             ),
             json_writer=JsonTranscriptWriter(path_builder),
             srt_writer=SrtTranscriptWriter(path_builder),
@@ -107,20 +136,35 @@ def main(argv: list[str] | None = None) -> int:
         output_dir=settings.output_dir,
         keep_audio=settings.keep_audio,
     )
-    runner = JobRunner(input_source=input_source, pipeline=pipeline, progress=print)
+
+
+def run_url(options) -> int:
+    settings = build_settings(_UrlSettingsAdapter(options))
+    url_media_dir = settings.work_dir / ".url-media"
+    downloader = UrlAudioDownloader(
+        download_dir=url_media_dir,
+        max_bytes=options.max_download_mb * 1024 * 1024,
+        max_duration_seconds=options.max_duration_seconds,
+        timeout_seconds=options.download_timeout_seconds,
+    )
 
     try:
-        result = runner.run()
+        print("Downloading/extracting remote audio...")
+        download = downloader.download_audio(options.url)
+        print(f"Remote audio ready: {download.path}")
+        path_builder = OutputPathBuilder(overwrite=settings.overwrite)
+        pipeline = build_pipeline(settings, options.output_formats, options.timestamps, path_builder)
+        artifacts = pipeline.process(MediaItem(path=download.path))
     except FlowScribeError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 2
+    finally:
+        if "download" in locals() and not options.keep_media:
+            shutil.rmtree(download.cleanup_dir, ignore_errors=True)
 
-    print(f"Done. Succeeded: {result.succeeded}. Failed: {result.failed}.")
-    if result.failures:
-        print("Failures:")
-        for failure in result.failures:
-            print(f"- {failure.source}: {failure.message}")
-        return 1
+    for path in artifacts.paths:
+        print(f"Wrote: {path}")
+    print("Done. Succeeded: 1. Failed: 0.")
     return 0
 
 
@@ -182,6 +226,23 @@ def _search_payload(options, hits) -> dict:
             for hit in hits
         ],
     }
+
+
+class _UrlSettingsAdapter:
+    def __init__(self, options) -> None:
+        self.output_dir = options.output_dir
+        self.work_dir = options.work_dir
+        self.model_name = options.model_name
+        self.language = options.language
+        self.preset = options.preset
+        self.task = options.task
+        self.beam_size = options.beam_size
+        self.vad_filter = options.vad_filter
+        self.initial_prompt = options.initial_prompt
+        self.word_timestamps = options.word_timestamps
+        self.recursive = False
+        self.overwrite = options.overwrite
+        self.keep_audio = options.keep_audio
 
 
 if __name__ == "__main__":
