@@ -1,0 +1,17 @@
+{
+  "segments": [
+    {
+      "text": "\u8fd9\u91cc\u6211\u4eec\u8ba8\u8bbaAI\u6a21\u578b\u7684\u8bad\u7ec3\u6d41\u7a0b\u3002",
+      "start_seconds": 40.0,
+      "end_seconds": 48.0,
+      "words": [
+        { "text": "\u8fd9\u91cc", "start_seconds": 40.0, "end_seconds": 40.5 },
+        { "text": "\u6211\u4eec", "start_seconds": 40.5, "end_seconds": 41.0 },
+        { "text": "\u8ba8\u8bba", "start_seconds": 41.0, "end_seconds": 41.6 },
+        { "text": "AI", "start_seconds": 41.6, "end_seconds": 42.0 },
+        { "text": "\u6a21\u578b", "start_seconds": 42.0, "end_seconds": 42.8 },
+        { "text": "\u7684\u8bad\u7ec3\u6d41\u7a0b", "start_seconds": 42.8, "end_seconds": 45.0 }
+      ]
+    }
+  ]
+}

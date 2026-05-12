@@ -1,0 +1,16 @@
+{
+  "segments": [
+    {
+      "text": "\u8fd9\u4e00\u6bb5\u8bb2\u6df1\u5ea6\u5b66\u4e60\u7684\u53d1\u5c55\u3002",
+      "start_seconds": 200.0,
+      "end_seconds": 208.0,
+      "words": [
+        { "text": "\u8fd9\u4e00\u6bb5", "start_seconds": 200.0, "end_seconds": 200.8 },
+        { "text": "\u8bb2", "start_seconds": 200.8, "end_seconds": 201.0 },
+        { "text": "\u6df1\u5ea6", "start_seconds": 201.0, "end_seconds": 201.7 },
+        { "text": "\u5b66\u4e60", "start_seconds": 201.7, "end_seconds": 202.4 },
+        { "text": "\u7684\u53d1\u5c55", "start_seconds": 202.4, "end_seconds": 204.0 }
+      ]
+    }
+  ]
+}

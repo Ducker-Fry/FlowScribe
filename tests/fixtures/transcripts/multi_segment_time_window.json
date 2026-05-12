@@ -1,0 +1,8 @@
+{
+  "segments": [
+    { "text": "before window keyword", "start_seconds": 90.0, "end_seconds": 95.0, "words": [] },
+    { "text": "inside window keyword one", "start_seconds": 610.0, "end_seconds": 615.0, "words": [] },
+    { "text": "inside window keyword two", "start_seconds": 900.0, "end_seconds": 905.0, "words": [] },
+    { "text": "after window keyword", "start_seconds": 1900.0, "end_seconds": 1905.0, "words": [] }
+  ]
+}

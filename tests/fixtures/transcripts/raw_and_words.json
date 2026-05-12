@@ -1,0 +1,22 @@
+{
+  "segments": [
+    {
+      "text": "\u6211\u559c\u6b22\u559d\u725b\u5976\u3002",
+      "start_seconds": 0.0,
+      "end_seconds": 2.0,
+      "raw_words": [
+        { "text": "\u6211", "start_seconds": 0.0, "end_seconds": 0.1, "confidence": 0.9 },
+        { "text": "\u559c\u6b22", "start_seconds": 0.1, "end_seconds": 0.4, "confidence": 0.95 },
+        { "text": "\u559d", "start_seconds": 0.4, "end_seconds": 0.5, "confidence": 0.92 },
+        { "text": "\u725b", "start_seconds": 0.5, "end_seconds": 0.7, "confidence": 0.8 },
+        { "text": "\u5976", "start_seconds": 0.7, "end_seconds": 0.9, "confidence": 0.88 }
+      ],
+      "words": [
+        { "text": "\u6211", "start_seconds": 0.0, "end_seconds": 0.1, "confidence": 0.9 },
+        { "text": "\u559c\u6b22", "start_seconds": 0.1, "end_seconds": 0.4, "confidence": 0.95 },
+        { "text": "\u559d", "start_seconds": 0.4, "end_seconds": 0.5, "confidence": 0.92 },
+        { "text": "\u725b\u5976", "start_seconds": 0.5, "end_seconds": 0.9, "confidence": 0.84 }
+      ]
+    }
+  ]
+}

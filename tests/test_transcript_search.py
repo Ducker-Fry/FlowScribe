@@ -3,6 +3,8 @@ from pathlib import Path
 
 from flowscribe.search.transcript_search import search_transcript_file
 
+FIXTURES = Path(__file__).parent / "fixtures" / "transcripts"
+
 
 def test_search_transcript_uses_word_timestamps(tmp_path: Path) -> None:
     machine_learning = "\u673a\u5668\u5b66\u4e60"
@@ -140,3 +142,64 @@ def _segment(text: str, start: float, end: float) -> dict:
         "end_seconds": end,
         "words": [],
     }
+
+
+def test_fixture_chinese_repeated_keyword_returns_all_matches() -> None:
+    query = "\u673a\u5668\u5b66\u4e60"
+
+    hits = search_transcript_file(FIXTURES / "chinese_repeated_keyword.json", query)
+
+    assert len(hits) == 3
+    assert [hit.start_seconds for hit in hits] == [11.4, 121.0, 301.0]
+    assert all(query in hit.context for hit in hits)
+
+
+def test_fixture_mixed_language_keyword_spans_english_and_chinese_words() -> None:
+    hits = search_transcript_file(FIXTURES / "mixed_language_keyword.json", "AI\u6a21\u578b")
+
+    assert len(hits) == 1
+    assert hits[0].start_seconds == 41.6
+    assert hits[0].end_seconds == 42.8
+
+
+def test_fixture_legacy_no_words_uses_segment_time_range() -> None:
+    hits = search_transcript_file(FIXTURES / "legacy_no_words.json", "keyword")
+
+    assert len(hits) == 1
+    assert hits[0].start_seconds == 50.0
+    assert hits[0].end_seconds == 60.0
+
+
+def test_fixture_raw_and_aligned_words_uses_natural_word_timing() -> None:
+    hits = search_transcript_file(FIXTURES / "raw_and_words.json", "\u725b\u5976")
+
+    assert len(hits) == 1
+    assert hits[0].start_seconds == 0.5
+    assert hits[0].end_seconds == 0.9
+
+
+def test_fixture_long_transcript_limit_keeps_first_results() -> None:
+    hits = search_transcript_file(FIXTURES / "long_transcript.json", "keyword", limit=5)
+
+    assert len(hits) == 5
+    assert [hit.start_seconds for hit in hits] == [60.0, 120.0, 180.0, 240.0, 300.0]
+
+
+def test_fixture_multi_segment_time_window_filters_matches() -> None:
+    hits = search_transcript_file(
+        FIXTURES / "multi_segment_time_window.json",
+        "keyword",
+        after_seconds=600.0,
+        before_seconds=1800.0,
+    )
+
+    assert len(hits) == 2
+    assert [hit.start_seconds for hit in hits] == [610.0, 900.0]
+
+
+def test_fixture_cross_word_keyword_uses_span_start_and_end_times() -> None:
+    hits = search_transcript_file(FIXTURES / "cross_word_keyword.json", "\u6df1\u5ea6\u5b66\u4e60")
+
+    assert len(hits) == 1
+    assert hits[0].start_seconds == 201.0
+    assert hits[0].end_seconds == 202.4
