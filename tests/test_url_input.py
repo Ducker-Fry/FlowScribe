@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 import sys
 from types import ModuleType
 
@@ -141,7 +142,11 @@ def test_page_url_requests_audio_only_with_ytdlp(monkeypatch, tmp_path: Path) ->
     class FakeYoutubeDL:
         def __init__(self, options: dict) -> None:
             captured_options.update(options)
-            self._output = Path(str(options["outtmpl"]).replace("%(ext)s", "m4a"))
+            self._output = (
+                Path(str(options["outtmpl"]).replace("%(ext)s", "m4a"))
+                if "outtmpl" in options
+                else None
+            )
 
         def __enter__(self):
             return self
@@ -150,9 +155,19 @@ def test_page_url_requests_audio_only_with_ytdlp(monkeypatch, tmp_path: Path) ->
             return None
 
         def extract_info(self, url: str, download: bool):
-            return {"duration": 30}
+            return {
+                "duration": 30,
+                "formats": [
+                    {
+                        "url": "https://cdn.example.com/audio.m4a",
+                        "acodec": "aac",
+                        "vcodec": "none",
+                    }
+                ],
+            }
 
         def download(self, urls: list[str]) -> None:
+            assert self._output is not None
             self._output.write_bytes(b"audio")
 
     fake_ytdlp = ModuleType("yt_dlp")
@@ -177,3 +192,72 @@ def test_page_url_requests_audio_only_with_ytdlp(monkeypatch, tmp_path: Path) ->
 
     assert captured_options["format"] == "bestaudio"
     assert result.path.name == "remote-audio.m4a"
+
+
+def test_page_url_extracts_audio_from_lowest_combined_stream(monkeypatch, tmp_path: Path) -> None:
+    class FakeYoutubeDL:
+        def __init__(self, options: dict) -> None:
+            self.options = options
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback) -> None:
+            return None
+
+        def extract_info(self, url: str, download: bool):
+            return {
+                "duration": 30,
+                "formats": [
+                    {
+                        "url": "https://cdn.example.com/high.m3u8",
+                        "acodec": "unknown",
+                        "vcodec": "unknown",
+                        "filesize_approx": 1000,
+                        "tbr": 1200,
+                        "width": 1920,
+                        "height": 1080,
+                    },
+                    {
+                        "url": "https://cdn.example.com/low.m3u8",
+                        "acodec": "unknown",
+                        "vcodec": "unknown",
+                        "filesize_approx": 100,
+                        "tbr": 300,
+                        "width": 480,
+                        "height": 270,
+                    },
+                ],
+            }
+
+        def download(self, urls: list[str]) -> None:
+            raise AssertionError("combined video should not be downloaded by yt-dlp")
+
+    def fake_run(command, capture_output, text, timeout, check):
+        assert command[command.index("-i") + 1] == "https://cdn.example.com/low.m3u8"
+        Path(command[-1]).write_bytes(b"audio")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    fake_ytdlp = ModuleType("yt_dlp")
+    fake_ytdlp.YoutubeDL = FakeYoutubeDL
+    fake_utils = ModuleType("yt_dlp.utils")
+    fake_utils.DownloadError = RuntimeError
+    monkeypatch.setitem(sys.modules, "yt_dlp", fake_ytdlp)
+    monkeypatch.setitem(sys.modules, "yt_dlp.utils", fake_utils)
+    monkeypatch.setattr(
+        "flowscribe.input.url_downloader.validate_public_http_url",
+        lambda url: None,
+    )
+    monkeypatch.setattr("subprocess.run", fake_run)
+    downloader = UrlAudioDownloader(
+        download_dir=tmp_path,
+        max_bytes=10,
+        max_duration_seconds=60,
+        timeout_seconds=5,
+    )
+    monkeypatch.setattr(downloader, "_ensure_duration", lambda path_or_url: None)
+
+    result = downloader.download_audio("https://example.com/watch?id=123")
+
+    assert result.path.name == "remote-audio.m4a"
+    assert result.path.read_bytes() == b"audio"

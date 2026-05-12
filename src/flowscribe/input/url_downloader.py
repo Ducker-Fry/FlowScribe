@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -121,26 +122,43 @@ class UrlAudioDownloader:
         except ImportError as exc:
             raise DownloadError("yt-dlp is not installed. Run `python -m pip install -e .`.") from exc
 
-        output_template = str(item_dir / "remote-audio.%(ext)s")
-        options = {
-            # Strictly request audio-only media for page URLs. If a site cannot
-            # provide an audio stream, fail clearly instead of downloading video.
-            "format": "bestaudio",
-            "outtmpl": output_template,
+        base_options = {
             "noplaylist": True,
             "socket_timeout": self._timeout_seconds,
             "retries": 1,
             "quiet": True,
             "no_warnings": True,
+        }
+        try:
+            with YoutubeDL(base_options) as ydl:
+                info = ydl.extract_info(url, download=False)
+        except YtDlpDownloadError as exc:
+            raise DownloadError(f"yt-dlp failed to inspect URL media: {exc}") from exc
+
+        duration = info.get("duration")
+        if duration is not None and float(duration) > self._max_duration_seconds:
+            raise DownloadError("Remote media is longer than the configured duration limit.")
+
+        if not self._has_audio_only_format(info):
+            stream_url = self._select_smallest_combined_stream_url(info)
+            if stream_url is None:
+                raise DownloadError(
+                    "No audio-only stream or safe combined stream was found for this URL."
+                )
+            validate_public_http_url(stream_url)
+            return self._extract_page_stream_audio(stream_url, item_dir)
+
+        output_template = str(item_dir / "remote-audio.%(ext)s")
+        options = {
+            **base_options,
+            # Strictly request audio-only media when the page provides it.
+            "format": "bestaudio",
+            "outtmpl": output_template,
             "max_filesize": self._max_bytes,
             "progress_hooks": [self._yt_dlp_progress_hook],
         }
         try:
             with YoutubeDL(options) as ydl:
-                info = ydl.extract_info(url, download=False)
-                duration = info.get("duration")
-                if duration is not None and float(duration) > self._max_duration_seconds:
-                    raise DownloadError("Remote media is longer than the configured duration limit.")
                 ydl.download([url])
         except YtDlpDownloadError as exc:
             raise DownloadError(f"yt-dlp failed to download audio: {exc}") from exc
@@ -149,6 +167,36 @@ class UrlAudioDownloader:
         if not files:
             raise DownloadError("yt-dlp did not produce an audio file.")
         path = max(files, key=lambda candidate: candidate.stat().st_size)
+        self._ensure_size(path)
+        self._ensure_duration(path)
+        return path
+
+    def _extract_page_stream_audio(self, stream_url: str, item_dir: Path) -> Path:
+        path = item_dir / "remote-audio.m4a"
+        command = [
+            self._ffmpeg_executable,
+            "-y",
+            "-timeout",
+            str(self._timeout_seconds * 1_000_000),
+            "-i",
+            stream_url,
+            "-t",
+            str(self._max_duration_seconds),
+            "-vn",
+            "-c:a",
+            "aac",
+            str(path),
+        ]
+        try:
+            process_timeout = self._max_duration_seconds + self._timeout_seconds
+            subprocess.run(command, capture_output=True, text=True, timeout=process_timeout, check=True)
+        except FileNotFoundError as exc:
+            raise DownloadError("ffmpeg was not found. Install ffmpeg and add it to PATH.") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise DownloadError("Timed out while extracting page audio stream.") from exc
+        except subprocess.CalledProcessError as exc:
+            message = exc.stderr.strip() or exc.stdout.strip() or str(exc)
+            raise DownloadError(f"Could not extract page audio stream: {message}") from exc
         self._ensure_size(path)
         self._ensure_duration(path)
         return path
@@ -203,6 +251,38 @@ class UrlAudioDownloader:
     def _safe_id(url: str) -> str:
         digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
         return f"url-{digest}"
+
+    @staticmethod
+    def _has_audio_only_format(info: dict) -> bool:
+        return any(
+            item.get("url")
+            and item.get("acodec") not in {None, "none"}
+            and item.get("vcodec") in {None, "none"}
+            for item in info.get("formats") or []
+        )
+
+    @staticmethod
+    def _select_smallest_combined_stream_url(info: dict) -> str | None:
+        formats = info.get("formats") or []
+        candidates = [
+            item
+            for item in formats
+            if item.get("url")
+            and item.get("acodec") not in {None, "none"}
+            and item.get("vcodec") not in {None, "none"}
+        ]
+        if not candidates and info.get("url"):
+            return str(info["url"])
+        if not candidates:
+            return None
+
+        def sort_key(item: dict) -> tuple[float, float, float]:
+            size = item.get("filesize") or item.get("filesize_approx") or math.inf
+            bitrate = item.get("tbr") or math.inf
+            pixels = (item.get("width") or math.inf) * (item.get("height") or math.inf)
+            return float(size), float(bitrate), float(pixels)
+
+        return str(min(candidates, key=sort_key)["url"])
 
 
 class _SafeRedirectHandler(HTTPRedirectHandler):
