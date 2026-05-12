@@ -23,6 +23,7 @@ def test_zh_preset_applies_language_vad_and_prompt(tmp_path: Path) -> None:
     assert settings.language == "zh"
     assert settings.vad_filter is True
     assert settings.initial_prompt == ZH_INITIAL_PROMPT
+    assert "简体中文" in settings.initial_prompt
     assert settings.word_timestamps is True
 
 

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
-from flowscribe.core.models import MediaItem, OutputArtifacts
+from flowscribe.core.models import MediaItem, OutputArtifacts, Transcript
 from flowscribe.core.ports import ArtifactWriter, MediaPreparer, Transcriber
 
 
@@ -18,6 +19,7 @@ class LocalTranscriptionPipeline:
         work_dir: Path,
         output_dir: Path,
         keep_audio: bool = False,
+        transcript_normalizer: Callable[[Transcript], Transcript] | None = None,
     ) -> None:
         self._media_preparer = media_preparer
         self._transcriber = transcriber
@@ -25,12 +27,15 @@ class LocalTranscriptionPipeline:
         self._work_dir = work_dir
         self._output_dir = output_dir
         self._keep_audio = keep_audio
+        self._transcript_normalizer = transcript_normalizer
 
     def process(self, item: MediaItem) -> OutputArtifacts:
         item_work_dir = self._work_dir / item.path.stem
         prepared_audio = self._media_preparer.prepare(item, item_work_dir)
         try:
             transcript = self._transcriber.transcribe(prepared_audio)
+            if self._transcript_normalizer is not None:
+                transcript = self._transcript_normalizer(transcript)
             return self._artifact_writer.write_all(transcript, self._output_dir)
         finally:
             if not self._keep_audio:

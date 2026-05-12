@@ -43,3 +43,32 @@ def test_pipeline_processes_item_and_removes_prepared_audio(tmp_path: Path) -> N
     assert artifacts.txt_path is not None
     assert artifacts.txt_path.read_text(encoding="utf-8") == "transcribed"
     assert not (tmp_path / "work" / "sample" / "prepared.wav").exists()
+
+
+def test_pipeline_applies_transcript_normalizer(tmp_path: Path) -> None:
+    item = MediaItem(path=tmp_path / "sample.mp4")
+
+    def normalize(transcript: Transcript) -> Transcript:
+        return Transcript(
+            source=transcript.source,
+            segments=(TranscriptSegment(text="normalized"),),
+            language=transcript.language,
+            model_name=transcript.model_name,
+            options=transcript.options,
+            created_at=transcript.created_at,
+        )
+
+    pipeline = LocalTranscriptionPipeline(
+        media_preparer=FakePreparer(),
+        transcriber=FakeTranscriber(),
+        artifact_writer=FakeArtifactWriter(),
+        work_dir=tmp_path / "work",
+        output_dir=tmp_path / "out",
+        keep_audio=False,
+        transcript_normalizer=normalize,
+    )
+
+    artifacts = pipeline.process(item)
+
+    assert artifacts.txt_path is not None
+    assert artifacts.txt_path.read_text(encoding="utf-8") == "normalized"

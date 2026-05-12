@@ -18,6 +18,7 @@ from flowscribe.core.runner import JobRunner
 from flowscribe.input.local_source import LocalFileSource
 from flowscribe.input.url_downloader import UrlAudioDownloader
 from flowscribe.media.audio_extractor import FfmpegAudioExtractor
+from flowscribe.nlp.script_converter import simplify_chinese_transcript
 from flowscribe.output.artifact_writer import TranscriptArtifactWriter
 from flowscribe.output.json_writer import JsonTranscriptWriter
 from flowscribe.output.md_writer import MarkdownTranscriptWriter
@@ -135,6 +136,11 @@ def build_pipeline(
         work_dir=settings.work_dir,
         output_dir=settings.output_dir,
         keep_audio=settings.keep_audio,
+        transcript_normalizer=(
+            simplify_chinese_transcript
+            if settings.language == "zh" or settings.preset == "zh"
+            else None
+        ),
     )
 
 
