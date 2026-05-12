@@ -69,3 +69,74 @@ def test_search_transcript_falls_back_to_segment_timestamps(tmp_path: Path) -> N
     assert hits[0].context.startswith("...")
     assert hits[0].context.endswith("...")
     assert "keyword" in hits[0].context
+
+
+def test_search_transcript_applies_limit_and_time_filters(tmp_path: Path) -> None:
+    query = "keyword"
+    path = tmp_path / "lesson.json"
+    path.write_text(
+        json.dumps(
+            {
+                "segments": [
+                    _segment("early keyword", 10.0, 11.0),
+                    _segment("middle keyword", 20.0, 21.0),
+                    _segment("late keyword", 30.0, 31.0),
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    hits = search_transcript_file(
+        path,
+        query,
+        limit=1,
+        after_seconds=15.0,
+        before_seconds=25.0,
+    )
+
+    assert len(hits) == 1
+    assert hits[0].context == "middle keyword"
+    assert hits[0].start_seconds == 20.0
+
+
+def test_search_transcript_context_tracks_repeated_word_hits(tmp_path: Path) -> None:
+    query = "keyword"
+    path = tmp_path / "lesson.json"
+    path.write_text(
+        json.dumps(
+            {
+                "segments": [
+                    {
+                        "text": f"first {query}. second {query}.",
+                        "start_seconds": 0.0,
+                        "end_seconds": 3.0,
+                        "words": [
+                            {"text": "first", "start_seconds": 0.0, "end_seconds": 0.3},
+                            {"text": query, "start_seconds": 0.3, "end_seconds": 0.8},
+                            {"text": "second", "start_seconds": 1.5, "end_seconds": 1.9},
+                            {"text": query, "start_seconds": 2.0, "end_seconds": 2.5},
+                        ],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    hits = search_transcript_file(path, query, context_chars=4)
+
+    assert len(hits) == 2
+    assert hits[0].start_seconds == 0.3
+    assert "rst keyword." in hits[0].context
+    assert hits[1].start_seconds == 2.0
+    assert "ond keyword." in hits[1].context
+
+
+def _segment(text: str, start: float, end: float) -> dict:
+    return {
+        "text": text,
+        "start_seconds": start,
+        "end_seconds": end,
+        "words": [],
+    }

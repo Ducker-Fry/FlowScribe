@@ -19,7 +19,15 @@ class SearchHit:
     context: str
 
 
-def search_transcript_file(path: Path, query: str, *, context_chars: int = 24) -> tuple[SearchHit, ...]:
+def search_transcript_file(
+    path: Path,
+    query: str,
+    *,
+    context_chars: int = 24,
+    limit: int | None = None,
+    after_seconds: float | None = None,
+    before_seconds: float | None = None,
+) -> tuple[SearchHit, ...]:
     query = query.strip()
     if not query:
         raise SearchError("Search query cannot be empty.")
@@ -42,7 +50,15 @@ def search_transcript_file(path: Path, query: str, *, context_chars: int = 24) -
         if not isinstance(segment, dict):
             continue
         hits.extend(_search_segment(path, query, segment, context_chars=context_chars))
-    return tuple(hits)
+
+    filtered_hits = [
+        hit
+        for hit in hits
+        if _is_in_time_window(hit, after_seconds=after_seconds, before_seconds=before_seconds)
+    ]
+    if limit is not None:
+        filtered_hits = filtered_hits[:limit]
+    return tuple(filtered_hits)
 
 
 def _search_segment(
@@ -98,7 +114,7 @@ def _search_timed_words(
     hits: list[SearchHit] = []
     for compact_index in _find_all(compact_text, compact_query):
         start_word, end_word = _locate_word_span(indexed_words, compact_index, len(compact_query))
-        text_index = text.find(query)
+        text_index = _original_index_for_compact_index(text, compact_index)
         hits.append(
             SearchHit(
                 file=path,
@@ -108,13 +124,26 @@ def _search_timed_words(
                 end_seconds=_optional_float(end_word.get("end_seconds")),
                 context=_context(
                     text,
-                    text_index if text_index >= 0 else 0,
+                    text_index,
                     len(query),
                     context_chars=context_chars,
                 ),
             )
         )
     return tuple(hits)
+
+
+def _is_in_time_window(
+    hit: SearchHit,
+    *,
+    after_seconds: float | None,
+    before_seconds: float | None,
+) -> bool:
+    if after_seconds is not None and hit.end_seconds is not None and hit.end_seconds < after_seconds:
+        return False
+    if before_seconds is not None and hit.start_seconds is not None and hit.start_seconds > before_seconds:
+        return False
+    return True
 
 
 def _locate_word_span(words: list[dict], compact_index: int, length: int) -> tuple[dict, dict]:
@@ -159,6 +188,17 @@ def _context(text: str, index: int, length: int, *, context_chars: int) -> str:
 
 def _compact(text: str) -> str:
     return "".join(text.split())
+
+
+def _original_index_for_compact_index(text: str, compact_index: int) -> int:
+    compact_offset = 0
+    for index, char in enumerate(text):
+        if char.isspace():
+            continue
+        if compact_offset == compact_index:
+            return index
+        compact_offset += 1
+    return 0
 
 
 def _optional_float(value) -> float | None:

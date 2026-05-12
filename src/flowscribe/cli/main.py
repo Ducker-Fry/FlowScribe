@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 
 from flowscribe.cli.args import parse_args
@@ -127,10 +128,17 @@ def run_search(options) -> int:
             options.transcript,
             options.query,
             context_chars=options.context_chars,
+            limit=options.limit,
+            after_seconds=options.after_seconds,
+            before_seconds=options.before_seconds,
         )
     except FlowScribeError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 2
+
+    if options.json_output:
+        print(json.dumps(_search_payload(options, hits), ensure_ascii=False, indent=2))
+        return 0 if hits else 1
 
     if not hits:
         print(f"No matches found for: {options.query}")
@@ -145,6 +153,33 @@ def run_search(options) -> int:
         if index < len(hits):
             print("")
     return 0
+
+
+def _search_payload(options, hits) -> dict:
+    return {
+        "transcript": str(options.transcript),
+        "query": options.query,
+        "filters": {
+            "limit": options.limit,
+            "after_seconds": options.after_seconds,
+            "before_seconds": options.before_seconds,
+            "context_chars": options.context_chars,
+        },
+        "count": len(hits),
+        "hits": [
+            {
+                "file": str(hit.file),
+                "query": hit.query,
+                "matched_text": hit.matched_text,
+                "start_seconds": hit.start_seconds,
+                "end_seconds": hit.end_seconds,
+                "start": format_timestamp(hit.start_seconds),
+                "end": format_timestamp(hit.end_seconds),
+                "context": hit.context,
+            }
+            for hit in hits
+        ],
+    }
 
 
 if __name__ == "__main__":

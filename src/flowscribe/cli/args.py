@@ -42,6 +42,10 @@ class SearchOptions:
     transcript: Path
     query: str
     context_chars: int
+    limit: int | None
+    after_seconds: float | None
+    before_seconds: float | None
+    json_output: bool
 
 
 @dataclass(frozen=True)
@@ -226,16 +230,50 @@ def parse_search_args(argv: list[str] | None = None) -> SearchOptions:
     parser.add_argument("query", help="Keyword or phrase to locate.")
     parser.add_argument(
         "--context-chars",
-        type=int,
+        type=non_negative_int,
         default=24,
         help="Number of context characters to show around each hit. Default: 24",
     )
+    parser.add_argument(
+        "--limit",
+        type=positive_int,
+        default=None,
+        help="Maximum number of matches to display.",
+    )
+    parser.add_argument(
+        "--after",
+        type=parse_time_value,
+        default=None,
+        help="Only include matches after this time, such as 00:10:00.",
+    )
+    parser.add_argument(
+        "--before",
+        type=parse_time_value,
+        default=None,
+        help="Only include matches before this time, such as 00:30:00.",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        dest="json_output",
+        help="Write search results as JSON for GUI or automation use.",
+    )
     namespace = parser.parse_args(argv)
+    if (
+        namespace.after is not None
+        and namespace.before is not None
+        and namespace.after > namespace.before
+    ):
+        parser.error("--after must be earlier than or equal to --before.")
     return SearchOptions(
         command="search",
         transcript=namespace.transcript,
         query=namespace.query,
         context_chars=namespace.context_chars,
+        limit=namespace.limit,
+        after_seconds=namespace.after,
+        before_seconds=namespace.before,
+        json_output=namespace.json_output,
     )
 
 
@@ -269,3 +307,38 @@ def parse_output_formats(value: str) -> tuple[str, ...]:
             f"Unsupported output format(s): {joined}. Supported: {supported_joined}"
         )
     return formats
+
+
+def positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("Value must be greater than zero.")
+    return parsed
+
+
+def non_negative_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("Value cannot be negative.")
+    return parsed
+
+
+def parse_time_value(value: str) -> float:
+    parts = value.strip().split(":")
+    if not parts or len(parts) > 3:
+        raise argparse.ArgumentTypeError("Time must be SS, MM:SS, or HH:MM:SS.")
+
+    try:
+        numbers = [float(part) for part in parts]
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("Time must contain only numbers and ':'.") from exc
+
+    if any(number < 0 for number in numbers):
+        raise argparse.ArgumentTypeError("Time cannot be negative.")
+    if len(numbers) == 1:
+        return numbers[0]
+    if len(numbers) == 2:
+        minutes, seconds = numbers
+        return minutes * 60 + seconds
+    hours, minutes, seconds = numbers
+    return hours * 3600 + minutes * 60 + seconds

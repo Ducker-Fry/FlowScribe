@@ -141,6 +141,18 @@ Search a transcript JSON and locate a keyword:
 flowscribe search outputs\lecture.json "机器学习"
 ```
 
+Limit and filter search results:
+
+```powershell
+flowscribe search outputs\lecture.json "机器学习" --limit 10 --after 00:10:00 --before 00:30:00 --context-chars 50
+```
+
+Write machine-readable search results:
+
+```powershell
+flowscribe search outputs\lecture.json "机器学习" --json
+```
+
 When word timestamps are available, search results use word-level timing. Otherwise,
 FlowScribe falls back to the matched segment's timestamp range.
 
