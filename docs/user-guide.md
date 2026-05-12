@@ -121,13 +121,14 @@ The Chinese preset currently applies:
 
 ```text
 language = zh
-vad_filter = true
+vad_filter = unchanged; enable it explicitly with --vad-filter when useful
 beam_size = 5
 task = transcribe
-initial_prompt = preserve Chinese and English as spoken, do not translate
+initial_prompt = use Simplified Chinese, preserve Chinese and English as spoken, do not translate
 ```
 
 For mixed Chinese and English media, try automatic detection first. If the result is poor, use `--preset zh` or provide a custom prompt.
+If the beginning of a video is missing or inaccurate, try without `--vad-filter`; some news clips and videos with background music can be over-filtered by VAD.
 
 ### 5. Model Choice
 

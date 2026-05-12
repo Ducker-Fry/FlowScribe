@@ -233,6 +233,7 @@ URL safety options:
 ```
 
 `tiny` is useful for quick smoke tests. For real Chinese or mixed-language transcription, start with `small`; use `medium` or larger models when accuracy matters more than speed.
+If the beginning of a video is missing or inaccurate, retry without `--vad-filter`; VAD can over-filter news intros, music beds, or low-volume openings.
 
 ## Documentation
 

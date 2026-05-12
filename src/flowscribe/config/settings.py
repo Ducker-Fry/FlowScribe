@@ -59,7 +59,6 @@ class AppSettings:
 
         if preset == "zh":
             effective_language = effective_language or "zh"
-            effective_vad_filter = True
             effective_initial_prompt = effective_initial_prompt or ZH_INITIAL_PROMPT
 
         return cls(
