@@ -22,6 +22,7 @@ from flowscribe.output.paths import OutputPathBuilder
 from flowscribe.output.srt_writer import SrtTranscriptWriter
 from flowscribe.output.time_format import format_timestamp
 from flowscribe.output.txt_writer import TxtTranscriptWriter
+from flowscribe.output.vtt_writer import VttTranscriptWriter
 from flowscribe.search.transcript_search import search_transcript_file
 from flowscribe.transcription.local_whisper import LocalWhisperTranscriber
 
@@ -100,6 +101,7 @@ def main(argv: list[str] | None = None) -> int:
             ),
             json_writer=JsonTranscriptWriter(path_builder),
             srt_writer=SrtTranscriptWriter(path_builder),
+            vtt_writer=VttTranscriptWriter(path_builder),
         ),
         work_dir=settings.work_dir,
         output_dir=settings.output_dir,

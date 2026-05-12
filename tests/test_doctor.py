@@ -28,7 +28,7 @@ def test_parse_transcribe_subcommand_args() -> None:
             "-o",
             "out",
             "--format",
-            "txt,md,json,srt",
+            "txt,md,json,srt,vtt",
             "--word-timestamps",
         ]
     )
@@ -37,7 +37,7 @@ def test_parse_transcribe_subcommand_args() -> None:
     assert options.command == "transcribe"
     assert options.inputs == [Path("video.mp4")]
     assert options.output_dir == Path("out")
-    assert options.output_formats == ("txt", "md", "json", "srt")
+    assert options.output_formats == ("txt", "md", "json", "srt", "vtt")
     assert options.word_timestamps is True
 
 

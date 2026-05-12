@@ -14,6 +14,7 @@ from flowscribe.output.md_writer import MarkdownTranscriptWriter
 from flowscribe.output.paths import OutputPathBuilder
 from flowscribe.output.srt_writer import SrtTranscriptWriter
 from flowscribe.output.txt_writer import TxtTranscriptWriter
+from flowscribe.output.vtt_writer import VttTranscriptWriter
 
 
 def build_transcript(tmp_path: Path) -> Transcript:
@@ -63,16 +64,17 @@ def test_transcript_artifact_writer_writes_selected_formats(tmp_path: Path) -> N
     transcript = build_transcript(tmp_path)
     path_builder = OutputPathBuilder(overwrite=True)
     writer = TranscriptArtifactWriter(
-        formats=("txt", "md", "json", "srt"),
+        formats=("txt", "md", "json", "srt", "vtt"),
         txt_writer=TxtTranscriptWriter(path_builder),
         md_writer=MarkdownTranscriptWriter(path_builder, include_timestamps=True),
         json_writer=JsonTranscriptWriter(path_builder),
         srt_writer=SrtTranscriptWriter(path_builder),
+        vtt_writer=VttTranscriptWriter(path_builder),
     )
 
     artifacts = writer.write_all(transcript, tmp_path)
 
-    assert {path.suffix for path in artifacts.paths} == {".txt", ".md", ".json", ".srt"}
+    assert {path.suffix for path in artifacts.paths} == {".txt", ".md", ".json", ".srt", ".vtt"}
     assert artifacts.txt_path is not None
     assert artifacts.md_path is not None
     assert artifacts.txt_path.read_text(encoding="utf-8") == "Hello world.\nSecond segment.\n"
@@ -104,3 +106,7 @@ def test_transcript_artifact_writer_writes_selected_formats(tmp_path: Path) -> N
 
     srt = (tmp_path / "lesson.srt").read_text(encoding="utf-8")
     assert "1\n00:00:00,000 --> 00:00:01,500\nHello world." in srt
+
+    vtt = (tmp_path / "lesson.vtt").read_text(encoding="utf-8")
+    assert vtt.startswith("WEBVTT\n\n")
+    assert "00:00:00.000 --> 00:00:01.500\nHello world." in vtt

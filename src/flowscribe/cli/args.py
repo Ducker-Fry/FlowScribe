@@ -154,7 +154,7 @@ def parse_transcribe_args(argv: list[str] | None = None, *, prog: str = "flowscr
         "--format",
         dest="output_formats",
         default="txt,md",
-        help="Comma-separated output formats. Supported: txt,md,json,srt. Default: txt,md",
+        help="Comma-separated output formats. Supported: txt,md,json,srt,vtt. Default: txt,md",
     )
     parser.add_argument(
         "-r",
@@ -294,7 +294,7 @@ def parse_simple_command_args(command: str, argv: list[str]) -> SimpleCommandOpt
 
 
 def parse_output_formats(value: str) -> tuple[str, ...]:
-    supported = {"txt", "md", "json", "srt"}
+    supported = {"txt", "md", "json", "srt", "vtt"}
     formats = tuple(dict.fromkeys(part.strip().lower() for part in value.split(",") if part.strip()))
     if not formats:
         raise argparse.ArgumentTypeError("At least one output format is required.")

@@ -9,6 +9,7 @@ from flowscribe.output.json_writer import JsonTranscriptWriter
 from flowscribe.output.md_writer import MarkdownTranscriptWriter
 from flowscribe.output.srt_writer import SrtTranscriptWriter
 from flowscribe.output.txt_writer import TxtTranscriptWriter
+from flowscribe.output.vtt_writer import VttTranscriptWriter
 
 
 class TranscriptArtifactWriter:
@@ -20,12 +21,14 @@ class TranscriptArtifactWriter:
         md_writer: MarkdownTranscriptWriter | None = None,
         json_writer: JsonTranscriptWriter | None = None,
         srt_writer: SrtTranscriptWriter | None = None,
+        vtt_writer: VttTranscriptWriter | None = None,
     ) -> None:
         self._formats = formats
         self._txt_writer = txt_writer or TxtTranscriptWriter()
         self._md_writer = md_writer or MarkdownTranscriptWriter()
         self._json_writer = json_writer or JsonTranscriptWriter()
         self._srt_writer = srt_writer or SrtTranscriptWriter()
+        self._vtt_writer = vtt_writer or VttTranscriptWriter()
 
     def write_all(self, transcript: Transcript, output_dir: Path) -> OutputArtifacts:
         paths = []
@@ -38,6 +41,8 @@ class TranscriptArtifactWriter:
                 paths.append(self._json_writer.write(transcript, output_dir))
             elif output_format == "srt":
                 paths.append(self._srt_writer.write(transcript, output_dir))
+            elif output_format == "vtt":
+                paths.append(self._vtt_writer.write(transcript, output_dir))
             else:
                 raise ValueError(f"Unsupported output format: {output_format}")
         return OutputArtifacts(paths=tuple(paths))
