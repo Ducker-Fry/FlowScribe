@@ -28,10 +28,6 @@ function Copy-Tool {
     )
 
     $candidatePaths = New-Object System.Collections.Generic.List[string]
-    $tool = Get-Command $Name -ErrorAction SilentlyContinue
-    if ($tool) {
-        $candidatePaths.Add($tool.Source)
-    }
 
     if ($env:ChocolateyInstall) {
         $chocoLib = Join-Path $env:ChocolateyInstall "lib"
@@ -41,7 +37,16 @@ function Copy-Tool {
         }
     }
 
+    $tool = Get-Command $Name -ErrorAction SilentlyContinue
+    if ($tool) {
+        $candidatePaths.Add($tool.Source)
+    }
+
     foreach ($candidate in ($candidatePaths | Select-Object -Unique)) {
+        if ($candidate -match "\\[Cc]hocolatey\\bin\\") {
+            continue
+        }
+
         $pushedLocation = $false
         try {
             Push-Location (Split-Path -Parent $candidate)

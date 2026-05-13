@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.2 - 2026-05-13
+
+- Fixed Windows release packaging to skip Chocolatey shim executables and copy the real ffmpeg/ffprobe binaries.
+
 ## 0.2.1 - 2026-05-13
 
 - Fixed Windows release packaging so bundled ffmpeg/ffprobe companion DLLs are copied when needed.
