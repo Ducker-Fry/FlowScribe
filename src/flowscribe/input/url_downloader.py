@@ -13,6 +13,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from flowscribe.core.errors import DownloadError
 from flowscribe.input.file_filter import SUPPORTED_MEDIA_EXTENSIONS
+from flowscribe.input.url_inspector import friendly_ytdlp_error
 from flowscribe.input.url_security import validate_public_http_url
 from flowscribe.media.tools import resolve_tool_path
 
@@ -80,7 +81,12 @@ class UrlAudioDownloader:
                             raise DownloadError("Remote audio exceeded the configured size limit.")
                         file.write(chunk)
         except OSError as exc:
-            raise DownloadError(f"Could not download remote audio: {exc}") from exc
+            raise DownloadError(
+                "Could not download remote audio.\n"
+                f"Original error: {exc}\n"
+                "Possible causes: network/proxy issue, blocked URL, expired URL, or unsupported redirect.\n"
+                "Try opening the URL in a browser or run `flowscribe inspect <url>` first."
+            ) from exc
         self._ensure_duration(path)
         return path
 
@@ -110,7 +116,13 @@ class UrlAudioDownloader:
             raise DownloadError("Timed out while extracting audio from the video URL.") from exc
         except subprocess.CalledProcessError as exc:
             message = exc.stderr.strip() or exc.stdout.strip() or str(exc)
-            raise DownloadError(f"Could not extract audio from video URL: {message}") from exc
+            raise DownloadError(
+                "Could not extract audio from the direct video URL.\n"
+                f"Original error: {message}\n"
+                "Possible causes: missing audio stream, unsupported protocol, expired URL, "
+                "network/proxy issue, or protected media.\n"
+                "Run `flowscribe inspect <url>` to check the source before transcribing."
+            ) from exc
         self._ensure_size(path)
         self._ensure_duration(path)
         return path
@@ -133,7 +145,7 @@ class UrlAudioDownloader:
             with YoutubeDL(base_options) as ydl:
                 info = ydl.extract_info(url, download=False)
         except YtDlpDownloadError as exc:
-            raise DownloadError(f"yt-dlp failed to inspect URL media: {exc}") from exc
+            raise DownloadError(friendly_ytdlp_error(exc)) from exc
 
         duration = info.get("duration")
         if duration is not None and float(duration) > self._max_duration_seconds:
@@ -143,7 +155,10 @@ class UrlAudioDownloader:
             stream_url = self._select_smallest_combined_stream_url(info)
             if stream_url is None:
                 raise DownloadError(
-                    "No audio-only stream or safe combined stream was found for this URL."
+                    "No usable audio stream was found for this URL.\n"
+                    "Possible causes: video has no audio, unsupported media format, DRM/protected media, "
+                    "or site-specific extraction limits.\n"
+                    "Run `flowscribe inspect <url>` to see available formats before transcribing."
                 )
             validate_public_http_url(stream_url)
             return self._extract_page_stream_audio(stream_url, item_dir)
@@ -161,7 +176,13 @@ class UrlAudioDownloader:
             with YoutubeDL(options) as ydl:
                 ydl.download([url])
         except YtDlpDownloadError as exc:
-            raise DownloadError(f"yt-dlp failed to download audio: {exc}") from exc
+            raise DownloadError(
+                "yt-dlp failed to download the selected audio stream.\n"
+                f"Original error: {exc}\n"
+                "Possible causes: network/proxy issue, site throttling, expired media URL, "
+                "login-only media, or a changed site extractor.\n"
+                "Try `flowscribe inspect <url>` first, or update yt-dlp."
+            ) from exc
 
         files = [path for path in item_dir.iterdir() if path.is_file()]
         if not files:
@@ -196,7 +217,13 @@ class UrlAudioDownloader:
             raise DownloadError("Timed out while extracting page audio stream.") from exc
         except subprocess.CalledProcessError as exc:
             message = exc.stderr.strip() or exc.stdout.strip() or str(exc)
-            raise DownloadError(f"Could not extract page audio stream: {message}") from exc
+            raise DownloadError(
+                "Could not extract audio from the page media stream.\n"
+                f"Original error: {message}\n"
+                "Possible causes: expired HLS/DASH stream, network/proxy issue, site throttling, "
+                "protected media, or missing audio in the selected stream.\n"
+                "Run `flowscribe inspect <url>` to review available formats."
+            ) from exc
         self._ensure_size(path)
         self._ensure_duration(path)
         return path

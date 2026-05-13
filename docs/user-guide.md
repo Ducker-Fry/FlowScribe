@@ -196,6 +196,17 @@ flowscribe formats
 flowscribe models
 ```
 
+Inspect a local file or URL before transcription:
+
+```powershell
+flowscribe inspect "D:\media\lecture.mp4"
+flowscribe inspect "https://example.com/video"
+```
+
+Use `inspect` when you want to check whether media has audio, whether a URL has
+an audio-only stream, or what strategy FlowScribe will use before transcription.
+See [Inspect Command](inspect.md).
+
 ### 7. Output Files
 
 For an input file named:

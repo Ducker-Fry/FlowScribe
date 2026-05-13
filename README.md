@@ -180,6 +180,16 @@ flowscribe formats
 flowscribe models
 ```
 
+Inspect a local file or URL before transcription:
+
+```powershell
+flowscribe inspect "D:\media\lecture.mp4"
+flowscribe inspect "https://tv.cctv.com/2026/05/12/VIDEBtNAQbQRT5vvxRFP28FR260512.shtml"
+```
+
+For URL pages, `inspect` shows whether FlowScribe can use an audio-only stream or
+needs to stream the lowest combined media and extract audio.
+
 Search a transcript JSON and locate a keyword:
 
 ```powershell
@@ -273,6 +283,7 @@ If the beginning of a video is missing or inaccurate, retry with `--no-vad-filte
 
 - [User Guide](docs/user-guide.md)
 - [Demo](docs/demo.md)
+- [Inspect Command](docs/inspect.md)
 - [VAD Guide](docs/vad-guide.md)
 - [Release Installation](docs/release-installation.md)
 - [Development Guide](docs/development-guide.md)

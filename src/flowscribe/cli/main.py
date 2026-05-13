@@ -5,6 +5,9 @@ from __future__ import annotations
 import json
 import shutil
 import sys
+from dataclasses import asdict
+from pathlib import Path
+from urllib.parse import urlparse
 
 from flowscribe.cli.args import parse_args
 from flowscribe.cli.doctor import run_doctor
@@ -17,7 +20,9 @@ from flowscribe.core.pipeline import LocalTranscriptionPipeline
 from flowscribe.core.runner import JobRunner
 from flowscribe.input.local_source import LocalFileSource
 from flowscribe.input.url_downloader import UrlAudioDownloader
+from flowscribe.input.url_inspector import UrlInspector
 from flowscribe.media.audio_extractor import FfmpegAudioExtractor
+from flowscribe.media.inspector import LocalMediaInspector
 from flowscribe.nlp.script_converter import simplify_chinese_transcript
 from flowscribe.output.artifact_writer import TranscriptArtifactWriter
 from flowscribe.output.json_writer import JsonTranscriptWriter
@@ -37,6 +42,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_doctor(output_dir=options.output_dir, model_name=options.model_name)
     if options.command == "search":
         return run_search(options)
+    if options.command == "inspect":
+        return run_inspect(options)
     if options.command == "url":
         return run_url(options)
     if options.command == "version":
@@ -175,6 +182,69 @@ def run_url(options) -> int:
     return 0
 
 
+def run_inspect(options) -> int:
+    try:
+        if _is_http_url(options.source):
+            inspection = UrlInspector(timeout_seconds=options.timeout_seconds).inspect(options.source)
+            payload = {"type": "url", **asdict(inspection)}
+        else:
+            inspection = LocalMediaInspector(timeout_seconds=options.timeout_seconds).inspect(
+                Path(options.source)
+            )
+            payload = {"type": "local", **asdict(inspection)}
+            payload["source"] = str(payload["source"])
+    except FlowScribeError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+
+    if options.json_output:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    _print_inspection(payload)
+    return 0
+
+
+def _print_inspection(payload: dict) -> None:
+    print("FlowScribe inspect")
+    print("===================")
+    print(f"Type: {payload['type']}")
+    print(f"Source: {payload['source']}")
+
+    if payload["type"] == "local":
+        print(f"Exists: {_yes_no(payload['exists'])}")
+        print(f"Duration: {_format_optional_duration(payload['duration_seconds'])}")
+        print(f"Audio streams: {payload['audio_streams']}")
+        print(f"Video streams: {payload['video_streams']}")
+        print(f"Format: {payload['format_name'] or 'unknown'}")
+        print(f"Size: {_format_size(payload['size_bytes'])}")
+        print(f"Ready for transcription: {_yes_no(payload['has_audio'])}")
+        if not payload["has_audio"]:
+            print("Suggestion: use media that contains an audio stream.")
+        return
+
+    print(f"Kind: {payload['kind']}")
+    print(f"Title: {payload['title'] or 'unknown'}")
+    print(f"Duration: {_format_optional_duration(payload['duration_seconds'])}")
+    print(f"Formats: {payload['format_count']}")
+    print(f"Audio-only stream: {_yes_no(payload['has_audio_only'])}")
+    print(f"Combined media stream: {_yes_no(payload['has_combined_media'])}")
+    print(f"Planned strategy: {payload['selected_strategy']}")
+    selected = payload.get("selected_format")
+    if selected:
+        print("Selected format:")
+        print(f"  id: {selected.get('format_id') or 'unknown'}")
+        print(f"  ext: {selected.get('extension') or 'unknown'}")
+        print(f"  protocol: {selected.get('protocol') or 'unknown'}")
+        print(f"  resolution: {selected.get('resolution') or 'unknown'}")
+        print(f"  audio codec: {selected.get('audio_codec') or 'unknown'}")
+        print(f"  video codec: {selected.get('video_codec') or 'unknown'}")
+        print(f"  bitrate: {selected.get('bitrate') or 'unknown'}")
+        print(f"  size: {_format_size(selected.get('size_bytes'))}")
+    if not payload["has_audio_only"] and payload["has_combined_media"]:
+        print("Note: no standalone audio stream was found; FlowScribe will stream combined media and save only extracted audio.")
+
+
 def run_search(options) -> int:
     try:
         hits = search_transcript_file(
@@ -233,6 +303,31 @@ def _search_payload(options, hits) -> dict:
             for hit in hits
         ],
     }
+
+
+def _is_http_url(value: str) -> bool:
+    parsed = urlparse(value)
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _yes_no(value: bool) -> str:
+    return "yes" if value else "no"
+
+
+def _format_optional_duration(value: float | None) -> str:
+    if value is None:
+        return "unknown"
+    return format_timestamp(value)
+
+
+def _format_size(value: int | None) -> str:
+    if value is None:
+        return "unknown"
+    if value < 1024:
+        return f"{value} B"
+    if value < 1024 * 1024:
+        return f"{value / 1024:.1f} KiB"
+    return f"{value / (1024 * 1024):.1f} MiB"
 
 
 class _UrlSettingsAdapter:

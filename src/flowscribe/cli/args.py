@@ -50,6 +50,14 @@ class SearchOptions:
 
 
 @dataclass(frozen=True)
+class InspectOptions:
+    command: str
+    source: str
+    json_output: bool
+    timeout_seconds: int
+
+
+@dataclass(frozen=True)
 class UrlOptions:
     command: str
     url: str
@@ -81,7 +89,7 @@ class SimpleCommandOptions:
 
 def parse_args(
     argv: list[str] | None = None,
-) -> CliOptions | DoctorOptions | SearchOptions | UrlOptions | SimpleCommandOptions:
+) -> CliOptions | DoctorOptions | SearchOptions | InspectOptions | UrlOptions | SimpleCommandOptions:
     argv = sys.argv[1:] if argv is None else argv
     if not argv:
         return parse_transcribe_args(argv)
@@ -93,6 +101,8 @@ def parse_args(
         return parse_doctor_args(argv[1:])
     if command == "search":
         return parse_search_args(argv[1:])
+    if command == "inspect":
+        return parse_inspect_args(argv[1:])
     if command == "url":
         return parse_url_args(argv[1:])
     if command in {"version", "formats", "models", "capture"}:
@@ -457,6 +467,33 @@ def parse_search_args(argv: list[str] | None = None) -> SearchOptions:
         after_seconds=namespace.after,
         before_seconds=namespace.before,
         json_output=namespace.json_output,
+    )
+
+
+def parse_inspect_args(argv: list[str] | None = None) -> InspectOptions:
+    parser = argparse.ArgumentParser(
+        prog="flowscribe inspect",
+        description="Inspect a local media file or public URL before transcription.",
+    )
+    parser.add_argument("source", help="Local media path or public http(s) URL.")
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        dest="json_output",
+        help="Write inspection result as JSON for GUI or automation use.",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=positive_int,
+        default=30,
+        help="Network/probe timeout in seconds. Default: 30",
+    )
+    namespace = parser.parse_args(argv)
+    return InspectOptions(
+        command="inspect",
+        source=namespace.source,
+        json_output=namespace.json_output,
+        timeout_seconds=namespace.timeout,
     )
 
 
