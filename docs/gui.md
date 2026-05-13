@@ -72,3 +72,22 @@ is `Collect State`, which validates the form and shows the collected job preview
 
 Milestone 3.2 will connect the GUI to background transcription execution and
 progress events.
+
+## Build A GUI Executable
+
+For a local smoke test of GUI packaging:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_gui_exe.ps1 -Python python
+```
+
+The output folder is:
+
+```text
+dist/FlowScribeGUI/
+|-- FlowScribeGUI.exe
+`-- _internal/
+```
+
+This package currently validates that the GUI shell can be built. It does not
+replace the CLI release package yet.
