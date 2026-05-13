@@ -300,6 +300,7 @@ If the beginning of a video is missing or inaccurate, retry with `--no-vad-filte
 - [Development Guide](docs/development-guide.md)
 - [Packaging](docs/packaging.md)
 - [Release Automation](docs/release-automation.md)
+- [Phase 2 Summary And Phase 3 Plan](docs/phase-2-summary-and-phase-3-plan.md)
 - [Architecture](docs/architecture.md)
 - [JSON Format](docs/json-format.md)
 - [Project Process](docs/project-process.md)
