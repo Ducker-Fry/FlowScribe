@@ -103,6 +103,33 @@ URL input defaults to audio-first behavior. FlowScribe downloads or extracts aud
 transcription and does not intentionally keep high-resolution video files. Use
 `--keep-media` only when you want to keep the downloaded/extracted intermediate media.
 
+Try the real CCTV demo:
+
+```powershell
+flowscribe url "https://tv.cctv.com/2026/05/12/VIDEBtNAQbQRT5vvxRFP28FR260512.shtml" -o outputs\demo-cctv --format txt,md,json --model small --language zh --preset zh --overwrite
+```
+
+Example terminal output:
+
+```text
+Downloading/extracting remote audio...
+Remote audio ready: ...\remote-audio.m4a
+Wrote: ...\outputs\demo-cctv\remote-audio.txt
+Wrote: ...\outputs\demo-cctv\remote-audio.md
+Wrote: ...\outputs\demo-cctv\remote-audio.json
+Done. Succeeded: 1. Failed: 0.
+```
+
+Example transcript excerpt:
+
+```text
+更多新闻资讯,来看一组简讯。
+11号,两高联合发布《办理非法占用耕地案件司法》解释,强化对耕地的全链条保护。
+2023年以来,全国检察机关共办理非法占用耕地公益诉讼案件1.7万余件...
+```
+
+See [Demo](docs/demo.md) for the full walkthrough.
+
 Use the Chinese preset:
 
 ```powershell
@@ -238,6 +265,7 @@ If the beginning of a video is missing or inaccurate, retry without `--vad-filte
 ## Documentation
 
 - [User Guide](docs/user-guide.md)
+- [Demo](docs/demo.md)
 - [Release Installation](docs/release-installation.md)
 - [Development Guide](docs/development-guide.md)
 - [Packaging](docs/packaging.md)
@@ -255,7 +283,7 @@ If the beginning of a video is missing or inaccurate, retry without `--vad-filte
 ```text
 FlowScribe/
 |-- docs/                  Project documentation
-|-- examples/              Example commands and future fixtures
+|-- examples/              Runnable example commands
 |-- scripts/               Developer helper scripts
 |-- src/flowscribe/        Application source code
 |   |-- cli/               Command-line interface
