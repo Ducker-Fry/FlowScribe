@@ -85,8 +85,13 @@ jobs:
           ## What's Included
 
           - Local audio/video transcription CLI.
-          - TXT and Markdown transcript output.
+          - Public URL transcription with audio-first download/extraction.
+          - Local and URL media inspection with `flowscribe inspect`.
+          - Keyword search and timestamp location with `flowscribe search`.
+          - TXT, Markdown, JSON, SRT, and VTT transcript output.
           - Chinese, English, and mixed-language workflows.
+          - Word timestamp data for future text-to-video navigation.
+          - Explicit cookies and proxy support for URL media access.
           - `flowscribe doctor` environment diagnostics.
           - Chinese-oriented preset: `--preset zh`.
           - Portable Windows one-folder build.

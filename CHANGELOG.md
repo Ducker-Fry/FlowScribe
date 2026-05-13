@@ -1,7 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 - 2026-05-13
 
+- Added URL transcription through `flowscribe url` with audio-first download/extraction.
+- Added `flowscribe inspect` for local files and public URL media.
+- Added `flowscribe search` for keyword search and timestamp location in transcript JSON.
+- Added JSON, SRT, and VTT output support for downstream GUI, browser, and AI workflows.
+- Added provider word timestamps plus Chinese natural-word alignment with `raw_words` and `words`.
+- Added a stable `TranscriptionService` interface for future GUI integration.
+- Added URL safety controls for file size, duration, timeouts, SSRF protection, temporary media cleanup, and `--keep-media`.
+- Added `--network-family` for IPv4/IPv6 troubleshooting.
 - Added explicit `--cookies` support for `flowscribe url` and `flowscribe inspect`.
 - Added explicit `--proxy` support for URL inspection and transcription.
 - Documented safe cookie-file usage and ignored common cookie paths to reduce accidental commits.
