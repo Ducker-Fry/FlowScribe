@@ -7,10 +7,11 @@ from pathlib import Path
 
 from flowscribe.core.errors import OutputError
 from flowscribe import __version__
+from flowscribe.app.schema import TRANSCRIPT_JSON_SCHEMA_VERSION
 from flowscribe.core.models import Transcript, TranscriptSegment, TranscriptWord
 from flowscribe.output.paths import OutputPathBuilder
 
-JSON_SCHEMA_VERSION = "1.1"
+JSON_SCHEMA_VERSION = TRANSCRIPT_JSON_SCHEMA_VERSION
 
 
 class JsonTranscriptWriter:

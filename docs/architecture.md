@@ -2,12 +2,17 @@
 
 FlowScribe uses a small pipeline architecture with high cohesion and low coupling. The CLI wires concrete adapters together, while the core layer defines the domain models and interfaces that keep input, media processing, transcription, and output independent.
 
+The project now also has an application-facing layer under `src/flowscribe/app`.
+This layer defines stable request, progress, error, and result objects for future
+desktop GUI work.
+
 ## Current v0.1 Pipeline
 
 ```text
 CLI
+  -> App-facing job/service models
   -> AppSettings
-  -> LocalFileSource
+  -> LocalFileSource / UrlAudioDownloader
   -> LocalTranscriptionPipeline
        -> FfmpegAudioExtractor
        -> LocalWhisperTranscriber
@@ -36,6 +41,14 @@ local file/folder
 - `args.py`: command-line option definitions and `CliOptions`.
 
 The CLI should remain thin. It should not contain transcription, media, or output formatting logic.
+
+### `src/flowscribe/app`
+
+- `models.py`: stable `SourceSpec`, `TranscriptionJob`, `ProgressEvent`, `ErrorInfo`, and `TranscriptionResult` models.
+- `service.py`: application service for running local and URL transcription jobs.
+- `schema.py`: app-facing schema version constants.
+
+Future GUI code should depend on this layer instead of directly wiring low-level adapters.
 
 ### `src/flowscribe/config`
 
@@ -112,7 +125,8 @@ Examples:
 - System audio recording.
 - Application audio capture through user-controlled system audio.
 
-The adapter should return `MediaItem` or a future source model without changing output writers or transcription providers.
+The user-facing request should enter through `SourceSpec`. Low-level adapters can still
+return `MediaItem` where the pipeline needs local media files.
 
 ### New Transcription Provider
 

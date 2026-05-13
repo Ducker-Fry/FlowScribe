@@ -285,6 +285,7 @@ If the beginning of a video is missing or inaccurate, retry with `--no-vad-filte
 - [Demo](docs/demo.md)
 - [Inspect Command](docs/inspect.md)
 - [VAD Guide](docs/vad-guide.md)
+- [GUI Interfaces](docs/gui-interfaces.md)
 - [Release Installation](docs/release-installation.md)
 - [Development Guide](docs/development-guide.md)
 - [Packaging](docs/packaging.md)
