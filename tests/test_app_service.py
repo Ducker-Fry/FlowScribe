@@ -2,6 +2,7 @@ from pathlib import Path
 
 from flowscribe.app.models import SourceSpec, TranscriptionJob
 from flowscribe.app.service import TranscriptionService
+from flowscribe.core.errors import MediaPreparationError
 from flowscribe.core.models import MediaItem, OutputArtifacts
 
 
@@ -55,3 +56,42 @@ def test_transcription_service_runs_local_source_with_progress(monkeypatch, tmp_
     assert result.succeeded == 1
     assert result.outputs == (artifact,)
     assert [event.stage for event in events] == ["discover", "discover", "transcribe", "write", "complete"]
+
+
+def test_transcription_service_keeps_processing_after_local_item_failure(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    bad_media = tmp_path / "bad.mp4"
+    good_media = tmp_path / "good.mp4"
+    artifact = OutputArtifacts(paths=(tmp_path / "out" / "good.txt",))
+
+    class FakeLocalFileSource:
+        def __init__(self, inputs, recursive: bool) -> None:
+            self.inputs = inputs
+            self.recursive = recursive
+
+        def discover(self):
+            return [MediaItem(path=bad_media), MediaItem(path=good_media)]
+
+    class FakePipeline:
+        def process(self, item: MediaItem) -> OutputArtifacts:
+            if item.path == bad_media:
+                raise MediaPreparationError("no audio")
+            return artifact
+
+    monkeypatch.setattr("flowscribe.app.service.LocalFileSource", FakeLocalFileSource)
+    monkeypatch.setattr("flowscribe.app.service._build_pipeline", lambda job, settings: FakePipeline())
+
+    job = TranscriptionJob(
+        sources=(SourceSpec(kind="local", value=str(tmp_path)),),
+        output_dir=tmp_path / "out",
+    )
+
+    result = TranscriptionService().run(job)
+
+    assert result.ok is False
+    assert result.succeeded == 1
+    assert result.failed == 1
+    assert result.outputs == (artifact,)
+    assert result.errors[0].source == str(bad_media)

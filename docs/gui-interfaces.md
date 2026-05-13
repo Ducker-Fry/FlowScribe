@@ -196,18 +196,21 @@ system capture    -> SourceSpec(kind="capture")
 `capture` is intentionally reserved so the future GUI can add system-audio capture
 without changing the job contract.
 
-## What Is Still CLI-Owned
+## CLI Integration
 
-The current CLI still has some wiring code in `src/flowscribe/cli/main.py`.
-That is acceptable for now. The next refactor can migrate CLI transcription paths
-to `TranscriptionService` so CLI and GUI share the same execution path.
+The CLI local and URL transcription paths now create `TranscriptionJob` objects
+and execute them through `TranscriptionService`. This means the CLI and future GUI
+share the same execution path for the most important transcription workflows.
+
+The CLI still owns command parsing, terminal formatting, `doctor`, `inspect`,
+`search`, and simple informational commands.
 
 ## Next GUI-Oriented Steps
 
 Before building the first desktop window:
 
-1. Move CLI local and URL execution onto `TranscriptionService`.
-2. Add cancellation support to `ProgressCallback` or a job controller.
-3. Add persistent job history only after the basic GUI workflow is stable.
-4. Add GUI-safe validation before execution.
-5. Keep all GUI state serializable into `TranscriptionJob`.
+1. Add cancellation support to `ProgressCallback` or a job controller.
+2. Add persistent job history only after the basic GUI workflow is stable.
+3. Add GUI-safe validation before execution.
+4. Keep all GUI state serializable into `TranscriptionJob`.
+5. Decide whether `inspect` should also move into an app-facing service.

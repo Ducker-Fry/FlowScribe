@@ -54,28 +54,15 @@ class TranscriptionService:
         )
 
         for index, source in enumerate(job.sources, start=1):
-            try:
-                source_outputs = self._run_source(job, source, progress, index, len(job.sources))
-            except FlowScribeError as exc:
-                errors.append(
-                    ErrorInfo(
-                        code=exc.__class__.__name__,
-                        message=str(exc),
-                        source=source.value,
-                        recoverable=True,
-                    )
-                )
-                progress(
-                    ProgressEvent(
-                        stage="error",
-                        message=str(exc),
-                        source=source.value,
-                        current=index,
-                        total=len(job.sources),
-                    )
-                )
-                continue
+            source_outputs, source_errors = self._run_source(
+                job,
+                source,
+                progress,
+                index,
+                len(job.sources),
+            )
             outputs.extend(source_outputs)
+            errors.extend(source_errors)
 
         progress(
             ProgressEvent(
@@ -99,14 +86,27 @@ class TranscriptionService:
         progress: ProgressCallback,
         current: int,
         total: int,
-    ) -> tuple[OutputArtifacts, ...]:
-        if source.kind == "local":
-            return self._run_local_source(job, source, progress, current, total)
-        if source.kind == "url":
-            return (self._run_url_source(job, source, progress, current, total),)
-        if source.kind == "capture":
-            raise FlowScribeError("System audio capture source is planned but not implemented yet.")
-        raise FlowScribeError(f"Unsupported source kind: {source.kind}")
+    ) -> tuple[tuple[OutputArtifacts, ...], tuple[ErrorInfo, ...]]:
+        try:
+            if source.kind == "local":
+                return self._run_local_source(job, source, progress, current, total)
+            if source.kind == "url":
+                return (self._run_url_source(job, source, progress, current, total),), ()
+            if source.kind == "capture":
+                raise FlowScribeError("System audio capture source is planned but not implemented yet.")
+            raise FlowScribeError(f"Unsupported source kind: {source.kind}")
+        except FlowScribeError as exc:
+            error = _error_from_exception(exc, source=source.value)
+            progress(
+                ProgressEvent(
+                    stage="error",
+                    message=str(exc),
+                    source=source.value,
+                    current=current,
+                    total=total,
+                )
+            )
+            return (), (error,)
 
     def _run_local_source(
         self,
@@ -115,12 +115,13 @@ class TranscriptionService:
         progress: ProgressCallback,
         current: int,
         total: int,
-    ) -> tuple[OutputArtifacts, ...]:
+    ) -> tuple[tuple[OutputArtifacts, ...], tuple[ErrorInfo, ...]]:
         settings = _settings_from_job(job, recursive=source.recursive)
         pipeline = _build_pipeline(job, settings)
         input_source = LocalFileSource([Path(source.value)], recursive=settings.recursive)
         items = input_source.discover()
         outputs: list[OutputArtifacts] = []
+        errors: list[ErrorInfo] = []
 
         progress(
             ProgressEvent(
@@ -141,7 +142,20 @@ class TranscriptionService:
                     total=len(items),
                 )
             )
-            artifacts = pipeline.process(item)
+            try:
+                artifacts = pipeline.process(item)
+            except FlowScribeError as exc:
+                errors.append(_error_from_exception(exc, source=str(item.path)))
+                progress(
+                    ProgressEvent(
+                        stage="error",
+                        message=f"Failed: {item.path} - {exc}",
+                        source=str(item.path),
+                        current=item_index,
+                        total=len(items),
+                    )
+                )
+                continue
             outputs.append(artifacts)
             for path in artifacts.paths:
                 progress(
@@ -152,7 +166,7 @@ class TranscriptionService:
                         path=path,
                     )
                 )
-        return tuple(outputs)
+        return tuple(outputs), tuple(errors)
 
     def _run_url_source(
         self,
@@ -213,6 +227,15 @@ def _settings_from_job(job: TranscriptionJob, *, recursive: bool) -> AppSettings
         recursive=recursive,
         overwrite=job.overwrite,
         keep_audio=job.keep_audio,
+    )
+
+
+def _error_from_exception(exc: FlowScribeError, *, source: str) -> ErrorInfo:
+    return ErrorInfo(
+        code=exc.__class__.__name__,
+        message=str(exc),
+        source=source,
+        recoverable=True,
     )
 
 

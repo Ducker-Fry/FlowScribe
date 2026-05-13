@@ -3,37 +3,22 @@
 from __future__ import annotations
 
 import json
-import shutil
 import sys
 from dataclasses import asdict
 from pathlib import Path
 from urllib.parse import urlparse
 
+from flowscribe.app.models import ProgressEvent, SourceSpec, TranscriptionJob
+from flowscribe.app.service import TranscriptionService
 from flowscribe.cli.args import parse_args
 from flowscribe.cli.doctor import run_doctor
 from flowscribe import __version__
-from flowscribe.config.settings import AppSettings
 from flowscribe.core.errors import FlowScribeError
-from flowscribe.core.models import MediaItem
 from flowscribe.input.file_filter import SUPPORTED_MEDIA_EXTENSIONS
-from flowscribe.core.pipeline import LocalTranscriptionPipeline
-from flowscribe.core.runner import JobRunner
-from flowscribe.input.local_source import LocalFileSource
-from flowscribe.input.url_downloader import UrlAudioDownloader
 from flowscribe.input.url_inspector import UrlInspector
-from flowscribe.media.audio_extractor import FfmpegAudioExtractor
 from flowscribe.media.inspector import LocalMediaInspector
-from flowscribe.nlp.script_converter import simplify_chinese_transcript
-from flowscribe.output.artifact_writer import TranscriptArtifactWriter
-from flowscribe.output.json_writer import JsonTranscriptWriter
-from flowscribe.output.md_writer import MarkdownTranscriptWriter
-from flowscribe.output.paths import OutputPathBuilder
-from flowscribe.output.srt_writer import SrtTranscriptWriter
 from flowscribe.output.time_format import format_timestamp
-from flowscribe.output.txt_writer import TxtTranscriptWriter
-from flowscribe.output.vtt_writer import VttTranscriptWriter
 from flowscribe.search.transcript_search import search_transcript_file
-from flowscribe.transcription.local_whisper import LocalWhisperTranscriber
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -71,114 +56,30 @@ def main(argv: list[str] | None = None) -> int:
         print("Future example: flowscribe capture --duration 10m -o outputs")
         return 2
 
-    settings = build_settings(options)
+    return run_transcribe(options)
 
-    path_builder = OutputPathBuilder(overwrite=settings.overwrite)
-    input_source = LocalFileSource(options.inputs, recursive=settings.recursive)
-    pipeline = build_pipeline(settings, options.output_formats, options.timestamps, path_builder)
-    runner = JobRunner(input_source=input_source, pipeline=pipeline, progress=print)
 
-    try:
-        result = runner.run()
-    except FlowScribeError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        return 2
+def run_transcribe(options) -> int:
+    job = _job_from_transcribe_options(options)
+    result = TranscriptionService().run(job, progress=_print_cli_progress)
 
     print(f"Done. Succeeded: {result.succeeded}. Failed: {result.failed}.")
-    if result.failures:
+    if result.errors:
         print("Failures:")
-        for failure in result.failures:
-            print(f"- {failure.source}: {failure.message}")
+        for error in result.errors:
+            print(f"- {error.source}: {error.message}")
         return 1
     return 0
 
 
-def build_settings(options) -> AppSettings:
-    return AppSettings.from_options(
-        output_dir=options.output_dir,
-        work_dir=options.work_dir,
-        model_name=options.model_name,
-        language=options.language,
-        preset=options.preset,
-        task=options.task,
-        beam_size=options.beam_size,
-        vad_filter=options.vad_filter,
-        no_vad_filter=options.no_vad_filter,
-        initial_prompt=options.initial_prompt,
-        word_timestamps=options.word_timestamps,
-        recursive=options.recursive,
-        overwrite=options.overwrite,
-        keep_audio=options.keep_audio,
-    )
-
-
-def build_pipeline(
-    settings: AppSettings,
-    output_formats: tuple[str, ...],
-    timestamps: bool,
-    path_builder: OutputPathBuilder,
-) -> LocalTranscriptionPipeline:
-    return LocalTranscriptionPipeline(
-        media_preparer=FfmpegAudioExtractor(sample_rate=settings.sample_rate),
-        transcriber=LocalWhisperTranscriber(
-            model_name=settings.model_name,
-            language=settings.language,
-            task=settings.task,
-            beam_size=settings.beam_size,
-            vad_filter=settings.vad_filter,
-            initial_prompt=settings.initial_prompt,
-            preset=settings.preset,
-            word_timestamps=settings.word_timestamps,
-        ),
-        artifact_writer=TranscriptArtifactWriter(
-            formats=output_formats,
-            txt_writer=TxtTranscriptWriter(path_builder),
-            md_writer=MarkdownTranscriptWriter(
-                path_builder,
-                include_timestamps=timestamps,
-            ),
-            json_writer=JsonTranscriptWriter(path_builder),
-            srt_writer=SrtTranscriptWriter(path_builder),
-            vtt_writer=VttTranscriptWriter(path_builder),
-        ),
-        work_dir=settings.work_dir,
-        output_dir=settings.output_dir,
-        keep_audio=settings.keep_audio,
-        transcript_normalizer=(
-            simplify_chinese_transcript
-            if settings.language == "zh" or settings.preset == "zh"
-            else None
-        ),
-    )
-
-
 def run_url(options) -> int:
-    settings = build_settings(_UrlSettingsAdapter(options))
-    url_media_dir = settings.work_dir / ".url-media"
-    downloader = UrlAudioDownloader(
-        download_dir=url_media_dir,
-        max_bytes=options.max_download_mb * 1024 * 1024,
-        max_duration_seconds=options.max_duration_seconds,
-        timeout_seconds=options.download_timeout_seconds,
-    )
-
-    try:
-        print("Downloading/extracting remote audio...")
-        download = downloader.download_audio(options.url)
-        print(f"Remote audio ready: {download.path}")
-        path_builder = OutputPathBuilder(overwrite=settings.overwrite)
-        pipeline = build_pipeline(settings, options.output_formats, options.timestamps, path_builder)
-        artifacts = pipeline.process(MediaItem(path=download.path))
-    except FlowScribeError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+    job = _job_from_url_options(options)
+    result = TranscriptionService().run(job, progress=_print_cli_progress)
+    if result.errors:
+        for error in result.errors:
+            print(f"Error: {error.message}", file=sys.stderr)
         return 2
-    finally:
-        if "download" in locals() and not options.keep_media:
-            shutil.rmtree(download.cleanup_dir, ignore_errors=True)
-
-    for path in artifacts.paths:
-        print(f"Wrote: {path}")
-    print("Done. Succeeded: 1. Failed: 0.")
+    print(f"Done. Succeeded: {result.succeeded}. Failed: {result.failed}.")
     return 0
 
 
@@ -305,6 +206,64 @@ def _search_payload(options, hits) -> dict:
     }
 
 
+def _job_from_transcribe_options(options) -> TranscriptionJob:
+    return TranscriptionJob(
+        sources=tuple(
+            SourceSpec(kind="local", value=str(input_path), recursive=options.recursive)
+            for input_path in options.inputs
+        ),
+        output_dir=options.output_dir,
+        work_dir=options.work_dir,
+        model_name=options.model_name,
+        language=options.language,
+        preset=options.preset,
+        task=options.task,
+        beam_size=options.beam_size,
+        vad_filter=options.vad_filter,
+        no_vad_filter=options.no_vad_filter,
+        initial_prompt=options.initial_prompt,
+        timestamps=options.timestamps,
+        word_timestamps=options.word_timestamps,
+        output_formats=options.output_formats,
+        overwrite=options.overwrite,
+        keep_audio=options.keep_audio,
+    )
+
+
+def _job_from_url_options(options) -> TranscriptionJob:
+    return TranscriptionJob(
+        sources=(SourceSpec(kind="url", value=options.url, keep_media=options.keep_media),),
+        output_dir=options.output_dir,
+        work_dir=options.work_dir,
+        model_name=options.model_name,
+        language=options.language,
+        preset=options.preset,
+        task=options.task,
+        beam_size=options.beam_size,
+        vad_filter=options.vad_filter,
+        no_vad_filter=options.no_vad_filter,
+        initial_prompt=options.initial_prompt,
+        timestamps=options.timestamps,
+        word_timestamps=options.word_timestamps,
+        output_formats=options.output_formats,
+        overwrite=options.overwrite,
+        keep_audio=options.keep_audio,
+        max_download_mb=options.max_download_mb,
+        max_duration_seconds=options.max_duration_seconds,
+        download_timeout_seconds=options.download_timeout_seconds,
+    )
+
+
+def _print_cli_progress(event: ProgressEvent) -> None:
+    if event.stage == "complete":
+        return
+    if event.stage == "error":
+        return
+    if event.stage == "discover" and event.source is None:
+        return
+    print(event.message)
+
+
 def _is_http_url(value: str) -> bool:
     parsed = urlparse(value)
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
@@ -328,25 +287,6 @@ def _format_size(value: int | None) -> str:
     if value < 1024 * 1024:
         return f"{value / 1024:.1f} KiB"
     return f"{value / (1024 * 1024):.1f} MiB"
-
-
-class _UrlSettingsAdapter:
-    def __init__(self, options) -> None:
-        self.output_dir = options.output_dir
-        self.work_dir = options.work_dir
-        self.model_name = options.model_name
-        self.language = options.language
-        self.preset = options.preset
-        self.task = options.task
-        self.beam_size = options.beam_size
-        self.vad_filter = options.vad_filter
-        self.no_vad_filter = options.no_vad_filter
-        self.initial_prompt = options.initial_prompt
-        self.word_timestamps = options.word_timestamps
-        self.recursive = False
-        self.overwrite = options.overwrite
-        self.keep_audio = options.keep_audio
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

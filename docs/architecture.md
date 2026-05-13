@@ -1,6 +1,6 @@
 # Architecture
 
-FlowScribe uses a small pipeline architecture with high cohesion and low coupling. The CLI wires concrete adapters together, while the core layer defines the domain models and interfaces that keep input, media processing, transcription, and output independent.
+FlowScribe uses a small pipeline architecture with high cohesion and low coupling. The CLI parses commands and delegates transcription execution to the app layer, while the core layer defines the domain models and interfaces that keep input, media processing, transcription, and output independent.
 
 The project now also has an application-facing layer under `src/flowscribe/app`.
 This layer defines stable request, progress, error, and result objects for future
@@ -11,9 +11,10 @@ desktop GUI work.
 ```text
 CLI
   -> App-facing job/service models
-  -> AppSettings
-  -> LocalFileSource / UrlAudioDownloader
-  -> LocalTranscriptionPipeline
+  -> TranscriptionService
+      -> AppSettings
+      -> LocalFileSource / UrlAudioDownloader
+      -> LocalTranscriptionPipeline
        -> FfmpegAudioExtractor
        -> LocalWhisperTranscriber
        -> TranscriptArtifactWriter
@@ -37,7 +38,7 @@ local file/folder
 
 ### `src/flowscribe/cli`
 
-- `main.py`: application entry point. It parses options, creates settings, wires adapters, and runs the job.
+- `main.py`: application entry point. It parses options, creates app-facing jobs, delegates transcription to `TranscriptionService`, and formats terminal output.
 - `args.py`: command-line option definitions and `CliOptions`.
 
 The CLI should remain thin. It should not contain transcription, media, or output formatting logic.
@@ -98,9 +99,10 @@ Output writers should not know how input was discovered or how transcription was
 ## Dependency Direction
 
 ```text
-CLI -> Config
-CLI -> Core
-CLI -> Concrete adapters
+CLI -> App
+App -> Config
+App -> Core
+App -> Concrete adapters
 Concrete adapters -> Core models / ports
 Concrete adapters -> External tools or libraries
 ```
