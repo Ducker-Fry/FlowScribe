@@ -2,7 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from flowscribe.gui.state import GuiTranscriptionForm
+from flowscribe.core.errors import DownloadError
+from flowscribe.gui.state import GuiTranscriptionForm, is_acceptable_local_source
 
 
 def test_gui_form_builds_local_job(tmp_path: Path) -> None:
@@ -70,6 +71,25 @@ def test_gui_form_rejects_invalid_url() -> None:
         form.to_job()
 
 
+def test_gui_form_reuses_url_safety_validation(monkeypatch) -> None:
+    def fake_validate_public_http_url(url: str, *, network_family: str = "auto") -> None:
+        assert url == "http://localhost/audio.mp3"
+        assert network_family == "ipv4"
+        raise DownloadError("Localhost URLs are blocked for safety.")
+
+    monkeypatch.setattr(
+        "flowscribe.gui.state.validate_public_http_url",
+        fake_validate_public_http_url,
+    )
+    form = GuiTranscriptionForm(
+        url="http://localhost/audio.mp3",
+        network_family="ipv4",
+    )
+
+    with pytest.raises(ValueError, match="Localhost URLs are blocked for safety."):
+        form.to_job()
+
+
 def test_gui_form_preview_is_plain_data(tmp_path: Path) -> None:
     form = GuiTranscriptionForm(
         local_paths=(tmp_path / "a.mp4",),
@@ -82,3 +102,16 @@ def test_gui_form_preview_is_plain_data(tmp_path: Path) -> None:
     assert preview["sources"][0]["kind"] == "local"
     assert preview["sources"][1]["kind"] == "url"
     assert preview["cookies_path"].endswith("cookies.txt")
+
+
+def test_gui_accepts_cli_supported_local_sources(tmp_path: Path) -> None:
+    wav = tmp_path / "sample.wav"
+    wav.write_bytes(b"placeholder")
+    folder = tmp_path / "folder"
+    folder.mkdir()
+    text = tmp_path / "notes.txt"
+    text.write_text("notes", encoding="utf-8")
+
+    assert is_acceptable_local_source(wav)
+    assert is_acceptable_local_source(folder)
+    assert not is_acceptable_local_source(text)

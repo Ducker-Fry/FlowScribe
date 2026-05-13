@@ -7,6 +7,9 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from flowscribe.app.models import SourceSpec, TranscriptionJob
+from flowscribe.core.errors import DownloadError
+from flowscribe.input.file_filter import is_supported_media
+from flowscribe.input.url_security import validate_public_http_url
 
 
 SUPPORTED_GUI_FORMATS = ("txt", "md", "json", "srt", "vtt")
@@ -41,6 +44,14 @@ class GuiTranscriptionForm:
 
         if has_url and not _is_http_url(self.url.strip()):
             errors.append("URL input must start with http:// or https://.")
+        elif has_url:
+            try:
+                validate_public_http_url(
+                    self.url.strip(),
+                    network_family=self.network_family,
+                )
+            except DownloadError as exc:
+                errors.append(str(exc))
 
         if not self.output_formats:
             errors.append("Select at least one output format.")
@@ -120,3 +131,9 @@ class GuiTranscriptionForm:
 def _is_http_url(value: str) -> bool:
     parsed = urlparse(value)
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def is_acceptable_local_source(path: Path) -> bool:
+    """Return whether a local path matches what the CLI local source can accept."""
+
+    return path.is_dir() or is_supported_media(path)

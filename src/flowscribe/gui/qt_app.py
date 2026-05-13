@@ -9,7 +9,21 @@ from pathlib import Path
 from flowscribe import __version__
 from flowscribe.app.models import ProgressEvent
 from flowscribe.app.service import TranscriptionService
-from flowscribe.gui.state import GuiTranscriptionForm, SUPPORTED_GUI_FORMATS
+from flowscribe.core.errors import SearchError
+from flowscribe.output.time_format import format_timestamp
+from flowscribe.gui.state import (
+    GuiTranscriptionForm,
+    SUPPORTED_GUI_FORMATS,
+    is_acceptable_local_source,
+)
+from flowscribe.gui.transcript_viewer import (
+    TranscriptSearchHitView,
+    TranscriptView,
+    load_transcript_view,
+    render_segment_line,
+    render_transcript_view,
+    search_transcript_view,
+)
 
 
 def run_gui(argv: list[str] | None = None) -> int:
@@ -37,8 +51,45 @@ class FlowScribeMainWindow:
     """Thin Qt view that delegates state conversion to GuiTranscriptionForm."""
 
     def __new__(cls):
-        from PySide6.QtWidgets import QMainWindow
         from PySide6.QtCore import QObject, QThread, Signal, Slot
+        from PySide6.QtWidgets import QListWidget, QMainWindow
+
+        class _SourceListWidget(QListWidget):
+            files_dropped = Signal(object)
+
+            def __init__(self) -> None:
+                super().__init__()
+                self.setAcceptDrops(True)
+
+            def dragEnterEvent(self, event) -> None:
+                if _dropped_local_paths(event):
+                    event.acceptProposedAction()
+                    return
+                event.ignore()
+
+            def dragMoveEvent(self, event) -> None:
+                if _dropped_local_paths(event):
+                    event.acceptProposedAction()
+                    return
+                event.ignore()
+
+            def dropEvent(self, event) -> None:
+                paths = _dropped_local_paths(event)
+                if not paths:
+                    event.ignore()
+                    return
+                self.files_dropped.emit(paths)
+                event.acceptProposedAction()
+
+        def _dropped_local_paths(event) -> list[Path]:
+            if not event.mimeData().hasUrls():
+                return []
+            paths = [
+                Path(url.toLocalFile())
+                for url in event.mimeData().urls()
+                if url.isLocalFile()
+            ]
+            return [path for path in paths if is_acceptable_local_source(path)]
 
         class _TranscriptionWorker(QObject):
             progress = Signal(str)
@@ -71,6 +122,9 @@ class FlowScribeMainWindow:
                 self._local_paths: list[Path] = []
                 self._thread: QThread | None = None
                 self._worker: _TranscriptionWorker | None = None
+                self._transcript_path: Path | None = None
+                self._transcript_view: TranscriptView | None = None
+                self._search_hits: tuple[TranscriptSearchHitView, ...] = ()
                 self._setup_window()
 
             def _setup_window(self) -> None:
@@ -103,11 +157,9 @@ class FlowScribeMainWindow:
                 left_layout = QVBoxLayout(left_panel)
                 left_layout.setSpacing(10)
 
-                self.file_list = QListWidget()
+                self.file_list = _SourceListWidget()
                 self.file_list.setMinimumWidth(300)
-                self.file_list.setAcceptDrops(True)
-                self.file_list.dragEnterEvent = self.dragEnterEvent
-                self.file_list.dropEvent = self.dropEvent
+                self.file_list.files_dropped.connect(self._add_dropped_files)
 
                 file_actions = QHBoxLayout()
                 add_file_button = QPushButton("Add Files")
@@ -205,11 +257,15 @@ class FlowScribeMainWindow:
                 settings_layout.addWidget(self.keep_media_check, 11, 1)
 
                 action_row = QHBoxLayout()
+                open_transcript_button = QPushButton("Open Transcript JSON")
+                open_transcript_button.clicked.connect(self._open_transcript_json)
+                self.open_transcript_button = open_transcript_button
                 collect_button = QPushButton("Collect State")
                 collect_button.clicked.connect(self._show_state_preview)
                 self.collect_button = collect_button
                 self.start_button = QPushButton("Start Transcription")
                 self.start_button.clicked.connect(self._start_transcription)
+                action_row.addWidget(open_transcript_button)
                 action_row.addWidget(collect_button)
                 action_row.addWidget(self.start_button)
                 action_row.addStretch(1)
@@ -226,35 +282,65 @@ class FlowScribeMainWindow:
                 self.preview_output.setMinimumHeight(180)
                 self.preview_output.setPlaceholderText("Progress and output files will appear here.")
 
+                self.transcript_output = QTextEdit()
+                self.transcript_output.setReadOnly(True)
+                self.transcript_output.setMinimumHeight(220)
+                self.transcript_output.setPlaceholderText(
+                    "Transcript segments and timestamps will appear here."
+                )
+
+                search_row = QHBoxLayout()
+                self.search_input = QLineEdit()
+                self.search_input.setPlaceholderText("Search transcript keyword")
+                self.search_input.returnPressed.connect(self._run_transcript_search)
+                self.search_button = QPushButton("Search")
+                self.search_button.clicked.connect(self._run_transcript_search)
+                search_row.addWidget(self.search_input)
+                search_row.addWidget(self.search_button)
+
+                self.search_results = QListWidget()
+                self.search_results.itemActivated.connect(self._jump_to_selected_hit)
+                self.search_results.itemClicked.connect(self._jump_to_selected_hit)
+
                 right_layout.addWidget(settings_box)
                 right_layout.addLayout(action_row)
                 right_layout.addWidget(self.status_label)
                 right_layout.addWidget(self.progress_bar)
                 right_layout.addWidget(QLabel("Run details"))
                 right_layout.addWidget(self.preview_output)
+                right_layout.addWidget(QLabel("Transcript viewer"))
+                right_layout.addLayout(search_row)
+                right_layout.addWidget(QLabel("Search results"))
+                right_layout.addWidget(self.search_results)
+                right_layout.addWidget(self.transcript_output)
 
                 root_layout.addWidget(left_panel, 1)
                 root_layout.addWidget(right_panel, 2)
                 self.setCentralWidget(root)
 
             def dragEnterEvent(self, event) -> None:
-                if event.mimeData().hasUrls():
+                if _dropped_local_paths(event):
                     event.acceptProposedAction()
                     return
                 event.ignore()
 
             def dropEvent(self, event) -> None:
-                added = False
-                for url in event.mimeData().urls():
-                    if not url.isLocalFile():
-                        continue
-                    self._add_local_file(Path(url.toLocalFile()))
-                    added = True
-                if added:
-                    event.acceptProposedAction()
-                    self.status_label.setText("Local file(s) added.")
+                paths = _dropped_local_paths(event)
+                if not paths:
+                    event.ignore()
                     return
-                event.ignore()
+                self._add_dropped_files(paths)
+                event.acceptProposedAction()
+
+            def _add_dropped_files(self, paths: list[Path]) -> None:
+                added = 0
+                for path in paths:
+                    if self._add_local_file(path):
+                        added += 1
+                if added:
+                    self.status_label.setText(f"Added {added} local source(s).")
+                else:
+                    self.status_label.setText("No new supported local sources were added.")
 
             def _choose_files(self) -> None:
                 from PySide6.QtWidgets import QFileDialog
@@ -265,10 +351,15 @@ class FlowScribeMainWindow:
                 for path in paths:
                     self._add_local_file(Path(path))
 
-            def _add_local_file(self, path: Path) -> None:
-                if path not in self._local_paths:
-                    self._local_paths.append(path)
-                    self.file_list.addItem(str(path))
+            def _add_local_file(self, path: Path) -> bool:
+                if not is_acceptable_local_source(path):
+                    self.status_label.setText(f"Unsupported local source: {path}")
+                    return False
+                if path in self._local_paths:
+                    return False
+                self._local_paths.append(path)
+                self.file_list.addItem(str(path))
+                return True
 
             def _clear_files(self) -> None:
                 self._local_paths.clear()
@@ -287,6 +378,19 @@ class FlowScribeMainWindow:
                 path, _ = QFileDialog.getOpenFileName(self, "Choose cookies.txt")
                 if path:
                     self.cookies_input.setText(path)
+
+            def _open_transcript_json(self) -> None:
+                from PySide6.QtWidgets import QFileDialog
+
+                path, _ = QFileDialog.getOpenFileName(
+                    self,
+                    "Open transcript JSON",
+                    self.output_dir_input.text().strip() or "outputs",
+                    "JSON files (*.json)",
+                )
+                if not path:
+                    return
+                self._load_transcript_json(Path(path))
 
             def _form(self) -> GuiTranscriptionForm:
                 output_formats = tuple(
@@ -324,9 +428,7 @@ class FlowScribeMainWindow:
                     return
 
                 preview = form.preview()
-                self.status_label.setText(
-                    "State collected successfully. Execution will be connected in Milestone 3.2."
-                )
+                self.status_label.setText("State collected successfully.")
                 self.preview_output.setPlainText(json.dumps(preview, ensure_ascii=False, indent=2))
 
             def _start_transcription(self) -> None:
@@ -386,9 +488,16 @@ class FlowScribeMainWindow:
 
                 self.status_label.setText(f"Done. Succeeded: {result.succeeded}.")
                 self.preview_output.append("\nOutput files:")
+                transcript_loaded = False
                 for artifacts in result.outputs:
                     for path in artifacts.paths:
                         self.preview_output.append(str(path))
+                        if not transcript_loaded and path.suffix.lower() == ".json":
+                            transcript_loaded = self._load_transcript_json(path)
+                if not transcript_loaded:
+                    self.transcript_output.setPlainText(
+                        "No transcript JSON output was generated for this run."
+                    )
 
             def _fail_transcription(self, message: str) -> None:
                 self.progress_bar.setRange(0, 1)
@@ -401,5 +510,86 @@ class FlowScribeMainWindow:
             def _clear_worker_refs(self) -> None:
                 self._thread = None
                 self._worker = None
+
+            def _load_transcript_json(self, path: Path) -> bool:
+                try:
+                    view = load_transcript_view(path)
+                except ValueError as exc:
+                    self.status_label.setText("Could not open transcript JSON.")
+                    self.transcript_output.setPlainText(str(exc))
+                    self.search_results.clear()
+                    self._search_hits = ()
+                    return False
+
+                self._transcript_path = path
+                self._transcript_view = view
+                self._search_hits = ()
+                self.search_results.clear()
+                self.transcript_output.setPlainText(render_transcript_view(view))
+                self.status_label.setText(f"Loaded transcript JSON: {path.name}")
+                return True
+
+            def _run_transcript_search(self) -> None:
+                if self._transcript_path is None or self._transcript_view is None:
+                    self.status_label.setText("Open a transcript JSON file before searching.")
+                    return
+
+                query = self.search_input.text().strip()
+                if not query:
+                    self.status_label.setText("Enter a keyword to search.")
+                    self.search_results.clear()
+                    self._search_hits = ()
+                    return
+
+                try:
+                    hits = search_transcript_view(
+                        self._transcript_path,
+                        self._transcript_view,
+                        query,
+                    )
+                except SearchError as exc:
+                    self.status_label.setText(str(exc))
+                    self.search_results.clear()
+                    self._search_hits = ()
+                    return
+
+                self._search_hits = hits
+                self.search_results.clear()
+                if not hits:
+                    self.status_label.setText(f'No matches found for "{query}".')
+                    return
+
+                for hit in hits:
+                    label = (
+                        f"[{hit.segment_index + 1}] "
+                        f"{hit.context} "
+                        f"({format_timestamp(hit.start_seconds)}"
+                        f" - {format_timestamp(hit.end_seconds)})"
+                    )
+                    self.search_results.addItem(label)
+                self.status_label.setText(f'Found {len(hits)} match(es) for "{query}".')
+                self.search_results.setCurrentRow(0)
+                self._jump_to_hit(hits[0])
+
+            def _jump_to_selected_hit(self, *_args) -> None:
+                row = self.search_results.currentRow()
+                if row < 0 or row >= len(self._search_hits):
+                    return
+                self._jump_to_hit(self._search_hits[row])
+
+            def _jump_to_hit(self, hit: TranscriptSearchHitView) -> None:
+                from PySide6.QtGui import QTextCursor
+
+                if self._transcript_view is None:
+                    return
+                if hit.segment_index >= len(self._transcript_view.segments):
+                    return
+
+                segment = self._transcript_view.segments[hit.segment_index]
+                target = render_segment_line(segment)
+                if not self.transcript_output.find(target):
+                    self.transcript_output.moveCursor(QTextCursor.MoveOperation.Start)
+                    self.transcript_output.find(target)
+                self.transcript_output.setFocus()
 
         return _Window()

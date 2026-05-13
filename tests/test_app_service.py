@@ -132,3 +132,54 @@ def test_transcription_service_emits_write_events_for_url_source(monkeypatch, tm
     assert result.ok is True
     assert result.outputs == (artifact,)
     assert "write" in [event.stage for event in events]
+
+
+def test_transcription_service_passes_url_network_options_to_downloader(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    audio = tmp_path / "remote-audio.m4a"
+    audio.write_bytes(b"audio")
+    captured: dict = {}
+
+    class FakeDownload:
+        path = audio
+        cleanup_dir = tmp_path / "download"
+
+    class FakeDownloader:
+        def __init__(self, **kwargs) -> None:
+            captured.update(kwargs)
+
+        def download_audio(self, url: str):
+            captured["url"] = url
+            return FakeDownload()
+
+    class FakePipeline:
+        def process(self, item: MediaItem) -> OutputArtifacts:
+            return OutputArtifacts(paths=(tmp_path / "out" / "remote-audio.txt",))
+
+    monkeypatch.setattr("flowscribe.app.service.UrlAudioDownloader", FakeDownloader)
+    monkeypatch.setattr("flowscribe.app.service._build_pipeline", lambda job, settings: FakePipeline())
+
+    cookies = tmp_path / "cookies.txt"
+    job = TranscriptionJob(
+        sources=(SourceSpec(kind="url", value="https://example.com/watch", keep_media=True),),
+        output_dir=tmp_path / "out",
+        network_family="ipv6",
+        cookies_path=cookies,
+        proxy="http://127.0.0.1:7890",
+        max_download_mb=321,
+        max_duration_seconds=45,
+        download_timeout_seconds=12,
+    )
+
+    result = TranscriptionService().run(job)
+
+    assert result.ok is True
+    assert captured["url"] == "https://example.com/watch"
+    assert captured["network_family"] == "ipv6"
+    assert captured["cookies_path"] == cookies
+    assert captured["proxy"] == "http://127.0.0.1:7890"
+    assert captured["max_bytes"] == 321 * 1024 * 1024
+    assert captured["max_duration_seconds"] == 45
+    assert captured["timeout_seconds"] == 12
