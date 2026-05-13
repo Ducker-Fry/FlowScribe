@@ -7,6 +7,8 @@ import sys
 from pathlib import Path
 
 from flowscribe import __version__
+from flowscribe.app.models import ProgressEvent
+from flowscribe.app.service import TranscriptionService
 from flowscribe.gui.state import GuiTranscriptionForm, SUPPORTED_GUI_FORMATS
 
 
@@ -36,11 +38,39 @@ class FlowScribeMainWindow:
 
     def __new__(cls):
         from PySide6.QtWidgets import QMainWindow
+        from PySide6.QtCore import QObject, QThread, Signal, Slot
+
+        class _TranscriptionWorker(QObject):
+            progress = Signal(str)
+            finished = Signal(object)
+            failed = Signal(str)
+
+            def __init__(self, job) -> None:
+                super().__init__()
+                self._job = job
+
+            @Slot()
+            def run(self) -> None:
+                try:
+                    result = TranscriptionService().run(self._job, progress=self._handle_progress)
+                except Exception as exc:  # pragma: no cover - defensive GUI boundary
+                    self.failed.emit(str(exc))
+                    return
+                self.finished.emit(result)
+
+            def _handle_progress(self, event: ProgressEvent) -> None:
+                if event.stage == "complete":
+                    self.progress.emit(event.message)
+                    return
+                if event.message:
+                    self.progress.emit(event.message)
 
         class _Window(QMainWindow):
             def __init__(self) -> None:
                 super().__init__()
                 self._local_paths: list[Path] = []
+                self._thread: QThread | None = None
+                self._worker: _TranscriptionWorker | None = None
                 self._setup_window()
 
             def _setup_window(self) -> None:
@@ -53,6 +83,7 @@ class FlowScribeMainWindow:
                     QLabel,
                     QLineEdit,
                     QListWidget,
+                    QProgressBar,
                     QPushButton,
                     QTextEdit,
                     QVBoxLayout,
@@ -61,6 +92,7 @@ class FlowScribeMainWindow:
 
                 self.setWindowTitle("FlowScribe")
                 self.resize(1040, 680)
+                self.setAcceptDrops(True)
 
                 root = QWidget()
                 root_layout = QHBoxLayout(root)
@@ -73,7 +105,9 @@ class FlowScribeMainWindow:
 
                 self.file_list = QListWidget()
                 self.file_list.setMinimumWidth(300)
-                self.file_list.setAcceptDrops(False)
+                self.file_list.setAcceptDrops(True)
+                self.file_list.dragEnterEvent = self.dragEnterEvent
+                self.file_list.dropEvent = self.dropEvent
 
                 file_actions = QHBoxLayout()
                 add_file_button = QPushButton("Add Files")
@@ -173,29 +207,54 @@ class FlowScribeMainWindow:
                 action_row = QHBoxLayout()
                 collect_button = QPushButton("Collect State")
                 collect_button.clicked.connect(self._show_state_preview)
-                disabled_start_button = QPushButton("Start Transcription")
-                disabled_start_button.setEnabled(False)
+                self.collect_button = collect_button
+                self.start_button = QPushButton("Start Transcription")
+                self.start_button.clicked.connect(self._start_transcription)
                 action_row.addWidget(collect_button)
-                action_row.addWidget(disabled_start_button)
+                action_row.addWidget(self.start_button)
                 action_row.addStretch(1)
 
-                self.status_label = QLabel("GUI skeleton ready. Transcription execution is planned for Milestone 3.2.")
+                self.status_label = QLabel("Ready. Add a local media file, choose outputs, then start transcription.")
                 self.status_label.setWordWrap(True)
+
+                self.progress_bar = QProgressBar()
+                self.progress_bar.setRange(0, 1)
+                self.progress_bar.setValue(0)
 
                 self.preview_output = QTextEdit()
                 self.preview_output.setReadOnly(True)
                 self.preview_output.setMinimumHeight(180)
-                self.preview_output.setPlaceholderText("Collected TranscriptionJob preview will appear here.")
+                self.preview_output.setPlaceholderText("Progress and output files will appear here.")
 
                 right_layout.addWidget(settings_box)
                 right_layout.addLayout(action_row)
                 right_layout.addWidget(self.status_label)
-                right_layout.addWidget(QLabel("State preview"))
+                right_layout.addWidget(self.progress_bar)
+                right_layout.addWidget(QLabel("Run details"))
                 right_layout.addWidget(self.preview_output)
 
                 root_layout.addWidget(left_panel, 1)
                 root_layout.addWidget(right_panel, 2)
                 self.setCentralWidget(root)
+
+            def dragEnterEvent(self, event) -> None:
+                if event.mimeData().hasUrls():
+                    event.acceptProposedAction()
+                    return
+                event.ignore()
+
+            def dropEvent(self, event) -> None:
+                added = False
+                for url in event.mimeData().urls():
+                    if not url.isLocalFile():
+                        continue
+                    self._add_local_file(Path(url.toLocalFile()))
+                    added = True
+                if added:
+                    event.acceptProposedAction()
+                    self.status_label.setText("Local file(s) added.")
+                    return
+                event.ignore()
 
             def _choose_files(self) -> None:
                 from PySide6.QtWidgets import QFileDialog
@@ -204,10 +263,12 @@ class FlowScribeMainWindow:
                 if not paths:
                     return
                 for path in paths:
-                    parsed = Path(path)
-                    if parsed not in self._local_paths:
-                        self._local_paths.append(parsed)
-                        self.file_list.addItem(str(parsed))
+                    self._add_local_file(Path(path))
+
+            def _add_local_file(self, path: Path) -> None:
+                if path not in self._local_paths:
+                    self._local_paths.append(path)
+                    self.file_list.addItem(str(path))
 
             def _clear_files(self) -> None:
                 self._local_paths.clear()
@@ -267,5 +328,78 @@ class FlowScribeMainWindow:
                     "State collected successfully. Execution will be connected in Milestone 3.2."
                 )
                 self.preview_output.setPlainText(json.dumps(preview, ensure_ascii=False, indent=2))
+
+            def _start_transcription(self) -> None:
+                if self._thread is not None:
+                    self.status_label.setText("A transcription job is already running.")
+                    return
+
+                form = self._form()
+                errors = form.validate()
+                if errors:
+                    self.status_label.setText(" ".join(errors))
+                    self.preview_output.clear()
+                    return
+
+                job = form.to_job()
+                self.preview_output.setPlainText(
+                    "Starting transcription...\n\n"
+                    + json.dumps(form.preview(), ensure_ascii=False, indent=2)
+                    + "\n"
+                )
+                self.status_label.setText("Running transcription in the background...")
+                self.progress_bar.setRange(0, 0)
+                self.start_button.setEnabled(False)
+                self.collect_button.setEnabled(False)
+
+                self._thread = QThread(self)
+                self._worker = _TranscriptionWorker(job)
+                self._worker.moveToThread(self._thread)
+                self._thread.started.connect(self._worker.run)
+                self._worker.progress.connect(self._append_progress)
+                self._worker.finished.connect(self._finish_transcription)
+                self._worker.failed.connect(self._fail_transcription)
+                self._worker.finished.connect(self._thread.quit)
+                self._worker.failed.connect(self._thread.quit)
+                self._thread.finished.connect(self._worker.deleteLater)
+                self._thread.finished.connect(self._thread.deleteLater)
+                self._thread.finished.connect(self._clear_worker_refs)
+                self._thread.start()
+
+            def _append_progress(self, message: str) -> None:
+                self.preview_output.append(message)
+
+            def _finish_transcription(self, result) -> None:
+                self.progress_bar.setRange(0, 1)
+                self.progress_bar.setValue(1)
+                self.start_button.setEnabled(True)
+                self.collect_button.setEnabled(True)
+
+                if result.errors:
+                    self.status_label.setText(
+                        f"Done with errors. Succeeded: {result.succeeded}. Failed: {result.failed}."
+                    )
+                    self.preview_output.append("\nFailures:")
+                    for error in result.errors:
+                        self.preview_output.append(f"- {error.source}: {error.message}")
+                    return
+
+                self.status_label.setText(f"Done. Succeeded: {result.succeeded}.")
+                self.preview_output.append("\nOutput files:")
+                for artifacts in result.outputs:
+                    for path in artifacts.paths:
+                        self.preview_output.append(str(path))
+
+            def _fail_transcription(self, message: str) -> None:
+                self.progress_bar.setRange(0, 1)
+                self.progress_bar.setValue(0)
+                self.start_button.setEnabled(True)
+                self.collect_button.setEnabled(True)
+                self.status_label.setText("Transcription failed.")
+                self.preview_output.append(f"\nError: {message}")
+
+            def _clear_worker_refs(self) -> None:
+                self._thread = None
+                self._worker = None
 
         return _Window()

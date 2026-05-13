@@ -6,17 +6,22 @@ memorizing CLI commands while keeping the UI replaceable later.
 
 ## Current Milestone
 
-Milestone 3.1 implements the GUI skeleton:
+Milestone 3.2 connects the GUI skeleton to local-file transcription:
 
 - Open a desktop window.
 - Choose local media files.
+- Drag local media files into the window.
 - Paste a URL.
 - Choose an output directory.
 - Set model, language, preset, output formats, network family, proxy, and cookies path.
 - Collect and preview form state as a `TranscriptionJob`-compatible payload.
+- Start a transcription job for local files.
+- Display progress messages.
+- Display output file paths.
+- Display structured failure messages.
 
-It intentionally does not start transcription yet. Execution will be connected in
-Milestone 3.2.
+URL fields are already present in the form, but Phase 3.2's acceptance focus is
+local-file transcription from the GUI.
 
 ## Install GUI Dependencies
 
@@ -67,11 +72,11 @@ such as WebView, a web UI, or a more polished native interface.
 
 ## Current Boundary
 
-The `Start Transcription` button is disabled in Milestone 3.1. The working button
-is `Collect State`, which validates the form and shows the collected job preview.
+The `Start Transcription` button now runs the collected job in a background Qt
+thread, so the GUI should remain responsive while local transcription is running.
 
-Milestone 3.2 will connect the GUI to background transcription execution and
-progress events.
+Milestone 3.3 will polish URL transcription from the GUI and add stronger
+job-level controls.
 
 ## Build A GUI Executable
 

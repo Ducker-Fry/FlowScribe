@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Added the Phase 3.1 PySide6 desktop GUI skeleton for collecting transcription form state.
+- Connected the desktop GUI to background local-file transcription with progress and output display.
 
 ## 0.2.2 - 2026-05-13
 
