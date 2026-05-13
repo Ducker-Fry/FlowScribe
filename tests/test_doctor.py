@@ -30,6 +30,7 @@ def test_parse_transcribe_subcommand_args() -> None:
             "--format",
             "txt,md,json,srt,vtt",
             "--word-timestamps",
+            "--no-vad-filter",
         ]
     )
 
@@ -39,6 +40,8 @@ def test_parse_transcribe_subcommand_args() -> None:
     assert options.output_dir == Path("out")
     assert options.output_formats == ("txt", "md", "json", "srt", "vtt")
     assert options.word_timestamps is True
+    assert options.vad_filter is False
+    assert options.no_vad_filter is True
 
 
 def test_parse_legacy_transcribe_args() -> None:
@@ -48,6 +51,16 @@ def test_parse_legacy_transcribe_args() -> None:
     assert options.command == "transcribe"
     assert options.inputs == [Path("video.mp4")]
     assert options.output_formats == ("txt", "md")
+    assert options.no_vad_filter is False
+
+
+def test_vad_flags_are_mutually_exclusive() -> None:
+    try:
+        parse_args(["transcribe", "video.mp4", "--vad-filter", "--no-vad-filter"])
+    except SystemExit as exc:
+        assert exc.code == 2
+    else:
+        raise AssertionError("Expected argparse to reject mutually exclusive VAD flags.")
 
 
 def test_parse_simple_command_args() -> None:

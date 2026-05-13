@@ -96,6 +96,7 @@ def build_settings(options) -> AppSettings:
         task=options.task,
         beam_size=options.beam_size,
         vad_filter=options.vad_filter,
+        no_vad_filter=options.no_vad_filter,
         initial_prompt=options.initial_prompt,
         word_timestamps=options.word_timestamps,
         recursive=options.recursive,
@@ -244,6 +245,7 @@ class _UrlSettingsAdapter:
         self.task = options.task
         self.beam_size = options.beam_size
         self.vad_filter = options.vad_filter
+        self.no_vad_filter = options.no_vad_filter
         self.initial_prompt = options.initial_prompt
         self.word_timestamps = options.word_timestamps
         self.recursive = False

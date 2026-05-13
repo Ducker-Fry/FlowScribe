@@ -166,6 +166,16 @@ Enable voice activity detection:
 flowscribe "D:\media\lecture.mp4" -o outputs --vad-filter
 ```
 
+Explicitly disable voice activity detection:
+
+```powershell
+flowscribe "D:\media\lecture.mp4" -o outputs --no-vad-filter
+```
+
+Use `--vad-filter` for long silent sections or noisy gaps. Use `--no-vad-filter`
+when a news clip, music intro, quiet opening, or background sound causes the
+beginning of the transcript to be missing. See [VAD Guide](vad-guide.md).
+
 Add an initial prompt:
 
 ```powershell

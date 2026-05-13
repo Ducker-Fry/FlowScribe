@@ -13,6 +13,7 @@ def test_zh_preset_applies_language_and_prompt_without_forcing_vad(tmp_path: Pat
         task="transcribe",
         beam_size=5,
         vad_filter=False,
+        no_vad_filter=False,
         initial_prompt=None,
         word_timestamps=True,
         recursive=False,
@@ -37,6 +38,7 @@ def test_explicit_prompt_and_language_override_zh_preset_defaults(tmp_path: Path
         task="transcribe",
         beam_size=3,
         vad_filter=False,
+        no_vad_filter=False,
         initial_prompt="custom terms",
         word_timestamps=False,
         recursive=False,
@@ -60,6 +62,7 @@ def test_explicit_vad_filter_still_applies_with_zh_preset(tmp_path: Path) -> Non
         task="transcribe",
         beam_size=5,
         vad_filter=True,
+        no_vad_filter=False,
         initial_prompt=None,
         word_timestamps=False,
         recursive=False,
@@ -69,3 +72,25 @@ def test_explicit_vad_filter_still_applies_with_zh_preset(tmp_path: Path) -> Non
 
     assert settings.language == "zh"
     assert settings.vad_filter is True
+
+
+def test_no_vad_filter_overrides_enabled_vad(tmp_path: Path) -> None:
+    settings = AppSettings.from_options(
+        output_dir=tmp_path / "out",
+        work_dir=None,
+        model_name="small",
+        language=None,
+        preset="zh",
+        task="transcribe",
+        beam_size=5,
+        vad_filter=True,
+        no_vad_filter=True,
+        initial_prompt=None,
+        word_timestamps=False,
+        recursive=False,
+        overwrite=False,
+        keep_audio=False,
+    )
+
+    assert settings.language == "zh"
+    assert settings.vad_filter is False

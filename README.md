@@ -247,6 +247,7 @@ See [Packaging](docs/packaging.md) for release details.
 --preset zh         Chinese-oriented transcription preset
 --beam-size 5       Decoding beam size; larger can improve accuracy
 --vad-filter        Enable voice activity detection
+--no-vad-filter     Disable voice activity detection explicitly
 --initial-prompt    Guide terminology and mixed-language behavior
 --task transcribe   Keep source language; this is the default
 --timestamps        Include segment timestamps in timestamp-aware outputs
@@ -266,12 +267,13 @@ URL safety options:
 ```
 
 `tiny` is useful for quick smoke tests. For real Chinese or mixed-language transcription, start with `small`; use `medium` or larger models when accuracy matters more than speed.
-If the beginning of a video is missing or inaccurate, retry without `--vad-filter`; VAD can over-filter news intros, music beds, or low-volume openings.
+If the beginning of a video is missing or inaccurate, retry with `--no-vad-filter`; VAD can over-filter news intros, music beds, or low-volume openings.
 
 ## Documentation
 
 - [User Guide](docs/user-guide.md)
 - [Demo](docs/demo.md)
+- [VAD Guide](docs/vad-guide.md)
 - [Release Installation](docs/release-installation.md)
 - [Development Guide](docs/development-guide.md)
 - [Packaging](docs/packaging.md)

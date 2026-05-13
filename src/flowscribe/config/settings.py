@@ -41,6 +41,7 @@ class AppSettings:
         task: str,
         beam_size: int,
         vad_filter: bool,
+        no_vad_filter: bool,
         initial_prompt: str | None,
         word_timestamps: bool,
         recursive: bool,
@@ -60,6 +61,8 @@ class AppSettings:
         if preset == "zh":
             effective_language = effective_language or "zh"
             effective_initial_prompt = effective_initial_prompt or ZH_INITIAL_PROMPT
+        if no_vad_filter:
+            effective_vad_filter = False
 
         return cls(
             output_dir=resolved_output,

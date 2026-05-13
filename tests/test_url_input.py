@@ -21,6 +21,7 @@ def test_parse_url_args() -> None:
             "--format",
             "json,vtt",
             "--keep-media",
+            "--no-vad-filter",
             "--max-download-mb",
             "100",
             "--max-duration",
@@ -36,6 +37,8 @@ def test_parse_url_args() -> None:
     assert options.output_dir == Path("out")
     assert options.output_formats == ("json", "vtt")
     assert options.keep_media is True
+    assert options.vad_filter is False
+    assert options.no_vad_filter is True
     assert options.max_download_mb == 100
     assert options.max_duration_seconds == 1800
     assert options.download_timeout_seconds == 15

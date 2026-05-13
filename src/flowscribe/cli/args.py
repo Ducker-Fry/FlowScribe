@@ -20,6 +20,7 @@ class CliOptions:
     task: str
     beam_size: int
     vad_filter: bool
+    no_vad_filter: bool
     initial_prompt: str | None
     timestamps: bool
     word_timestamps: bool
@@ -60,6 +61,7 @@ class UrlOptions:
     task: str
     beam_size: int
     vad_filter: bool
+    no_vad_filter: bool
     initial_prompt: str | None
     timestamps: bool
     word_timestamps: bool
@@ -153,10 +155,16 @@ def parse_transcribe_args(argv: list[str] | None = None, *, prog: str = "flowscr
         default=5,
         help="Beam size for decoding. Higher can improve accuracy but may be slower. Default: 5",
     )
-    parser.add_argument(
+    vad_group = parser.add_mutually_exclusive_group()
+    vad_group.add_argument(
         "--vad-filter",
         action="store_true",
         help="Enable voice activity detection to reduce silence/noise segments.",
+    )
+    vad_group.add_argument(
+        "--no-vad-filter",
+        action="store_true",
+        help="Disable voice activity detection, overriding preset defaults.",
     )
     parser.add_argument(
         "--initial-prompt",
@@ -210,6 +218,7 @@ def parse_transcribe_args(argv: list[str] | None = None, *, prog: str = "flowscr
         task=namespace.task,
         beam_size=namespace.beam_size,
         vad_filter=namespace.vad_filter,
+        no_vad_filter=namespace.no_vad_filter,
         initial_prompt=namespace.initial_prompt,
         timestamps=namespace.timestamps,
         word_timestamps=namespace.word_timestamps,
@@ -265,10 +274,16 @@ def add_transcription_options(parser: argparse.ArgumentParser) -> None:
         default=5,
         help="Beam size for decoding. Higher can improve accuracy but may be slower. Default: 5",
     )
-    parser.add_argument(
+    vad_group = parser.add_mutually_exclusive_group()
+    vad_group.add_argument(
         "--vad-filter",
         action="store_true",
         help="Enable voice activity detection to reduce silence/noise segments.",
+    )
+    vad_group.add_argument(
+        "--no-vad-filter",
+        action="store_true",
+        help="Disable voice activity detection, overriding preset defaults.",
     )
     parser.add_argument(
         "--initial-prompt",
@@ -348,6 +363,7 @@ def parse_url_args(argv: list[str] | None = None) -> UrlOptions:
         task=namespace.task,
         beam_size=namespace.beam_size,
         vad_filter=namespace.vad_filter,
+        no_vad_filter=namespace.no_vad_filter,
         initial_prompt=namespace.initial_prompt,
         timestamps=namespace.timestamps,
         word_timestamps=namespace.word_timestamps,
