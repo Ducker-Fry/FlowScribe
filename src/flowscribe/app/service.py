@@ -182,6 +182,7 @@ class TranscriptionService:
             max_bytes=job.max_download_mb * 1024 * 1024,
             max_duration_seconds=job.max_duration_seconds,
             timeout_seconds=job.download_timeout_seconds,
+            network_family=job.network_family,
         )
 
         progress(

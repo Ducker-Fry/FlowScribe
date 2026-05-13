@@ -207,6 +207,14 @@ Use `inspect` when you want to check whether media has audio, whether a URL has
 an audio-only stream, or what strategy FlowScribe will use before transcription.
 See [Inspect Command](inspect.md).
 
+If a public site such as YouTube fails because DNS resolves to a blocked IPv6 or
+reserved address, retry URL commands with:
+
+```powershell
+flowscribe inspect "https://www.youtube.com/watch?v=aUL-VAt0gDI" --network-family ipv4
+flowscribe url "https://www.youtube.com/watch?v=aUL-VAt0gDI" --network-family ipv4
+```
+
 ### 7. Output Files
 
 For an input file named:

@@ -5,11 +5,14 @@ from __future__ import annotations
 import ipaddress
 import socket
 from urllib.parse import urlparse
+from typing import Literal
 
 from flowscribe.core.errors import DownloadError
 
+NetworkFamily = Literal["auto", "ipv4", "ipv6"]
 
-def validate_public_http_url(url: str) -> None:
+
+def validate_public_http_url(url: str, *, network_family: NetworkFamily = "auto") -> None:
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"}:
         raise DownloadError("URL input only supports http and https URLs.")
@@ -23,7 +26,8 @@ def validate_public_http_url(url: str) -> None:
         raise DownloadError("Localhost URLs are blocked for safety.")
 
     try:
-        addresses = socket.getaddrinfo(host, parsed.port, type=socket.SOCK_STREAM)
+        family = _socket_family(network_family)
+        addresses = socket.getaddrinfo(host, parsed.port, family=family, type=socket.SOCK_STREAM)
     except socket.gaierror as exc:
         raise DownloadError(f"Could not resolve URL host: {host}") from exc
 
@@ -34,6 +38,14 @@ def validate_public_http_url(url: str) -> None:
         ip = ipaddress.ip_address(address[4][0])
         if _is_blocked_ip(ip):
             raise DownloadError(f"URL host resolves to a blocked network address: {ip}")
+
+
+def _socket_family(network_family: NetworkFamily) -> socket.AddressFamily:
+    if network_family == "ipv4":
+        return socket.AF_INET
+    if network_family == "ipv6":
+        return socket.AF_INET6
+    return socket.AF_UNSPEC
 
 
 def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:

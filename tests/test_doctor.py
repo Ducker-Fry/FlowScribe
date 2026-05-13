@@ -101,13 +101,24 @@ def test_parse_search_args() -> None:
 
 
 def test_parse_inspect_args() -> None:
-    options = parse_args(["inspect", "https://example.com/video", "--json", "--timeout", "12"])
+    options = parse_args(
+        [
+            "inspect",
+            "https://example.com/video",
+            "--json",
+            "--timeout",
+            "12",
+            "--network-family",
+            "ipv4",
+        ]
+    )
 
     assert isinstance(options, InspectOptions)
     assert options.command == "inspect"
     assert options.source == "https://example.com/video"
     assert options.json_output is True
     assert options.timeout_seconds == 12
+    assert options.network_family == "ipv4"
 
 
 def test_parse_time_value_accepts_common_timestamp_forms() -> None:

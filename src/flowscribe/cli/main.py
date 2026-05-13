@@ -86,7 +86,10 @@ def run_url(options) -> int:
 def run_inspect(options) -> int:
     try:
         if _is_http_url(options.source):
-            inspection = UrlInspector(timeout_seconds=options.timeout_seconds).inspect(options.source)
+            inspection = UrlInspector(
+                timeout_seconds=options.timeout_seconds,
+                network_family=options.network_family,
+            ).inspect(options.source)
             payload = {"type": "url", **asdict(inspection)}
         else:
             inspection = LocalMediaInspector(timeout_seconds=options.timeout_seconds).inspect(
@@ -251,6 +254,7 @@ def _job_from_url_options(options) -> TranscriptionJob:
         max_download_mb=options.max_download_mb,
         max_duration_seconds=options.max_duration_seconds,
         download_timeout_seconds=options.download_timeout_seconds,
+        network_family=options.network_family,
     )
 
 

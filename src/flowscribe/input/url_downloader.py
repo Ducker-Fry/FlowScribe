@@ -14,7 +14,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 from flowscribe.core.errors import DownloadError
 from flowscribe.input.file_filter import SUPPORTED_MEDIA_EXTENSIONS
 from flowscribe.input.url_inspector import friendly_ytdlp_error
-from flowscribe.input.url_security import validate_public_http_url
+from flowscribe.input.url_security import NetworkFamily, validate_public_http_url
 from flowscribe.media.tools import resolve_tool_path
 
 AUDIO_EXTENSIONS = {".aac", ".aiff", ".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav", ".wma"}
@@ -35,6 +35,7 @@ class UrlAudioDownloader:
         max_bytes: int,
         max_duration_seconds: float,
         timeout_seconds: int,
+        network_family: NetworkFamily = "auto",
         ffmpeg_executable: str | None = None,
         ffprobe_executable: str | None = None,
     ) -> None:
@@ -42,11 +43,12 @@ class UrlAudioDownloader:
         self._max_bytes = max_bytes
         self._max_duration_seconds = max_duration_seconds
         self._timeout_seconds = timeout_seconds
+        self._network_family = network_family
         self._ffmpeg_executable = ffmpeg_executable or resolve_tool_path("ffmpeg")
         self._ffprobe_executable = ffprobe_executable or resolve_tool_path("ffprobe")
 
     def download_audio(self, url: str) -> UrlDownloadResult:
-        validate_public_http_url(url)
+        validate_public_http_url(url, network_family=self._network_family)
         item_dir = self._download_dir / self._safe_id(url)
         if item_dir.exists():
             shutil.rmtree(item_dir)
@@ -141,6 +143,7 @@ class UrlAudioDownloader:
             "quiet": True,
             "no_warnings": True,
             "noprogress": True,
+            **_network_options(self._network_family),
         }
         try:
             with YoutubeDL(base_options) as ydl:
@@ -161,7 +164,7 @@ class UrlAudioDownloader:
                     "or site-specific extraction limits.\n"
                     "Run `flowscribe inspect <url>` to see available formats before transcribing."
                 )
-            validate_public_http_url(stream_url)
+            validate_public_http_url(stream_url, network_family=self._network_family)
             return self._extract_page_stream_audio(stream_url, item_dir)
 
         output_template = str(item_dir / "remote-audio.%(ext)s")
@@ -321,3 +324,11 @@ class _SafeRedirectHandler(HTTPRedirectHandler):
 
 def _safe_url_opener():
     return build_opener(_SafeRedirectHandler)
+
+
+def _network_options(network_family: NetworkFamily) -> dict:
+    if network_family == "ipv4":
+        return {"source_address": "0.0.0.0"}
+    if network_family == "ipv6":
+        return {"source_address": "::"}
+    return {}

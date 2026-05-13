@@ -189,6 +189,8 @@ flowscribe inspect "https://tv.cctv.com/2026/05/12/VIDEBtNAQbQRT5vvxRFP28FR26051
 
 For URL pages, `inspect` shows whether FlowScribe can use an audio-only stream or
 needs to stream the lowest combined media and extract audio.
+If your DNS or proxy returns an unusual blocked IPv6 address for a public site, try
+`--network-family ipv4`.
 
 Search a transcript JSON and locate a keyword:
 

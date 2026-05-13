@@ -55,6 +55,7 @@ class InspectOptions:
     source: str
     json_output: bool
     timeout_seconds: int
+    network_family: str
 
 
 @dataclass(frozen=True)
@@ -80,6 +81,7 @@ class UrlOptions:
     max_download_mb: int
     max_duration_seconds: float
     download_timeout_seconds: int
+    network_family: str
 
 
 @dataclass(frozen=True)
@@ -361,6 +363,12 @@ def parse_url_args(argv: list[str] | None = None) -> UrlOptions:
         default=30,
         help="Download/network timeout in seconds. Default: 30",
     )
+    parser.add_argument(
+        "--network-family",
+        choices=["auto", "ipv4", "ipv6"],
+        default="auto",
+        help="Network address family for URL resolution/downloads. Default: auto",
+    )
     namespace = parser.parse_args(argv)
     return UrlOptions(
         command="url",
@@ -384,6 +392,7 @@ def parse_url_args(argv: list[str] | None = None) -> UrlOptions:
         max_download_mb=namespace.max_download_mb,
         max_duration_seconds=namespace.max_duration,
         download_timeout_seconds=namespace.download_timeout,
+        network_family=namespace.network_family,
     )
 
 
@@ -488,12 +497,19 @@ def parse_inspect_args(argv: list[str] | None = None) -> InspectOptions:
         default=30,
         help="Network/probe timeout in seconds. Default: 30",
     )
+    parser.add_argument(
+        "--network-family",
+        choices=["auto", "ipv4", "ipv6"],
+        default="auto",
+        help="Network address family for URL inspection. Default: auto",
+    )
     namespace = parser.parse_args(argv)
     return InspectOptions(
         command="inspect",
         source=namespace.source,
         json_output=namespace.json_output,
         timeout_seconds=namespace.timeout,
+        network_family=namespace.network_family,
     )
 
 

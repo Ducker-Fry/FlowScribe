@@ -28,6 +28,8 @@ def test_parse_url_args() -> None:
             "00:30:00",
             "--download-timeout",
             "15",
+            "--network-family",
+            "ipv4",
         ]
     )
 
@@ -42,6 +44,7 @@ def test_parse_url_args() -> None:
     assert options.max_download_mb == 100
     assert options.max_duration_seconds == 1800
     assert options.download_timeout_seconds == 15
+    assert options.network_family == "ipv4"
 
 
 def test_validate_public_http_url_blocks_localhost() -> None:
@@ -57,6 +60,16 @@ def test_validate_public_http_url_blocks_private_ip(monkeypatch) -> None:
 
     with pytest.raises(DownloadError, match="blocked network"):
         validate_public_http_url("https://example.com/audio.mp3")
+
+
+def test_validate_public_http_url_can_force_ipv4(monkeypatch) -> None:
+    def fake_getaddrinfo(host, port, family=0, type=0):
+        assert family != 0
+        return [(None, None, None, None, ("93.184.216.34", 443))]
+
+    monkeypatch.setattr("socket.getaddrinfo", fake_getaddrinfo)
+
+    validate_public_http_url("https://example.com/audio.mp3", network_family="ipv4")
 
 
 def test_downloader_uses_safe_hashed_directory_and_downloads_audio(monkeypatch, tmp_path: Path) -> None:
@@ -82,7 +95,7 @@ def test_downloader_uses_safe_hashed_directory_and_downloads_audio(monkeypatch, 
 
     monkeypatch.setattr(
         "flowscribe.input.url_downloader.validate_public_http_url",
-        lambda url: None,
+        lambda url, **kwargs: None,
     )
     monkeypatch.setattr(
         "flowscribe.input.url_downloader._safe_url_opener",
@@ -122,7 +135,7 @@ def test_downloader_rejects_large_direct_audio(monkeypatch, tmp_path: Path) -> N
 
     monkeypatch.setattr(
         "flowscribe.input.url_downloader.validate_public_http_url",
-        lambda url: None,
+        lambda url, **kwargs: None,
     )
     monkeypatch.setattr(
         "flowscribe.input.url_downloader._safe_url_opener",
@@ -133,6 +146,7 @@ def test_downloader_rejects_large_direct_audio(monkeypatch, tmp_path: Path) -> N
         max_bytes=10,
         max_duration_seconds=60,
         timeout_seconds=5,
+        network_family="ipv4",
     )
 
     with pytest.raises(DownloadError, match="larger"):
@@ -181,19 +195,21 @@ def test_page_url_requests_audio_only_with_ytdlp(monkeypatch, tmp_path: Path) ->
     monkeypatch.setitem(sys.modules, "yt_dlp.utils", fake_utils)
     monkeypatch.setattr(
         "flowscribe.input.url_downloader.validate_public_http_url",
-        lambda url: None,
+        lambda url, **kwargs: None,
     )
     downloader = UrlAudioDownloader(
         download_dir=tmp_path,
         max_bytes=10,
         max_duration_seconds=60,
         timeout_seconds=5,
+        network_family="ipv4",
     )
     monkeypatch.setattr(downloader, "_ensure_duration", lambda path_or_url: None)
 
     result = downloader.download_audio("https://example.com/watch?id=123")
 
     assert captured_options["noprogress"] is True
+    assert captured_options["source_address"] == "0.0.0.0"
     assert captured_options["format"] == "bestaudio"
     assert result.path.name == "remote-audio.m4a"
 
@@ -250,7 +266,7 @@ def test_page_url_extracts_audio_from_lowest_combined_stream(monkeypatch, tmp_pa
     monkeypatch.setitem(sys.modules, "yt_dlp.utils", fake_utils)
     monkeypatch.setattr(
         "flowscribe.input.url_downloader.validate_public_http_url",
-        lambda url: None,
+        lambda url, **kwargs: None,
     )
     monkeypatch.setattr("subprocess.run", fake_run)
     downloader = UrlAudioDownloader(

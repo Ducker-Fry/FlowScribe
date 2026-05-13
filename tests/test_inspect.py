@@ -51,7 +51,10 @@ def test_url_inspector_selects_audio_only_format(monkeypatch) -> None:
     fake_utils.DownloadError = RuntimeError
     monkeypatch.setitem(sys.modules, "yt_dlp", fake_ytdlp)
     monkeypatch.setitem(sys.modules, "yt_dlp.utils", fake_utils)
-    monkeypatch.setattr("flowscribe.input.url_inspector.validate_public_http_url", lambda url: None)
+    monkeypatch.setattr(
+        "flowscribe.input.url_inspector.validate_public_http_url",
+        lambda url, **kwargs: None,
+    )
 
     result = UrlInspector().inspect("https://example.com/watch")
 
@@ -104,7 +107,10 @@ def test_url_inspector_selects_lowest_combined_stream(monkeypatch) -> None:
     fake_utils.DownloadError = RuntimeError
     monkeypatch.setitem(sys.modules, "yt_dlp", fake_ytdlp)
     monkeypatch.setitem(sys.modules, "yt_dlp.utils", fake_utils)
-    monkeypatch.setattr("flowscribe.input.url_inspector.validate_public_http_url", lambda url: None)
+    monkeypatch.setattr(
+        "flowscribe.input.url_inspector.validate_public_http_url",
+        lambda url, **kwargs: None,
+    )
 
     result = UrlInspector().inspect("https://example.com/watch")
 
@@ -150,7 +156,10 @@ def test_url_inspector_falls_back_to_selected_page_media(monkeypatch) -> None:
     fake_utils.DownloadError = RuntimeError
     monkeypatch.setitem(sys.modules, "yt_dlp", fake_ytdlp)
     monkeypatch.setitem(sys.modules, "yt_dlp.utils", fake_utils)
-    monkeypatch.setattr("flowscribe.input.url_inspector.validate_public_http_url", lambda url: None)
+    monkeypatch.setattr(
+        "flowscribe.input.url_inspector.validate_public_http_url",
+        lambda url, **kwargs: None,
+    )
 
     result = UrlInspector().inspect("https://example.com/watch")
 

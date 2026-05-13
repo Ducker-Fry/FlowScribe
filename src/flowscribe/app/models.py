@@ -47,6 +47,7 @@ class TranscriptionJob:
     max_download_mb: int = 2048
     max_duration_seconds: float = 4 * 60 * 60
     download_timeout_seconds: int = 30
+    network_family: str = "auto"
     created_at: datetime = field(default_factory=datetime.now)
 
 

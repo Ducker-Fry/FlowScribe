@@ -76,6 +76,20 @@ flowscribe inspect "D:\media\lecture.mp4" --json
 flowscribe inspect "https://example.com/video" --json
 ```
 
+## Network Family
+
+By default, FlowScribe uses automatic address-family resolution and blocks private,
+loopback, reserved, and other unsafe addresses. Some DNS or proxy environments may
+return an unusual blocked IPv6 address for a public video site. In that case, use
+IPv4 explicitly:
+
+```powershell
+flowscribe inspect "https://www.youtube.com/watch?v=aUL-VAt0gDI" --network-family ipv4
+flowscribe url "https://www.youtube.com/watch?v=aUL-VAt0gDI" --network-family ipv4
+```
+
+This still keeps the public-address safety check for IPv4 addresses.
+
 ## How To Read The Strategy
 
 `download audio directly`

@@ -70,6 +70,7 @@ keep_audio
 max_download_mb
 max_duration_seconds
 download_timeout_seconds
+network_family
 ```
 
 This object is the main boundary between UI state and backend execution.

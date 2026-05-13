@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 
 from flowscribe.core.errors import DownloadError
 from flowscribe.input.file_filter import SUPPORTED_MEDIA_EXTENSIONS
-from flowscribe.input.url_security import validate_public_http_url
+from flowscribe.input.url_security import NetworkFamily, validate_public_http_url
 
 AUDIO_EXTENSIONS = {".aac", ".aiff", ".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav", ".wma"}
 VIDEO_EXTENSIONS = SUPPORTED_MEDIA_EXTENSIONS - AUDIO_EXTENSIONS
@@ -41,11 +41,12 @@ class UrlInspection:
 
 
 class UrlInspector:
-    def __init__(self, *, timeout_seconds: int = 30) -> None:
+    def __init__(self, *, timeout_seconds: int = 30, network_family: NetworkFamily = "auto") -> None:
         self._timeout_seconds = timeout_seconds
+        self._network_family = network_family
 
     def inspect(self, url: str) -> UrlInspection:
-        validate_public_http_url(url)
+        validate_public_http_url(url, network_family=self._network_family)
         suffix = Path(urlparse(url).path).suffix.lower()
         if suffix in AUDIO_EXTENSIONS:
             return UrlInspection(
@@ -115,6 +116,7 @@ class UrlInspector:
             "retries": 1,
             "quiet": True,
             "no_warnings": True,
+            **_network_options(self._network_family),
         }
         try:
             with YoutubeDL(options) as ydl:
@@ -132,6 +134,14 @@ def friendly_ytdlp_error(exc: Exception) -> str:
         "Try opening the URL in a browser, using a public direct media URL, or updating yt-dlp.",
     ]
     return "\n".join(suggestions)
+
+
+def _network_options(network_family: NetworkFamily) -> dict:
+    if network_family == "ipv4":
+        return {"source_address": "0.0.0.0"}
+    if network_family == "ipv6":
+        return {"source_address": "::"}
+    return {}
 
 
 def _is_audio_only(item: dict) -> bool:
