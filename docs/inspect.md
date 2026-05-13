@@ -76,6 +76,19 @@ flowscribe inspect "D:\media\lecture.mp4" --json
 flowscribe inspect "https://example.com/video" --json
 ```
 
+## Cookies
+
+Some supported sites only expose media after a normal browser login. For sources
+you are allowed to access, pass a Netscape-format cookie file explicitly:
+
+```powershell
+flowscribe inspect "https://example.com/video" --cookies "D:\private\cookies.txt"
+flowscribe url "https://example.com/video" --cookies "D:\private\cookies.txt" -o outputs
+```
+
+Cookie files can contain active session data. Keep them private and do not commit
+them to Git. See [Cookies For URL Media](cookies.md).
+
 ## Network Family
 
 By default, FlowScribe uses automatic address-family resolution and blocks private,
@@ -127,13 +140,15 @@ If inspection fails, FlowScribe now reports likely causes:
 
 - Unsupported site.
 - Login-only media.
+- Missing or expired cookies.
 - DRM or protected media.
 - Network or proxy issue.
 - Site anti-bot rules.
 - Outdated `yt-dlp` extractor.
 
-Try opening the URL in a browser, using a public direct media URL, or updating
-dependencies with:
+Try opening the URL in a browser, passing `--cookies path\to\cookies.txt` for
+login-required media, using a public direct media URL, or updating dependencies
+with:
 
 ```powershell
 python -m pip install -U yt-dlp

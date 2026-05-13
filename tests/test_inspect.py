@@ -8,10 +8,15 @@ from flowscribe.input.url_inspector import UrlInspector
 from flowscribe.media.inspector import LocalMediaInspector
 
 
-def test_url_inspector_selects_audio_only_format(monkeypatch) -> None:
+def test_url_inspector_selects_audio_only_format(monkeypatch, tmp_path: Path) -> None:
+    captured_options: dict = {}
+    cookies = tmp_path / "cookies.txt"
+    cookies.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
+
     class FakeYoutubeDL:
         def __init__(self, options: dict) -> None:
             self.options = options
+            captured_options.update(options)
 
         def __enter__(self):
             return self
@@ -56,13 +61,14 @@ def test_url_inspector_selects_audio_only_format(monkeypatch) -> None:
         lambda url, **kwargs: None,
     )
 
-    result = UrlInspector().inspect("https://example.com/watch")
+    result = UrlInspector(cookies_path=cookies).inspect("https://example.com/watch")
 
     assert result.kind == "video-page-url"
     assert result.has_audio_only is True
     assert result.selected_strategy == "download audio-only stream"
     assert result.selected_format is not None
     assert result.selected_format.format_id == "audio"
+    assert captured_options["cookiefile"] == str(cookies.resolve())
 
 
 def test_url_inspector_selects_lowest_combined_stream(monkeypatch) -> None:

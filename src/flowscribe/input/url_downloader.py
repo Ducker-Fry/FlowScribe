@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from flowscribe.core.errors import DownloadError
+from flowscribe.input.cookies import resolve_cookies_path
 from flowscribe.input.file_filter import SUPPORTED_MEDIA_EXTENSIONS
 from flowscribe.input.url_inspector import friendly_ytdlp_error
 from flowscribe.input.url_security import NetworkFamily, validate_public_http_url
@@ -36,6 +37,7 @@ class UrlAudioDownloader:
         max_duration_seconds: float,
         timeout_seconds: int,
         network_family: NetworkFamily = "auto",
+        cookies_path: Path | None = None,
         ffmpeg_executable: str | None = None,
         ffprobe_executable: str | None = None,
     ) -> None:
@@ -44,6 +46,7 @@ class UrlAudioDownloader:
         self._max_duration_seconds = max_duration_seconds
         self._timeout_seconds = timeout_seconds
         self._network_family = network_family
+        self._cookies_path = cookies_path
         self._ffmpeg_executable = ffmpeg_executable or resolve_tool_path("ffmpeg")
         self._ffprobe_executable = ffprobe_executable or resolve_tool_path("ffprobe")
 
@@ -145,6 +148,9 @@ class UrlAudioDownloader:
             "noprogress": True,
             **_network_options(self._network_family),
         }
+        cookiefile = resolve_cookies_path(self._cookies_path)
+        if cookiefile:
+            base_options["cookiefile"] = cookiefile
         try:
             with YoutubeDL(base_options) as ydl:
                 info = ydl.extract_info(url, download=False)
@@ -161,8 +167,9 @@ class UrlAudioDownloader:
                 raise DownloadError(
                     "No usable audio stream was found for this URL.\n"
                     "Possible causes: video has no audio, unsupported media format, DRM/protected media, "
-                    "or site-specific extraction limits.\n"
-                    "Run `flowscribe inspect <url>` to see available formats before transcribing."
+                    "site-specific extraction limits, or missing/expired cookies for login-only media.\n"
+                    "Run `flowscribe inspect <url>` to see available formats before transcribing. "
+                    "If the page requires login, retry with `--cookies path\\to\\cookies.txt`."
                 )
             validate_public_http_url(stream_url, network_family=self._network_family)
             return self._extract_page_stream_audio(stream_url, item_dir)
@@ -184,8 +191,9 @@ class UrlAudioDownloader:
                 "yt-dlp failed to download the selected audio stream.\n"
                 f"Original error: {exc}\n"
                 "Possible causes: network/proxy issue, site throttling, expired media URL, "
-                "login-only media, or a changed site extractor.\n"
-                "Try `flowscribe inspect <url>` first, or update yt-dlp."
+                "missing/expired cookies for login-only media, or a changed site extractor.\n"
+                "Try `flowscribe inspect <url>` first, retry with `--cookies path\\to\\cookies.txt`, "
+                "or update yt-dlp."
             ) from exc
 
         files = [path for path in item_dir.iterdir() if path.is_file()]
@@ -225,8 +233,9 @@ class UrlAudioDownloader:
                 "Could not extract audio from the page media stream.\n"
                 f"Original error: {message}\n"
                 "Possible causes: expired HLS/DASH stream, network/proxy issue, site throttling, "
-                "protected media, or missing audio in the selected stream.\n"
-                "Run `flowscribe inspect <url>` to review available formats."
+                "protected media, missing/expired cookies, or missing audio in the selected stream.\n"
+                "Run `flowscribe inspect <url>` to review available formats. If the page requires login, "
+                "retry with `--cookies path\\to\\cookies.txt`."
             ) from exc
         self._ensure_size(path)
         self._ensure_duration(path)

@@ -191,6 +191,8 @@ For URL pages, `inspect` shows whether FlowScribe can use an audio-only stream o
 needs to stream the lowest combined media and extract audio.
 If your DNS or proxy returns an unusual blocked IPv6 address for a public site, try
 `--network-family ipv4`.
+For login-required pages that you are allowed to access, pass an explicit
+Netscape cookie file with `--cookies path\to\cookies.txt`.
 
 Search a transcript JSON and locate a keyword:
 
@@ -276,6 +278,8 @@ URL safety options:
 --max-download-mb 2048     Limit downloaded audio/intermediate media size
 --max-duration 04:00:00    Limit remote media duration
 --download-timeout 30      Limit network/download operations
+--network-family auto      Choose auto, ipv4, or ipv6 URL networking
+--cookies cookies.txt      Explicit cookies file for login-required media
 ```
 
 `tiny` is useful for quick smoke tests. For real Chinese or mixed-language transcription, start with `small`; use `medium` or larger models when accuracy matters more than speed.
@@ -286,6 +290,7 @@ If the beginning of a video is missing or inaccurate, retry with `--no-vad-filte
 - [User Guide](docs/user-guide.md)
 - [Demo](docs/demo.md)
 - [Inspect Command](docs/inspect.md)
+- [Cookies For URL Media](docs/cookies.md)
 - [VAD Guide](docs/vad-guide.md)
 - [GUI Interfaces](docs/gui-interfaces.md)
 - [Release Installation](docs/release-installation.md)

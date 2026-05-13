@@ -183,6 +183,7 @@ class TranscriptionService:
             max_duration_seconds=job.max_duration_seconds,
             timeout_seconds=job.download_timeout_seconds,
             network_family=job.network_family,
+            cookies_path=job.cookies_path,
         )
 
         progress(

@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from flowscribe.core.errors import DownloadError
+from flowscribe.input.cookies import resolve_cookies_path
 from flowscribe.input.file_filter import SUPPORTED_MEDIA_EXTENSIONS
 from flowscribe.input.url_security import NetworkFamily, validate_public_http_url
 
@@ -41,9 +42,16 @@ class UrlInspection:
 
 
 class UrlInspector:
-    def __init__(self, *, timeout_seconds: int = 30, network_family: NetworkFamily = "auto") -> None:
+    def __init__(
+        self,
+        *,
+        timeout_seconds: int = 30,
+        network_family: NetworkFamily = "auto",
+        cookies_path: Path | None = None,
+    ) -> None:
         self._timeout_seconds = timeout_seconds
         self._network_family = network_family
+        self._cookies_path = cookies_path
 
     def inspect(self, url: str) -> UrlInspection:
         validate_public_http_url(url, network_family=self._network_family)
@@ -118,6 +126,9 @@ class UrlInspector:
             "no_warnings": True,
             **_network_options(self._network_family),
         }
+        cookiefile = resolve_cookies_path(self._cookies_path)
+        if cookiefile:
+            options["cookiefile"] = cookiefile
         try:
             with YoutubeDL(options) as ydl:
                 return ydl.extract_info(url, download=False)
@@ -130,8 +141,8 @@ def friendly_ytdlp_error(exc: Exception) -> str:
     suggestions = [
         "Could not inspect URL media with yt-dlp.",
         f"Original error: {message}",
-        "Possible causes: unsupported site, login-only media, DRM/protected media, network/proxy issue, or site anti-bot rules.",
-        "Try opening the URL in a browser, using a public direct media URL, or updating yt-dlp.",
+        "Possible causes: unsupported site, missing/expired cookies for login-only media, DRM/protected media, network/proxy issue, or site anti-bot rules.",
+        "Try opening the URL in a browser, using a public direct media URL, passing `--cookies path\\to\\cookies.txt`, or updating yt-dlp.",
     ]
     return "\n".join(suggestions)
 

@@ -89,6 +89,7 @@ def run_inspect(options) -> int:
             inspection = UrlInspector(
                 timeout_seconds=options.timeout_seconds,
                 network_family=options.network_family,
+                cookies_path=options.cookies,
             ).inspect(options.source)
             payload = {"type": "url", **asdict(inspection)}
         else:
@@ -255,6 +256,7 @@ def _job_from_url_options(options) -> TranscriptionJob:
         max_duration_seconds=options.max_duration_seconds,
         download_timeout_seconds=options.download_timeout_seconds,
         network_family=options.network_family,
+        cookies_path=options.cookies,
     )
 
 

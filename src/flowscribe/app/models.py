@@ -48,6 +48,7 @@ class TranscriptionJob:
     max_duration_seconds: float = 4 * 60 * 60
     download_timeout_seconds: int = 30
     network_family: str = "auto"
+    cookies_path: Path | None = None
     created_at: datetime = field(default_factory=datetime.now)
 
 

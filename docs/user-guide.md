@@ -215,6 +215,15 @@ flowscribe inspect "https://www.youtube.com/watch?v=aUL-VAt0gDI" --network-famil
 flowscribe url "https://www.youtube.com/watch?v=aUL-VAt0gDI" --network-family ipv4
 ```
 
+For login-required media that you are allowed to access, pass cookies explicitly:
+
+```powershell
+flowscribe inspect "https://example.com/video" --cookies "D:\private\cookies.txt"
+flowscribe url "https://example.com/video" --cookies "D:\private\cookies.txt" -o outputs
+```
+
+See [Cookies For URL Media](cookies.md) before using cookie files.
+
 ### 7. Output Files
 
 For an input file named:

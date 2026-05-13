@@ -30,6 +30,8 @@ def test_parse_url_args() -> None:
             "15",
             "--network-family",
             "ipv4",
+            "--cookies",
+            "login.cookies.txt",
         ]
     )
 
@@ -45,6 +47,7 @@ def test_parse_url_args() -> None:
     assert options.max_duration_seconds == 1800
     assert options.download_timeout_seconds == 15
     assert options.network_family == "ipv4"
+    assert options.cookies == Path("login.cookies.txt")
 
 
 def test_validate_public_http_url_blocks_localhost() -> None:
@@ -155,6 +158,8 @@ def test_downloader_rejects_large_direct_audio(monkeypatch, tmp_path: Path) -> N
 
 def test_page_url_requests_audio_only_with_ytdlp(monkeypatch, tmp_path: Path) -> None:
     captured_options: dict = {}
+    cookies = tmp_path / "cookies.txt"
+    cookies.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
 
     class FakeYoutubeDL:
         def __init__(self, options: dict) -> None:
@@ -203,6 +208,7 @@ def test_page_url_requests_audio_only_with_ytdlp(monkeypatch, tmp_path: Path) ->
         max_duration_seconds=60,
         timeout_seconds=5,
         network_family="ipv4",
+        cookies_path=cookies,
     )
     monkeypatch.setattr(downloader, "_ensure_duration", lambda path_or_url: None)
 
@@ -210,8 +216,32 @@ def test_page_url_requests_audio_only_with_ytdlp(monkeypatch, tmp_path: Path) ->
 
     assert captured_options["noprogress"] is True
     assert captured_options["source_address"] == "0.0.0.0"
+    assert captured_options["cookiefile"] == str(cookies.resolve())
     assert captured_options["format"] == "bestaudio"
     assert result.path.name == "remote-audio.m4a"
+
+
+def test_downloader_rejects_missing_cookies_file(monkeypatch, tmp_path: Path) -> None:
+    fake_ytdlp = ModuleType("yt_dlp")
+    fake_ytdlp.YoutubeDL = object
+    fake_utils = ModuleType("yt_dlp.utils")
+    fake_utils.DownloadError = RuntimeError
+    monkeypatch.setitem(sys.modules, "yt_dlp", fake_ytdlp)
+    monkeypatch.setitem(sys.modules, "yt_dlp.utils", fake_utils)
+    monkeypatch.setattr(
+        "flowscribe.input.url_downloader.validate_public_http_url",
+        lambda url, **kwargs: None,
+    )
+    downloader = UrlAudioDownloader(
+        download_dir=tmp_path,
+        max_bytes=10,
+        max_duration_seconds=60,
+        timeout_seconds=5,
+        cookies_path=tmp_path / "missing.cookies.txt",
+    )
+
+    with pytest.raises(DownloadError, match="Cookies file does not exist"):
+        downloader.download_audio("https://example.com/watch?id=123")
 
 
 def test_page_url_extracts_audio_from_lowest_combined_stream(monkeypatch, tmp_path: Path) -> None:

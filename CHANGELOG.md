@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Added explicit `--cookies` support for `flowscribe url` and `flowscribe inspect`.
+- Documented safe cookie-file usage and ignored common cookie paths to reduce accidental commits.
+
 ## 0.1.0 - 2026-05-11
 
 - Implemented the first local-file transcription CLI.

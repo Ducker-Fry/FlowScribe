@@ -21,6 +21,12 @@ dist/
 /outputs-timestamps/
 *.log
 
+# Sensitive browser/session cookies
+cookies.txt
+*.cookies.txt
+/cookies/
+/.cookies/
+
 # Local media samples
 /samples/
 /media/

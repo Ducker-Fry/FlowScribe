@@ -56,6 +56,7 @@ class InspectOptions:
     json_output: bool
     timeout_seconds: int
     network_family: str
+    cookies: Path | None
 
 
 @dataclass(frozen=True)
@@ -82,6 +83,7 @@ class UrlOptions:
     max_duration_seconds: float
     download_timeout_seconds: int
     network_family: str
+    cookies: Path | None
 
 
 @dataclass(frozen=True)
@@ -369,6 +371,12 @@ def parse_url_args(argv: list[str] | None = None) -> UrlOptions:
         default="auto",
         help="Network address family for URL resolution/downloads. Default: auto",
     )
+    parser.add_argument(
+        "--cookies",
+        type=Path,
+        default=None,
+        help="Explicit Netscape cookies.txt file for login-required media.",
+    )
     namespace = parser.parse_args(argv)
     return UrlOptions(
         command="url",
@@ -393,6 +401,7 @@ def parse_url_args(argv: list[str] | None = None) -> UrlOptions:
         max_duration_seconds=namespace.max_duration,
         download_timeout_seconds=namespace.download_timeout,
         network_family=namespace.network_family,
+        cookies=namespace.cookies,
     )
 
 
@@ -503,6 +512,12 @@ def parse_inspect_args(argv: list[str] | None = None) -> InspectOptions:
         default="auto",
         help="Network address family for URL inspection. Default: auto",
     )
+    parser.add_argument(
+        "--cookies",
+        type=Path,
+        default=None,
+        help="Explicit Netscape cookies.txt file for login-required URL inspection.",
+    )
     namespace = parser.parse_args(argv)
     return InspectOptions(
         command="inspect",
@@ -510,6 +525,7 @@ def parse_inspect_args(argv: list[str] | None = None) -> InspectOptions:
         json_output=namespace.json_output,
         timeout_seconds=namespace.timeout,
         network_family=namespace.network_family,
+        cookies=namespace.cookies,
     )
 
 
