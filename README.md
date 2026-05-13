@@ -128,6 +128,12 @@ Example transcript excerpt:
 2023年以来,全国检察机关共办理非法占用耕地公益诉讼案件1.7万余件...
 ```
 
+Demo screenshots:
+
+![FlowScribe URL transcription demo](docs/assets/demo-terminal.png)
+
+![FlowScribe transcript output demo](docs/assets/demo-transcript.png)
+
 See [Demo](docs/demo.md) for the full walkthrough.
 
 Use the Chinese preset:
