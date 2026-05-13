@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1 - 2026-05-13
+
+- Fixed Windows release packaging so bundled ffmpeg/ffprobe companion DLLs are copied when needed.
+
 ## 0.2.0 - 2026-05-13
 
 - Added URL transcription through `flowscribe url` with audio-first download/extraction.

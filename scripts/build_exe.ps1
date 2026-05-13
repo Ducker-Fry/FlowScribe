@@ -27,13 +27,49 @@ function Copy-Tool {
         [string]$DestinationDir
     )
 
+    $candidatePaths = New-Object System.Collections.Generic.List[string]
     $tool = Get-Command $Name -ErrorAction SilentlyContinue
-    if (-not $tool) {
-        throw "$Name was not found on PATH. Install ffmpeg or add it to PATH before packaging."
+    if ($tool) {
+        $candidatePaths.Add($tool.Source)
     }
 
-    Copy-Item -LiteralPath $tool.Source -Destination (Join-Path $DestinationDir "$Name.exe") -Force
-    Write-Host "Copied $Name from $($tool.Source)"
+    if ($env:ChocolateyInstall) {
+        $chocoLib = Join-Path $env:ChocolateyInstall "lib"
+        if (Test-Path $chocoLib) {
+            Get-ChildItem -Path $chocoLib -Recurse -Filter "$Name.exe" -ErrorAction SilentlyContinue |
+                ForEach-Object { $candidatePaths.Add($_.FullName) }
+        }
+    }
+
+    foreach ($candidate in ($candidatePaths | Select-Object -Unique)) {
+        $pushedLocation = $false
+        try {
+            Push-Location (Split-Path -Parent $candidate)
+            $pushedLocation = $true
+            & $candidate -version *> $null
+            $exitCode = $LASTEXITCODE
+            Pop-Location
+            $pushedLocation = $false
+            if ($exitCode -ne 0) { continue }
+
+            Copy-Item -LiteralPath $candidate -Destination (Join-Path $DestinationDir "$Name.exe") -Force
+
+            $toolDir = Split-Path -Parent $candidate
+            Get-ChildItem -LiteralPath $toolDir -Filter "*.dll" -ErrorAction SilentlyContinue |
+                Copy-Item -Destination $DestinationDir -Force
+
+            Write-Host "Copied $Name from $candidate"
+            return
+        }
+        catch {
+            if ($pushedLocation) {
+                Pop-Location
+            }
+            continue
+        }
+    }
+
+    throw "$Name was not found or could not run. Install a working ffmpeg build before packaging."
 }
 
 Push-Location $ProjectRoot
