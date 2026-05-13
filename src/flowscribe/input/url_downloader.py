@@ -140,6 +140,7 @@ class UrlAudioDownloader:
             "retries": 1,
             "quiet": True,
             "no_warnings": True,
+            "noprogress": True,
         }
         try:
             with YoutubeDL(base_options) as ydl:

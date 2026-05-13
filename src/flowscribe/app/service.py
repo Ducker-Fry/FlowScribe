@@ -205,6 +205,15 @@ class TranscriptionService:
             )
             pipeline = _build_pipeline(job, settings)
             artifacts = pipeline.process(MediaItem(path=download.path))
+            for path in artifacts.paths:
+                progress(
+                    ProgressEvent(
+                        stage="write",
+                        message=f"Wrote: {path}",
+                        source=source.value,
+                        path=path,
+                    )
+                )
         finally:
             if not source.keep_media:
                 shutil.rmtree(download.cleanup_dir, ignore_errors=True)

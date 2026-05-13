@@ -95,3 +95,40 @@ def test_transcription_service_keeps_processing_after_local_item_failure(
     assert result.failed == 1
     assert result.outputs == (artifact,)
     assert result.errors[0].source == str(bad_media)
+
+
+def test_transcription_service_emits_write_events_for_url_source(monkeypatch, tmp_path: Path) -> None:
+    audio = tmp_path / "remote-audio.m4a"
+    audio.write_bytes(b"audio")
+    artifact = OutputArtifacts(paths=(tmp_path / "out" / "remote-audio.txt",))
+
+    class FakeDownload:
+        path = audio
+        cleanup_dir = tmp_path / "download"
+
+    class FakeDownloader:
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = kwargs
+
+        def download_audio(self, url: str):
+            return FakeDownload()
+
+    class FakePipeline:
+        def process(self, item: MediaItem) -> OutputArtifacts:
+            assert item.path == audio
+            return artifact
+
+    monkeypatch.setattr("flowscribe.app.service.UrlAudioDownloader", FakeDownloader)
+    monkeypatch.setattr("flowscribe.app.service._build_pipeline", lambda job, settings: FakePipeline())
+
+    job = TranscriptionJob(
+        sources=(SourceSpec(kind="url", value="https://example.com/video"),),
+        output_dir=tmp_path / "out",
+    )
+    events = []
+
+    result = TranscriptionService().run(job, progress=events.append)
+
+    assert result.ok is True
+    assert result.outputs == (artifact,)
+    assert "write" in [event.stage for event in events]

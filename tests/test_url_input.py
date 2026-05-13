@@ -193,6 +193,7 @@ def test_page_url_requests_audio_only_with_ytdlp(monkeypatch, tmp_path: Path) ->
 
     result = downloader.download_audio("https://example.com/watch?id=123")
 
+    assert captured_options["noprogress"] is True
     assert captured_options["format"] == "bestaudio"
     assert result.path.name == "remote-audio.m4a"
 
