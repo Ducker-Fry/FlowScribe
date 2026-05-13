@@ -55,6 +55,10 @@ def main(argv: list[str] | None = None) -> int:
         print("System audio capture is planned but not implemented yet.")
         print("Future example: flowscribe capture --duration 10m -o outputs")
         return 2
+    if options.command == "gui":
+        from flowscribe.gui.qt_app import run_gui
+
+        return run_gui()
 
     return run_transcribe(options)
 

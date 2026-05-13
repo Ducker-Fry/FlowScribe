@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Added the Phase 3.1 PySide6 desktop GUI skeleton for collecting transcription form state.
+
 ## 0.2.2 - 2026-05-13
 
 - Fixed Windows release packaging to skip Chocolatey shim executables and copy the real ffmpeg/ffprobe binaries.

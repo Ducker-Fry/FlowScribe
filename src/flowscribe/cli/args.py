@@ -111,7 +111,7 @@ def parse_args(
         return parse_inspect_args(argv[1:])
     if command == "url":
         return parse_url_args(argv[1:])
-    if command in {"version", "formats", "models", "capture"}:
+    if command in {"version", "formats", "models", "capture", "gui"}:
         return parse_simple_command_args(command, argv[1:])
     return parse_transcribe_args(argv)
 
@@ -549,6 +549,7 @@ def parse_simple_command_args(command: str, argv: list[str]) -> SimpleCommandOpt
         "formats": "List supported local media file extensions.",
         "models": "Show recommended local transcription models.",
         "capture": "Placeholder for future system audio capture.",
+        "gui": "Launch the experimental desktop GUI.",
     }
     parser = argparse.ArgumentParser(
         prog=f"flowscribe {command}",

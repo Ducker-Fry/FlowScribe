@@ -295,6 +295,7 @@ If the beginning of a video is missing or inaccurate, retry with `--no-vad-filte
 - [Cookies For URL Media](docs/cookies.md)
 - [Proxy Configuration](docs/proxy.md)
 - [VAD Guide](docs/vad-guide.md)
+- [Desktop GUI](docs/gui.md)
 - [GUI Interfaces](docs/gui-interfaces.md)
 - [Release Installation](docs/release-installation.md)
 - [Development Guide](docs/development-guide.md)
