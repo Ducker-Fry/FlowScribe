@@ -14,6 +14,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 from flowscribe.core.errors import DownloadError
 from flowscribe.input.cookies import resolve_cookies_path
 from flowscribe.input.file_filter import SUPPORTED_MEDIA_EXTENSIONS
+from flowscribe.input.proxy import proxy_environment, proxy_handler, yt_dlp_proxy_options
 from flowscribe.input.url_inspector import friendly_ytdlp_error
 from flowscribe.input.url_security import NetworkFamily, validate_public_http_url
 from flowscribe.media.tools import resolve_tool_path
@@ -38,6 +39,7 @@ class UrlAudioDownloader:
         timeout_seconds: int,
         network_family: NetworkFamily = "auto",
         cookies_path: Path | None = None,
+        proxy: str | None = None,
         ffmpeg_executable: str | None = None,
         ffprobe_executable: str | None = None,
     ) -> None:
@@ -47,6 +49,7 @@ class UrlAudioDownloader:
         self._timeout_seconds = timeout_seconds
         self._network_family = network_family
         self._cookies_path = cookies_path
+        self._proxy = proxy
         self._ffmpeg_executable = ffmpeg_executable or resolve_tool_path("ffmpeg")
         self._ffprobe_executable = ffprobe_executable or resolve_tool_path("ffprobe")
 
@@ -70,7 +73,7 @@ class UrlAudioDownloader:
         request = Request(url, headers={"User-Agent": "FlowScribe/0.1"})
         path = item_dir / f"remote-audio{suffix}"
         try:
-            with _safe_url_opener().open(request, timeout=self._timeout_seconds) as response:
+            with _safe_url_opener(self._proxy).open(request, timeout=self._timeout_seconds) as response:
                 length = response.headers.get("Content-Length")
                 if length and int(length) > self._max_bytes:
                     raise DownloadError("Remote audio is larger than the configured size limit.")
@@ -114,7 +117,14 @@ class UrlAudioDownloader:
         ]
         try:
             process_timeout = self._max_duration_seconds + self._timeout_seconds
-            subprocess.run(command, capture_output=True, text=True, timeout=process_timeout, check=True)
+            subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=process_timeout,
+                check=True,
+                env=proxy_environment(self._proxy),
+            )
         except FileNotFoundError as exc:
             raise DownloadError("ffmpeg was not found. Install ffmpeg and add it to PATH.") from exc
         except subprocess.TimeoutExpired as exc:
@@ -147,6 +157,7 @@ class UrlAudioDownloader:
             "no_warnings": True,
             "noprogress": True,
             **_network_options(self._network_family),
+            **yt_dlp_proxy_options(self._proxy),
         }
         cookiefile = resolve_cookies_path(self._cookies_path)
         if cookiefile:
@@ -222,7 +233,14 @@ class UrlAudioDownloader:
         ]
         try:
             process_timeout = self._max_duration_seconds + self._timeout_seconds
-            subprocess.run(command, capture_output=True, text=True, timeout=process_timeout, check=True)
+            subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=process_timeout,
+                check=True,
+                env=proxy_environment(self._proxy),
+            )
         except FileNotFoundError as exc:
             raise DownloadError("ffmpeg was not found. Install ffmpeg and add it to PATH.") from exc
         except subprocess.TimeoutExpired as exc:
@@ -273,6 +291,7 @@ class UrlAudioDownloader:
                 text=True,
                 timeout=self._timeout_seconds,
                 check=True,
+                env=proxy_environment(self._proxy),
             )
         except FileNotFoundError as exc:
             raise DownloadError("ffprobe was not found. Install ffmpeg and add it to PATH.") from exc
@@ -331,8 +350,11 @@ class _SafeRedirectHandler(HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def _safe_url_opener():
-    return build_opener(_SafeRedirectHandler)
+def _safe_url_opener(proxy: str | None = None):
+    handler = proxy_handler(proxy)
+    if handler is None:
+        return build_opener(_SafeRedirectHandler)
+    return build_opener(_SafeRedirectHandler, handler)
 
 
 def _network_options(network_family: NetworkFamily) -> dict:

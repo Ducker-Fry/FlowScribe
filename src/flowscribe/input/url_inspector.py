@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 from flowscribe.core.errors import DownloadError
 from flowscribe.input.cookies import resolve_cookies_path
 from flowscribe.input.file_filter import SUPPORTED_MEDIA_EXTENSIONS
+from flowscribe.input.proxy import yt_dlp_proxy_options
 from flowscribe.input.url_security import NetworkFamily, validate_public_http_url
 
 AUDIO_EXTENSIONS = {".aac", ".aiff", ".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav", ".wma"}
@@ -48,10 +49,12 @@ class UrlInspector:
         timeout_seconds: int = 30,
         network_family: NetworkFamily = "auto",
         cookies_path: Path | None = None,
+        proxy: str | None = None,
     ) -> None:
         self._timeout_seconds = timeout_seconds
         self._network_family = network_family
         self._cookies_path = cookies_path
+        self._proxy = proxy
 
     def inspect(self, url: str) -> UrlInspection:
         validate_public_http_url(url, network_family=self._network_family)
@@ -125,6 +128,7 @@ class UrlInspector:
             "quiet": True,
             "no_warnings": True,
             **_network_options(self._network_family),
+            **yt_dlp_proxy_options(self._proxy),
         }
         cookiefile = resolve_cookies_path(self._cookies_path)
         if cookiefile:
@@ -142,7 +146,7 @@ def friendly_ytdlp_error(exc: Exception) -> str:
         "Could not inspect URL media with yt-dlp.",
         f"Original error: {message}",
         "Possible causes: unsupported site, missing/expired cookies for login-only media, DRM/protected media, network/proxy issue, or site anti-bot rules.",
-        "Try opening the URL in a browser, using a public direct media URL, passing `--cookies path\\to\\cookies.txt`, or updating yt-dlp.",
+        "Try opening the URL in a browser, using a public direct media URL, passing `--cookies path\\to\\cookies.txt`, passing `--proxy http://127.0.0.1:7890`, or updating yt-dlp.",
     ]
     return "\n".join(suggestions)
 

@@ -193,6 +193,7 @@ If your DNS or proxy returns an unusual blocked IPv6 address for a public site, 
 `--network-family ipv4`.
 For login-required pages that you are allowed to access, pass an explicit
 Netscape cookie file with `--cookies path\to\cookies.txt`.
+For local proxies such as Clash, pass `--proxy http://127.0.0.1:7890`.
 
 Search a transcript JSON and locate a keyword:
 
@@ -280,6 +281,7 @@ URL safety options:
 --download-timeout 30      Limit network/download operations
 --network-family auto      Choose auto, ipv4, or ipv6 URL networking
 --cookies cookies.txt      Explicit cookies file for login-required media
+--proxy http://127.0.0.1:7890  Explicit proxy for URL media access
 ```
 
 `tiny` is useful for quick smoke tests. For real Chinese or mixed-language transcription, start with `small`; use `medium` or larger models when accuracy matters more than speed.
@@ -291,6 +293,7 @@ If the beginning of a video is missing or inaccurate, retry with `--no-vad-filte
 - [Demo](docs/demo.md)
 - [Inspect Command](docs/inspect.md)
 - [Cookies For URL Media](docs/cookies.md)
+- [Proxy Configuration](docs/proxy.md)
 - [VAD Guide](docs/vad-guide.md)
 - [GUI Interfaces](docs/gui-interfaces.md)
 - [Release Installation](docs/release-installation.md)

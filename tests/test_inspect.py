@@ -61,7 +61,9 @@ def test_url_inspector_selects_audio_only_format(monkeypatch, tmp_path: Path) ->
         lambda url, **kwargs: None,
     )
 
-    result = UrlInspector(cookies_path=cookies).inspect("https://example.com/watch")
+    result = UrlInspector(cookies_path=cookies, proxy="http://127.0.0.1:7890").inspect(
+        "https://example.com/watch"
+    )
 
     assert result.kind == "video-page-url"
     assert result.has_audio_only is True
@@ -69,6 +71,7 @@ def test_url_inspector_selects_audio_only_format(monkeypatch, tmp_path: Path) ->
     assert result.selected_format is not None
     assert result.selected_format.format_id == "audio"
     assert captured_options["cookiefile"] == str(cookies.resolve())
+    assert captured_options["proxy"] == "http://127.0.0.1:7890"
 
 
 def test_url_inspector_selects_lowest_combined_stream(monkeypatch) -> None:

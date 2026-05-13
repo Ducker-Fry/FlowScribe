@@ -103,6 +103,18 @@ flowscribe url "https://www.youtube.com/watch?v=aUL-VAt0gDI" --network-family ip
 
 This still keeps the public-address safety check for IPv4 addresses.
 
+## Proxy
+
+If a URL only works through a local proxy such as Clash, pass the proxy
+explicitly:
+
+```powershell
+flowscribe inspect "https://www.youtube.com/watch?v=aUL-VAt0gDI" --proxy "http://127.0.0.1:7890"
+flowscribe url "https://www.youtube.com/watch?v=aUL-VAt0gDI" --proxy "http://127.0.0.1:7890" -o outputs
+```
+
+See [Proxy Configuration](proxy.md).
+
 ## How To Read The Strategy
 
 `download audio directly`
@@ -146,9 +158,9 @@ If inspection fails, FlowScribe now reports likely causes:
 - Site anti-bot rules.
 - Outdated `yt-dlp` extractor.
 
-Try opening the URL in a browser, passing `--cookies path\to\cookies.txt` for
-login-required media, using a public direct media URL, or updating dependencies
-with:
+Try opening the URL in a browser, passing `--proxy http://127.0.0.1:7890` for
+local proxy access, passing `--cookies path\to\cookies.txt` for login-required
+media, using a public direct media URL, or updating dependencies with:
 
 ```powershell
 python -m pip install -U yt-dlp

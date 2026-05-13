@@ -49,6 +49,7 @@ class TranscriptionJob:
     download_timeout_seconds: int = 30
     network_family: str = "auto"
     cookies_path: Path | None = None
+    proxy: str | None = None
     created_at: datetime = field(default_factory=datetime.now)
 
 

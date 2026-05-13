@@ -32,6 +32,8 @@ def test_parse_url_args() -> None:
             "ipv4",
             "--cookies",
             "login.cookies.txt",
+            "--proxy",
+            "http://127.0.0.1:7890",
         ]
     )
 
@@ -48,6 +50,7 @@ def test_parse_url_args() -> None:
     assert options.download_timeout_seconds == 15
     assert options.network_family == "ipv4"
     assert options.cookies == Path("login.cookies.txt")
+    assert options.proxy == "http://127.0.0.1:7890"
 
 
 def test_validate_public_http_url_blocks_localhost() -> None:
@@ -102,7 +105,7 @@ def test_downloader_uses_safe_hashed_directory_and_downloads_audio(monkeypatch, 
     )
     monkeypatch.setattr(
         "flowscribe.input.url_downloader._safe_url_opener",
-        lambda: FakeOpener(),
+        lambda proxy=None: FakeOpener(),
     )
     downloader = UrlAudioDownloader(
         download_dir=tmp_path,
@@ -142,7 +145,7 @@ def test_downloader_rejects_large_direct_audio(monkeypatch, tmp_path: Path) -> N
     )
     monkeypatch.setattr(
         "flowscribe.input.url_downloader._safe_url_opener",
-        lambda: FakeOpener(),
+        lambda proxy=None: FakeOpener(),
     )
     downloader = UrlAudioDownloader(
         download_dir=tmp_path,
@@ -209,6 +212,7 @@ def test_page_url_requests_audio_only_with_ytdlp(monkeypatch, tmp_path: Path) ->
         timeout_seconds=5,
         network_family="ipv4",
         cookies_path=cookies,
+        proxy="http://127.0.0.1:7890",
     )
     monkeypatch.setattr(downloader, "_ensure_duration", lambda path_or_url: None)
 
@@ -217,6 +221,7 @@ def test_page_url_requests_audio_only_with_ytdlp(monkeypatch, tmp_path: Path) ->
     assert captured_options["noprogress"] is True
     assert captured_options["source_address"] == "0.0.0.0"
     assert captured_options["cookiefile"] == str(cookies.resolve())
+    assert captured_options["proxy"] == "http://127.0.0.1:7890"
     assert captured_options["format"] == "bestaudio"
     assert result.path.name == "remote-audio.m4a"
 
@@ -283,7 +288,7 @@ def test_page_url_extracts_audio_from_lowest_combined_stream(monkeypatch, tmp_pa
         def download(self, urls: list[str]) -> None:
             raise AssertionError("combined video should not be downloaded by yt-dlp")
 
-    def fake_run(command, capture_output, text, timeout, check):
+    def fake_run(command, capture_output, text, timeout, check, env=None):
         assert command[command.index("-i") + 1] == "https://cdn.example.com/low.m3u8"
         Path(command[-1]).write_bytes(b"audio")
         return subprocess.CompletedProcess(command, 0, "", "")

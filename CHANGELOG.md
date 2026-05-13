@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Added explicit `--cookies` support for `flowscribe url` and `flowscribe inspect`.
+- Added explicit `--proxy` support for URL inspection and transcription.
 - Documented safe cookie-file usage and ignored common cookie paths to reduce accidental commits.
 
 ## 0.1.0 - 2026-05-11

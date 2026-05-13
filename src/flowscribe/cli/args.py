@@ -57,6 +57,7 @@ class InspectOptions:
     timeout_seconds: int
     network_family: str
     cookies: Path | None
+    proxy: str | None
 
 
 @dataclass(frozen=True)
@@ -84,6 +85,7 @@ class UrlOptions:
     download_timeout_seconds: int
     network_family: str
     cookies: Path | None
+    proxy: str | None
 
 
 @dataclass(frozen=True)
@@ -377,6 +379,11 @@ def parse_url_args(argv: list[str] | None = None) -> UrlOptions:
         default=None,
         help="Explicit Netscape cookies.txt file for login-required media.",
     )
+    parser.add_argument(
+        "--proxy",
+        default=None,
+        help="Proxy URL for URL media access, such as http://127.0.0.1:7890.",
+    )
     namespace = parser.parse_args(argv)
     return UrlOptions(
         command="url",
@@ -402,6 +409,7 @@ def parse_url_args(argv: list[str] | None = None) -> UrlOptions:
         download_timeout_seconds=namespace.download_timeout,
         network_family=namespace.network_family,
         cookies=namespace.cookies,
+        proxy=namespace.proxy,
     )
 
 
@@ -518,6 +526,11 @@ def parse_inspect_args(argv: list[str] | None = None) -> InspectOptions:
         default=None,
         help="Explicit Netscape cookies.txt file for login-required URL inspection.",
     )
+    parser.add_argument(
+        "--proxy",
+        default=None,
+        help="Proxy URL for URL inspection, such as http://127.0.0.1:7890.",
+    )
     namespace = parser.parse_args(argv)
     return InspectOptions(
         command="inspect",
@@ -526,6 +539,7 @@ def parse_inspect_args(argv: list[str] | None = None) -> InspectOptions:
         timeout_seconds=namespace.timeout,
         network_family=namespace.network_family,
         cookies=namespace.cookies,
+        proxy=namespace.proxy,
     )
 
 

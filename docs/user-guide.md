@@ -215,6 +215,15 @@ flowscribe inspect "https://www.youtube.com/watch?v=aUL-VAt0gDI" --network-famil
 flowscribe url "https://www.youtube.com/watch?v=aUL-VAt0gDI" --network-family ipv4
 ```
 
+If you use Clash or another local proxy, pass it explicitly:
+
+```powershell
+flowscribe inspect "https://www.youtube.com/watch?v=aUL-VAt0gDI" --proxy "http://127.0.0.1:7890"
+flowscribe url "https://www.youtube.com/watch?v=aUL-VAt0gDI" --proxy "http://127.0.0.1:7890" -o outputs
+```
+
+See [Proxy Configuration](proxy.md).
+
 For login-required media that you are allowed to access, pass cookies explicitly:
 
 ```powershell

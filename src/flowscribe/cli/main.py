@@ -90,6 +90,7 @@ def run_inspect(options) -> int:
                 timeout_seconds=options.timeout_seconds,
                 network_family=options.network_family,
                 cookies_path=options.cookies,
+                proxy=options.proxy,
             ).inspect(options.source)
             payload = {"type": "url", **asdict(inspection)}
         else:
@@ -257,6 +258,7 @@ def _job_from_url_options(options) -> TranscriptionJob:
         download_timeout_seconds=options.download_timeout_seconds,
         network_family=options.network_family,
         cookies_path=options.cookies,
+        proxy=options.proxy,
     )
 
 
