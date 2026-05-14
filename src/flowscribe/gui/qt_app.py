@@ -222,11 +222,20 @@ class FlowScribeMainWindow:
             def __init__(self, job) -> None:
                 super().__init__()
                 self._job = job
+                self._cancel_requested = False
+
+            @Slot()
+            def request_cancel(self) -> None:
+                self._cancel_requested = True
 
             @Slot()
             def run(self) -> None:
                 try:
-                    result = TranscriptionService().run(self._job, progress=self._handle_progress)
+                    result = TranscriptionService().run(
+                        self._job,
+                        progress=self._handle_progress,
+                        should_cancel=lambda: self._cancel_requested,
+                    )
                 except Exception as exc:  # pragma: no cover - defensive GUI boundary
                     self.failed.emit(str(exc))
                     return
@@ -280,6 +289,8 @@ class FlowScribeMainWindow:
                 self._saved_preferences = _gui_preferences_payload(DEFAULT_GUI_PREFERENCES)
                 self._thread: QThread | None = None
                 self._worker: _TranscriptionWorker | None = None
+                self._cancel_requested = False
+                self._last_output_dir: Path | None = None
                 self._transcript_path: Path | None = None
                 self._transcript_view: TranscriptView | None = None
                 self._search_hits: tuple[TranscriptSearchHitView, ...] = ()
@@ -432,7 +443,9 @@ class FlowScribeMainWindow:
                 settings_layout.addWidget(self.overwrite_check, 10, 1)
                 settings_layout.addWidget(self.keep_media_check, 11, 1)
 
-                action_row = QHBoxLayout()
+                action_layout = QGridLayout()
+                action_layout.setHorizontalSpacing(8)
+                action_layout.setVerticalSpacing(8)
                 open_transcript_button = QPushButton("Open Transcript JSON")
                 open_transcript_button.clicked.connect(self._open_transcript_json)
                 self.open_transcript_button = open_transcript_button
@@ -445,12 +458,27 @@ class FlowScribeMainWindow:
                 self.collect_button = collect_button
                 self.start_button = QPushButton("Start Transcription")
                 self.start_button.clicked.connect(self._start_transcription)
-                action_row.addWidget(open_transcript_button)
-                action_row.addWidget(self.view_settings_button)
-                action_row.addWidget(self.save_settings_button)
-                action_row.addWidget(collect_button)
-                action_row.addWidget(self.start_button)
-                action_row.addStretch(1)
+                self.cancel_button = QPushButton("Cancel Transcription")
+                self.cancel_button.clicked.connect(self._cancel_transcription)
+                self.cancel_button.setEnabled(False)
+                self.open_output_button = QPushButton("Open Output Folder")
+                self.open_output_button.clicked.connect(self._open_output_dir)
+                self.open_output_button.setEnabled(False)
+                action_buttons = [
+                    open_transcript_button,
+                    self.view_settings_button,
+                    self.save_settings_button,
+                    collect_button,
+                    self.start_button,
+                    self.cancel_button,
+                    self.open_output_button,
+                ]
+                for index, button in enumerate(action_buttons):
+                    row = index // 4
+                    column = index % 4
+                    action_layout.addWidget(button, row, column)
+                for column in range(4):
+                    action_layout.setColumnStretch(column, 1)
 
                 self.status_label = QLabel("Ready. Add a local media file, choose outputs, then start transcription.")
                 self.status_label.setWordWrap(True)
@@ -545,7 +573,7 @@ class FlowScribeMainWindow:
 
                 right_layout.addWidget(settings_box)
                 right_layout.addWidget(media_box, 1)
-                right_layout.addLayout(action_row)
+                right_layout.addLayout(action_layout)
                 right_layout.addWidget(self.status_label)
                 right_layout.addWidget(self.progress_bar)
                 right_layout.addWidget(QLabel("Run details"))
@@ -823,8 +851,11 @@ class FlowScribeMainWindow:
                 )
                 self.status_label.setText("Running transcription in the background...")
                 self.progress_bar.setRange(0, 0)
+                self._cancel_requested = False
                 self.start_button.setEnabled(False)
                 self.collect_button.setEnabled(False)
+                self.cancel_button.setEnabled(True)
+                self.open_output_button.setEnabled(False)
 
                 self._thread = QThread(self)
                 self._worker = _TranscriptionWorker(job)
@@ -840,14 +871,64 @@ class FlowScribeMainWindow:
                 self._thread.finished.connect(self._clear_worker_refs)
                 self._thread.start()
 
+            def _cancel_transcription(self) -> None:
+                if self._thread is None or self._worker is None:
+                    self.status_label.setText("No transcription job is currently running.")
+                    return
+                if self._cancel_requested:
+                    self.status_label.setText("Cancellation already requested...")
+                    return
+
+                self._cancel_requested = True
+                self._worker.request_cancel()
+                self._thread.requestInterruption()
+                self.status_label.setText("Cancellation requested...")
+                self.cancel_button.setEnabled(False)
+                self.preview_output.append("\nCancellation requested...")
+
+            def _open_output_dir(self) -> None:
+                from PySide6.QtCore import QUrl
+                from PySide6.QtGui import QDesktopServices
+
+                target = self._last_output_dir or Path(self.output_dir_input.text().strip() or "outputs")
+                try:
+                    resolved = target.resolve()
+                except OSError:
+                    self.status_label.setText("Output directory is not available.")
+                    return
+
+                if not resolved.exists():
+                    self.status_label.setText(f"Output directory does not exist yet: {resolved}")
+                    return
+
+                if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(resolved))):
+                    self.status_label.setText(f"Could not open output directory: {resolved}")
+                    return
+                self.status_label.setText(f"Opened output directory: {resolved}")
+
             def _append_progress(self, message: str) -> None:
                 self.preview_output.append(message)
 
             def _finish_transcription(self, result) -> None:
                 self.progress_bar.setRange(0, 1)
-                self.progress_bar.setValue(1)
+                self.progress_bar.setValue(0 if result.canceled else 1)
                 self.start_button.setEnabled(True)
                 self.collect_button.setEnabled(True)
+                self.cancel_button.setEnabled(False)
+                self.open_output_button.setEnabled(bool(result.outputs))
+                if result.outputs:
+                    self._last_output_dir = result.job.output_dir
+
+                if result.canceled:
+                    self.status_label.setText(
+                        f"Canceled. Succeeded before cancel: {result.succeeded}. Failed: {result.failed}."
+                    )
+                    if result.outputs:
+                        self.preview_output.append("\nOutput files before cancellation:")
+                        for artifacts in result.outputs:
+                            for path in artifacts.paths:
+                                self.preview_output.append(str(path))
+                    return
 
                 if result.errors:
                     self.status_label.setText(
@@ -875,12 +956,14 @@ class FlowScribeMainWindow:
                 self.progress_bar.setValue(0)
                 self.start_button.setEnabled(True)
                 self.collect_button.setEnabled(True)
+                self.cancel_button.setEnabled(False)
                 self.status_label.setText("Transcription failed.")
                 self.preview_output.append(f"\nError: {message}")
 
             def _clear_worker_refs(self) -> None:
                 self._thread = None
                 self._worker = None
+                self._cancel_requested = False
 
             def _load_transcript_json(self, path: Path) -> bool:
                 try:

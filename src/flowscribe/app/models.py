@@ -11,7 +11,7 @@ from typing import Literal
 from flowscribe.core.models import OutputArtifacts
 
 SourceKind = Literal["local", "url", "capture"]
-ProgressStage = Literal["discover", "download", "prepare", "transcribe", "write", "complete", "error"]
+ProgressStage = Literal["discover", "download", "prepare", "transcribe", "write", "complete", "error", "canceled"]
 
 
 @dataclass(frozen=True)
@@ -82,6 +82,7 @@ class TranscriptionResult:
     job: TranscriptionJob
     outputs: tuple[OutputArtifacts, ...] = ()
     errors: tuple[ErrorInfo, ...] = ()
+    canceled: bool = False
     started_at: datetime = field(default_factory=datetime.now)
     finished_at: datetime | None = None
 
@@ -95,7 +96,7 @@ class TranscriptionResult:
 
     @property
     def ok(self) -> bool:
-        return not self.errors
+        return not self.errors and not self.canceled
 
 
 ProgressCallback = Callable[[ProgressEvent], None]

@@ -31,6 +31,10 @@ Phase 4 has now started with the first persistence-oriented desktop refinement:
 - Keep local source list state compatible with older saved payloads.
 - Provide `Save Settings` and `View Settings` actions so persistence is visible
   and user-controlled instead of hidden.
+- Add direct desktop actions for canceling a running transcription and opening
+  the output directory.
+- Keep settings inspection separate from run details by showing preferences in a
+  dedicated window.
 
 ## Install GUI Dependencies
 
@@ -96,6 +100,12 @@ Preference persistence currently remains intentionally narrow:
 - only non-sensitive values are saved
 - cookie contents are not stored
 - saved preferences are inspectable from the GUI
+
+Task control also remains intentionally lightweight:
+
+- one active GUI transcription job at a time
+- cooperative cancellation rather than hard process termination
+- no full multi-job queue yet
 
 ## Logging Modes
 

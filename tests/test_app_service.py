@@ -183,3 +183,50 @@ def test_transcription_service_passes_url_network_options_to_downloader(
     assert captured["max_bytes"] == 321 * 1024 * 1024
     assert captured["max_duration_seconds"] == 45
     assert captured["timeout_seconds"] == 12
+
+
+def test_transcription_service_returns_canceled_result_when_cancel_requested(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    media = tmp_path / "sample.mp4"
+    media.write_bytes(b"media")
+    artifact = OutputArtifacts(paths=(tmp_path / "out" / "sample.txt",))
+
+    class FakeLocalFileSource:
+        def __init__(self, inputs, recursive: bool) -> None:
+            self.inputs = inputs
+            self.recursive = recursive
+
+        def discover(self):
+            return [MediaItem(path=media)]
+
+    class FakePipeline:
+        def process(self, item: MediaItem) -> OutputArtifacts:
+            return artifact
+
+    monkeypatch.setattr("flowscribe.app.service.LocalFileSource", FakeLocalFileSource)
+    monkeypatch.setattr("flowscribe.app.service._build_pipeline", lambda job, settings: FakePipeline())
+
+    job = TranscriptionJob(
+        sources=(SourceSpec(kind="local", value=str(media)),),
+        output_dir=tmp_path / "out",
+    )
+    events = []
+    cancel_flag = {"requested": False}
+
+    def progress(event) -> None:
+        events.append(event)
+        if event.stage == "discover" and event.source == str(media):
+            cancel_flag["requested"] = True
+
+    result = TranscriptionService().run(
+        job,
+        progress=progress,
+        should_cancel=lambda: cancel_flag["requested"],
+    )
+
+    assert result.canceled is True
+    assert result.failed == 0
+    assert result.succeeded == 0
+    assert events[-1].stage == "canceled"

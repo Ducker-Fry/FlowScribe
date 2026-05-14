@@ -292,3 +292,9 @@ Current Phase 4 progress:
 - The GUI exposes explicit `Save Settings` and `View Settings` actions.
 - Settings inspection now opens in a dedicated window instead of mixing with run
   details.
+- Milestone 4.2 is in progress.
+- The GUI now exposes `Cancel Transcription` and `Open Output Folder`.
+- Cancellation uses a cooperative canceled-state flow instead of reporting a
+  generic failure.
+- Right-side action buttons have been rearranged into a more compact multi-row
+  layout so they stay visible without horizontal scrolling.

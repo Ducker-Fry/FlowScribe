@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
@@ -15,7 +16,7 @@ from flowscribe.app.models import (
     TranscriptionResult,
 )
 from flowscribe.config.settings import AppSettings
-from flowscribe.core.errors import FlowScribeError
+from flowscribe.core.errors import CancellationError, FlowScribeError
 from flowscribe.core.models import MediaItem, OutputArtifacts
 from flowscribe.core.pipeline import LocalTranscriptionPipeline
 from flowscribe.input.local_source import LocalFileSource
@@ -39,13 +40,17 @@ class TranscriptionService:
         self,
         job: TranscriptionJob,
         progress: ProgressCallback | None = None,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> TranscriptionResult:
         progress = progress or (lambda event: None)
+        should_cancel = should_cancel or (lambda: False)
         started_at = datetime.now()
         outputs: list[OutputArtifacts] = []
         errors: list[ErrorInfo] = []
 
-        progress(
+        self._emit_progress(
+            progress,
+            should_cancel,
             ProgressEvent(
                 stage="discover",
                 message=f"Received {len(job.sources)} source(s).",
@@ -53,23 +58,43 @@ class TranscriptionService:
             )
         )
 
-        for index, source in enumerate(job.sources, start=1):
-            source_outputs, source_errors = self._run_source(
-                job,
-                source,
-                progress,
-                index,
-                len(job.sources),
+        try:
+            for index, source in enumerate(job.sources, start=1):
+                self._ensure_not_canceled(should_cancel)
+                source_outputs, source_errors = self._run_source(
+                    job,
+                    source,
+                    progress,
+                    should_cancel,
+                    index,
+                    len(job.sources),
+                )
+                outputs.extend(source_outputs)
+                errors.extend(source_errors)
+        except CancellationError:
+            progress(
+                ProgressEvent(
+                    stage="canceled",
+                    message="Transcription canceled.",
+                    total=len(job.sources),
+                ),
             )
-            outputs.extend(source_outputs)
-            errors.extend(source_errors)
-
-        progress(
+            return TranscriptionResult(
+                job=job,
+                outputs=tuple(outputs),
+                errors=tuple(errors),
+                canceled=True,
+                started_at=started_at,
+                finished_at=datetime.now(),
+            )
+        self._emit_progress(
+            progress,
+            should_cancel,
             ProgressEvent(
                 stage="complete",
                 message=f"Done. Succeeded: {len(outputs)}. Failed: {len(errors)}.",
                 total=len(job.sources),
-            )
+            ),
         )
         return TranscriptionResult(
             job=job,
@@ -84,20 +109,25 @@ class TranscriptionService:
         job: TranscriptionJob,
         source: SourceSpec,
         progress: ProgressCallback,
+        should_cancel: Callable[[], bool],
         current: int,
         total: int,
     ) -> tuple[tuple[OutputArtifacts, ...], tuple[ErrorInfo, ...]]:
         try:
             if source.kind == "local":
-                return self._run_local_source(job, source, progress, current, total)
+                return self._run_local_source(job, source, progress, should_cancel, current, total)
             if source.kind == "url":
-                return (self._run_url_source(job, source, progress, current, total),), ()
+                return (self._run_url_source(job, source, progress, should_cancel, current, total),), ()
             if source.kind == "capture":
                 raise FlowScribeError("System audio capture source is planned but not implemented yet.")
             raise FlowScribeError(f"Unsupported source kind: {source.kind}")
+        except CancellationError:
+            raise
         except FlowScribeError as exc:
             error = _error_from_exception(exc, source=source.value)
-            progress(
+            self._emit_progress(
+                progress,
+                should_cancel,
                 ProgressEvent(
                     stage="error",
                     message=str(exc),
@@ -113,6 +143,7 @@ class TranscriptionService:
         job: TranscriptionJob,
         source: SourceSpec,
         progress: ProgressCallback,
+        should_cancel: Callable[[], bool],
         current: int,
         total: int,
     ) -> tuple[tuple[OutputArtifacts, ...], tuple[ErrorInfo, ...]]:
@@ -123,7 +154,9 @@ class TranscriptionService:
         outputs: list[OutputArtifacts] = []
         errors: list[ErrorInfo] = []
 
-        progress(
+        self._emit_progress(
+            progress,
+            should_cancel,
             ProgressEvent(
                 stage="discover",
                 message=f"Discovered {len(items)} media file(s).",
@@ -133,7 +166,10 @@ class TranscriptionService:
             )
         )
         for item_index, item in enumerate(items, start=1):
-            progress(
+            self._ensure_not_canceled(should_cancel)
+            self._emit_progress(
+                progress,
+                should_cancel,
                 ProgressEvent(
                     stage="transcribe",
                     message=f"Processing {item.path}",
@@ -146,7 +182,9 @@ class TranscriptionService:
                 artifacts = pipeline.process(item)
             except FlowScribeError as exc:
                 errors.append(_error_from_exception(exc, source=str(item.path)))
-                progress(
+                self._emit_progress(
+                    progress,
+                    should_cancel,
                     ProgressEvent(
                         stage="error",
                         message=f"Failed: {item.path} - {exc}",
@@ -158,7 +196,9 @@ class TranscriptionService:
                 continue
             outputs.append(artifacts)
             for path in artifacts.paths:
-                progress(
+                self._emit_progress(
+                    progress,
+                    should_cancel,
                     ProgressEvent(
                         stage="write",
                         message=f"Wrote: {path}",
@@ -173,6 +213,7 @@ class TranscriptionService:
         job: TranscriptionJob,
         source: SourceSpec,
         progress: ProgressCallback,
+        should_cancel: Callable[[], bool],
         current: int,
         total: int,
     ) -> OutputArtifacts:
@@ -187,7 +228,9 @@ class TranscriptionService:
             proxy=job.proxy,
         )
 
-        progress(
+        self._emit_progress(
+            progress,
+            should_cancel,
             ProgressEvent(
                 stage="download",
                 message="Downloading/extracting remote audio...",
@@ -196,9 +239,12 @@ class TranscriptionService:
                 total=total,
             )
         )
+        self._ensure_not_canceled(should_cancel)
         download = downloader.download_audio(source.value)
         try:
-            progress(
+            self._emit_progress(
+                progress,
+                should_cancel,
                 ProgressEvent(
                     stage="prepare",
                     message=f"Remote audio ready: {download.path}",
@@ -207,9 +253,12 @@ class TranscriptionService:
                 )
             )
             pipeline = _build_pipeline(job, settings)
+            self._ensure_not_canceled(should_cancel)
             artifacts = pipeline.process(MediaItem(path=download.path))
             for path in artifacts.paths:
-                progress(
+                self._emit_progress(
+                    progress,
+                    should_cancel,
                     ProgressEvent(
                         stage="write",
                         message=f"Wrote: {path}",
@@ -221,6 +270,22 @@ class TranscriptionService:
             if not source.keep_media:
                 shutil.rmtree(download.cleanup_dir, ignore_errors=True)
         return artifacts
+
+    @staticmethod
+    def _ensure_not_canceled(should_cancel: Callable[[], bool]) -> None:
+        if should_cancel():
+            raise CancellationError("Transcription canceled.")
+
+    def _emit_progress(
+        self,
+        progress: ProgressCallback,
+        should_cancel: Callable[[], bool],
+        event: ProgressEvent,
+    ) -> None:
+        self._ensure_not_canceled(should_cancel)
+        progress(event)
+        if event.stage != "canceled":
+            self._ensure_not_canceled(should_cancel)
 
 
 def _settings_from_job(job: TranscriptionJob, *, recursive: bool) -> AppSettings:

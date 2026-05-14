@@ -81,6 +81,8 @@ generated outputs.
   - failed
   - completed
 - Make post-run actions clearly available only when they are valid.
+- Keep the desktop action area readable on narrower window widths without
+  forcing horizontal scrolling to reach basic controls.
 
 ### Acceptance Criteria
 
@@ -89,6 +91,8 @@ generated outputs.
 - Canceled jobs are not misreported as generic failures.
 - Users can open the configured output directory directly from the GUI.
 - Status text and controls reflect the real job state clearly.
+- Primary action buttons remain practically reachable in a normal desktop window
+  size.
 
 ### Non-Goals
 

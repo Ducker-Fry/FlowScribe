@@ -29,3 +29,7 @@ class SearchError(FlowScribeError):
 
 class DownloadError(FlowScribeError):
     """Raised when remote media cannot be safely downloaded."""
+
+
+class CancellationError(FlowScribeError):
+    """Raised when a running operation is canceled by the user."""

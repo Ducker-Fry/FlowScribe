@@ -1,7 +1,9 @@
 from types import ModuleType, SimpleNamespace
+import logging
 
 from flowscribe.gui.gui_logging import (
     GUI_LOG_MODE_ENV,
+    THIRD_PARTY_LOGGER_LEVELS,
     configure_gui_logging,
     qt_logging_filter_rules,
     resolve_gui_log_mode,
@@ -46,3 +48,30 @@ def test_configure_gui_logging_applies_qt_filter_rules_in_user_mode(monkeypatch)
 
     assert mode == "user"
     assert "qt.multimedia.ffmpeg.info=false" in captured["rules"]
+
+
+def test_configure_gui_logging_keeps_dev_root_at_warning_and_limits_third_party(monkeypatch) -> None:
+    root_logger = logging.getLogger()
+    original_handlers = list(root_logger.handlers)
+    original_root_level = root_logger.level
+    gui_logger_name = "flowscribe.gui"
+    saved_levels = {
+        name: logging.getLogger(name).level
+        for name in [gui_logger_name, *THIRD_PARTY_LOGGER_LEVELS.keys()]
+    }
+
+    root_logger.handlers.clear()
+    root_logger.setLevel(logging.NOTSET)
+    try:
+        mode = configure_gui_logging("dev")
+
+        assert mode == "dev"
+        assert logging.getLogger().level == logging.WARNING
+        assert logging.getLogger(gui_logger_name).level == logging.DEBUG
+        for logger_name, level in THIRD_PARTY_LOGGER_LEVELS.items():
+            assert logging.getLogger(logger_name).level == level
+    finally:
+        root_logger.handlers[:] = original_handlers
+        root_logger.setLevel(original_root_level)
+        for logger_name, level in saved_levels.items():
+            logging.getLogger(logger_name).setLevel(level)
