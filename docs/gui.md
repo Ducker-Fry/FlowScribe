@@ -23,6 +23,15 @@ workflow end to end:
 - Search transcript keywords and jump to hits.
 - Bind local media to a transcript and seek playback from segments or search hits.
 
+Phase 4 has now started with the first persistence-oriented desktop refinement:
+
+- Persist non-sensitive GUI preferences such as output directory, model,
+  language, preset, formats, timestamp flags, network family, and explicit
+  proxy value.
+- Keep local source list state compatible with older saved payloads.
+- Provide `Save Settings` and `View Settings` actions so persistence is visible
+  and user-controlled instead of hidden.
+
 ## Install GUI Dependencies
 
 From a developer checkout:
@@ -81,6 +90,12 @@ thread, so the GUI should remain responsive while transcription is running.
 Media sync is intentionally transcript-bound. The GUI first tries to resolve the
 original local media from the transcript metadata; if it cannot, the user binds
 one local media file to that transcript explicitly.
+
+Preference persistence currently remains intentionally narrow:
+
+- only non-sensitive values are saved
+- cookie contents are not stored
+- saved preferences are inspectable from the GUI
 
 ## Logging Modes
 

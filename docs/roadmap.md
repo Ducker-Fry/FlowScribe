@@ -45,13 +45,20 @@ navigation.
 - Segment-level media seek.
 - GUI packaging in Windows releases.
 
-## v0.4 System Audio Capture
+Status: completed incrementally and wrapped up in `v0.2.3`.
 
-Goal: support media played in browsers or Windows applications through user-controlled audio recording.
+## v0.4 Capture, Workflow Persistence, And Desktop Productization
+
+Goal: make the desktop workflow repeatable, controllable, and capture-capable
+for daily use.
 
 - System audio capture prototype.
-- Save captured audio as an input artifact.
+- Save captured audio as a normal input artifact.
 - Transcribe captured audio through the existing pipeline.
+- Persistent non-sensitive GUI defaults.
+- Cancel-job support and open-output-directory actions.
+- Lightweight recent-job or recent-transcript history.
+- Stronger transcript/media synchronization feedback during playback.
 
 ## v0.5 Transcript Library And External Providers
 

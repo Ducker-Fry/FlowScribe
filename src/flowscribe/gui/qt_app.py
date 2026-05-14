@@ -32,6 +32,24 @@ from flowscribe.gui.transcript_viewer import (
 
 LOGGER = get_gui_logger(__name__)
 
+GUI_MODEL_OPTIONS = ("small", "tiny", "base", "medium", "large-v3-turbo", "large-v3")
+GUI_LANGUAGE_OPTIONS = ("auto", "zh", "en")
+GUI_PRESET_OPTIONS = ("none", "zh")
+GUI_NETWORK_OPTIONS = ("auto", "ipv4", "ipv6")
+DEFAULT_GUI_PREFERENCES = {
+    "output_dir": "outputs",
+    "model_name": "small",
+    "language": "auto",
+    "preset": "none",
+    "output_formats": ["txt", "md", "json"],
+    "timestamps": True,
+    "word_timestamps": False,
+    "overwrite": False,
+    "keep_media": False,
+    "network_family": "auto",
+    "proxy": "",
+}
+
 
 def _normalize_local_source_state_payload(payload: object) -> tuple[list[Path], set[str]]:
     if not isinstance(payload, dict):
@@ -63,6 +81,68 @@ def _local_source_state_payload(paths: list[Path], checked_paths: list[Path]) ->
         "local_paths": [str(item) for item in paths],
         "checked_paths": [str(item) for item in checked_paths],
     }
+
+
+def _gui_preferences_payload(preferences: dict[str, object]) -> dict[str, object]:
+    payload = _normalize_gui_preferences_payload(preferences)
+    payload["output_formats"] = list(payload["output_formats"])
+    return payload
+
+
+def _normalize_gui_preferences_payload(payload: object) -> dict[str, object]:
+    source = payload if isinstance(payload, dict) else {}
+    if isinstance(source.get("preferences"), dict):
+        source = source["preferences"]
+
+    output_formats = source.get("output_formats")
+    normalized_formats = [
+        output_format
+        for output_format in (output_formats or [])
+        if output_format in SUPPORTED_GUI_FORMATS
+    ]
+
+    output_dir = source.get("output_dir")
+    model_name = source.get("model_name")
+    language = source.get("language")
+    preset = source.get("preset")
+    network_family = source.get("network_family")
+    proxy = source.get("proxy")
+
+    return {
+        "output_dir": output_dir if isinstance(output_dir, str) and output_dir.strip() else "outputs",
+        "model_name": model_name if model_name in GUI_MODEL_OPTIONS else "small",
+        "language": language if language in GUI_LANGUAGE_OPTIONS else "auto",
+        "preset": preset if preset in GUI_PRESET_OPTIONS else "none",
+        "output_formats": normalized_formats or ["txt", "md", "json"],
+        "timestamps": bool(source.get("timestamps", True)),
+        "word_timestamps": bool(source.get("word_timestamps", False)),
+        "overwrite": bool(source.get("overwrite", False)),
+        "keep_media": bool(source.get("keep_media", False)),
+        "network_family": network_family if network_family in GUI_NETWORK_OPTIONS else "auto",
+        "proxy": proxy if isinstance(proxy, str) else "",
+    }
+
+
+def _gui_state_payload(
+    paths: list[Path],
+    checked_paths: list[Path],
+    preferences: dict[str, object],
+) -> dict[str, object]:
+    return {
+        "version": 2,
+        "preferences": _gui_preferences_payload(preferences),
+        "local_sources": _local_source_state_payload(paths, checked_paths),
+    }
+
+
+def _normalize_gui_state_payload(payload: object) -> tuple[list[Path], set[str], dict[str, object]]:
+    if not isinstance(payload, dict):
+        return [], set(), _gui_preferences_payload(DEFAULT_GUI_PREFERENCES)
+
+    local_payload = payload.get("local_sources") if isinstance(payload.get("local_sources"), dict) else payload
+    local_paths, checked = _normalize_local_source_state_payload(local_payload)
+    preferences = _normalize_gui_preferences_payload(payload)
+    return local_paths, checked, preferences
 
 
 def run_gui(argv: list[str] | None = None) -> int:
@@ -164,20 +244,28 @@ class FlowScribeMainWindow:
             base_dir = Path(app_data) if app_data else (Path.home() / ".flowscribe")
             return base_dir / "gui-state.json"
 
-        def _load_gui_local_source_state() -> tuple[list[Path], set[str]]:
+        def _load_gui_state() -> tuple[list[Path], set[str], dict[str, object]]:
             path = _gui_state_path()
             try:
                 payload = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
-                return [], set()
-            return _normalize_local_source_state_payload(payload)
+                return [], set(), _gui_preferences_payload(DEFAULT_GUI_PREFERENCES)
+            return _normalize_gui_state_payload(payload)
 
-        def _save_gui_local_source_state(paths: list[Path], checked_paths: list[Path]) -> None:
+        def _save_gui_state(
+            paths: list[Path],
+            checked_paths: list[Path],
+            preferences: dict[str, object],
+        ) -> None:
             path = _gui_state_path()
             try:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(
-                    json.dumps(_local_source_state_payload(paths, checked_paths), ensure_ascii=False, indent=2)
+                    json.dumps(
+                        _gui_state_payload(paths, checked_paths, preferences),
+                        ensure_ascii=False,
+                        indent=2,
+                    )
                     + "\n",
                     encoding="utf-8",
                 )
@@ -189,14 +277,17 @@ class FlowScribeMainWindow:
                 super().__init__()
                 self._local_paths: list[Path] = []
                 self._saved_checked_local_paths: set[str] = set()
+                self._saved_preferences = _gui_preferences_payload(DEFAULT_GUI_PREFERENCES)
                 self._thread: QThread | None = None
                 self._worker: _TranscriptionWorker | None = None
                 self._transcript_path: Path | None = None
                 self._transcript_view: TranscriptView | None = None
                 self._search_hits: tuple[TranscriptSearchHitView, ...] = ()
                 self._media_path: Path | None = None
+                self._settings_dialog: object | None = None
+                self._settings_viewer: object | None = None
                 self._setup_window()
-                self._restore_local_sources()
+                self._restore_gui_state()
 
             def _setup_window(self) -> None:
                 from PySide6.QtWidgets import (
@@ -282,16 +373,16 @@ class FlowScribeMainWindow:
                 output_row.addWidget(choose_output_button)
 
                 self.model_combo = QComboBox()
-                self.model_combo.addItems(["small", "tiny", "base", "medium", "large-v3-turbo", "large-v3"])
+                self.model_combo.addItems(list(GUI_MODEL_OPTIONS))
 
                 self.language_combo = QComboBox()
-                self.language_combo.addItems(["auto", "zh", "en"])
+                self.language_combo.addItems(list(GUI_LANGUAGE_OPTIONS))
 
                 self.preset_combo = QComboBox()
-                self.preset_combo.addItems(["none", "zh"])
+                self.preset_combo.addItems(list(GUI_PRESET_OPTIONS))
 
                 self.network_combo = QComboBox()
-                self.network_combo.addItems(["auto", "ipv4", "ipv6"])
+                self.network_combo.addItems(list(GUI_NETWORK_OPTIONS))
 
                 self.proxy_input = QLineEdit()
                 self.proxy_input.setPlaceholderText("http://127.0.0.1:7890")
@@ -345,12 +436,18 @@ class FlowScribeMainWindow:
                 open_transcript_button = QPushButton("Open Transcript JSON")
                 open_transcript_button.clicked.connect(self._open_transcript_json)
                 self.open_transcript_button = open_transcript_button
+                self.view_settings_button = QPushButton("View Settings")
+                self.view_settings_button.clicked.connect(self._show_saved_settings)
+                self.save_settings_button = QPushButton("Save Settings")
+                self.save_settings_button.clicked.connect(self._save_settings)
                 collect_button = QPushButton("Collect State")
                 collect_button.clicked.connect(self._show_state_preview)
                 self.collect_button = collect_button
                 self.start_button = QPushButton("Start Transcription")
                 self.start_button.clicked.connect(self._start_transcription)
                 action_row.addWidget(open_transcript_button)
+                action_row.addWidget(self.view_settings_button)
+                action_row.addWidget(self.save_settings_button)
                 action_row.addWidget(collect_button)
                 action_row.addWidget(self.start_button)
                 action_row.addStretch(1)
@@ -603,6 +700,84 @@ class FlowScribeMainWindow:
                     proxy=self.proxy_input.text(),
                     cookies_path=Path(cookies_text) if cookies_text else None,
                 )
+
+            def _current_gui_preferences(self) -> dict[str, object]:
+                return {
+                    "output_dir": self.output_dir_input.text().strip() or "outputs",
+                    "model_name": self.model_combo.currentText(),
+                    "language": self.language_combo.currentText(),
+                    "preset": self.preset_combo.currentText(),
+                    "output_formats": [
+                        output_format
+                        for output_format, checkbox in self.format_checks.items()
+                        if checkbox.isChecked()
+                    ],
+                    "timestamps": self.timestamps_check.isChecked(),
+                    "word_timestamps": self.word_timestamps_check.isChecked(),
+                    "overwrite": self.overwrite_check.isChecked(),
+                    "keep_media": self.keep_media_check.isChecked(),
+                    "network_family": self.network_combo.currentText(),
+                    "proxy": self.proxy_input.text(),
+                }
+
+            def _apply_gui_preferences(self, preferences: dict[str, object]) -> None:
+                self.output_dir_input.setText(str(preferences["output_dir"]))
+                self.model_combo.setCurrentText(str(preferences["model_name"]))
+                self.language_combo.setCurrentText(str(preferences["language"]))
+                self.preset_combo.setCurrentText(str(preferences["preset"]))
+                self.network_combo.setCurrentText(str(preferences["network_family"]))
+                self.proxy_input.setText(str(preferences["proxy"]))
+
+                enabled_formats = {str(value) for value in preferences["output_formats"]}
+                for output_format, checkbox in self.format_checks.items():
+                    checkbox.setChecked(output_format in enabled_formats)
+
+                self.timestamps_check.setChecked(bool(preferences["timestamps"]))
+                self.word_timestamps_check.setChecked(bool(preferences["word_timestamps"]))
+                self.overwrite_check.setChecked(bool(preferences["overwrite"]))
+                self.keep_media_check.setChecked(bool(preferences["keep_media"]))
+
+            def _save_settings(self) -> None:
+                self._saved_preferences = _gui_preferences_payload(self._current_gui_preferences())
+                self._persist_gui_state()
+                self.status_label.setText("GUI settings saved.")
+
+            def _show_saved_settings(self) -> None:
+                from PySide6.QtWidgets import QDialog, QHBoxLayout, QPlainTextEdit, QPushButton, QVBoxLayout
+
+                current_preferences = _gui_preferences_payload(self._current_gui_preferences())
+                payload = {
+                    "saved_preferences": self._saved_preferences,
+                    "current_preferences": current_preferences,
+                }
+                self.status_label.setText("Showing GUI preferences.")
+                if self._settings_dialog is None:
+                    dialog = QDialog(self)
+                    dialog.setWindowTitle("GUI Preferences")
+                    dialog.resize(720, 560)
+
+                    layout = QVBoxLayout(dialog)
+                    viewer = QPlainTextEdit(dialog)
+                    viewer.setReadOnly(True)
+                    layout.addWidget(viewer)
+
+                    close_button = QPushButton("Close", dialog)
+                    close_button.clicked.connect(dialog.accept)
+
+                    button_row = QHBoxLayout()
+                    button_row.addStretch(1)
+                    button_row.addWidget(close_button)
+                    layout.addLayout(button_row)
+
+                    self._settings_dialog = dialog
+                    self._settings_viewer = viewer
+
+                if self._settings_viewer is not None:
+                    self._settings_viewer.setPlainText(json.dumps(payload, ensure_ascii=False, indent=2))
+
+                self._settings_dialog.show()
+                self._settings_dialog.raise_()
+                self._settings_dialog.activateWindow()
 
             def _show_state_preview(self) -> None:
                 selection_error = self._local_selection_error()
@@ -902,16 +1077,15 @@ class FlowScribeMainWindow:
                     return None
                 return "Check at least one local source or paste a URL."
 
-            def _restore_local_sources(self) -> None:
+            def _restore_gui_state(self) -> None:
                 from PySide6.QtCore import QSignalBlocker
 
-                local_paths, checked = _load_gui_local_source_state()
+                local_paths, checked, preferences = _load_gui_state()
                 self._saved_checked_local_paths = checked
-                if not local_paths:
-                    return
-
+                self._saved_preferences = preferences
                 blocker = QSignalBlocker(self.file_list)
                 try:
+                    self._apply_gui_preferences(preferences)
                     for path in local_paths:
                         self._add_local_file(path)
                     for index in range(self.file_list.count()):
@@ -920,10 +1094,17 @@ class FlowScribeMainWindow:
                             item.setCheckState(Qt.CheckState.Checked)
                 finally:
                     del blocker
-                self._persist_local_source_state()
+                self._persist_gui_state()
+
+            def _persist_gui_state(self) -> None:
+                _save_gui_state(
+                    self._local_paths,
+                    self._checked_local_paths(),
+                    self._saved_preferences,
+                )
 
             def _persist_local_source_state(self) -> None:
-                _save_gui_local_source_state(self._local_paths, self._checked_local_paths())
+                self._persist_gui_state()
 
             def _check_newly_added_sources(self, paths) -> None:
                 added = {str(Path(path)) for path in paths}

@@ -7,13 +7,13 @@ Use this file as the compact handoff context when starting a new conversation.
 - Name: FlowScribe
 - Path: `E:\Draft\FlowScribe`
 - Language: Python
-- Current phase: Phase 3, Desktop GUI And Interactive Transcript Workflow
+- Current phase: Phase 4, Capture, Workflow Persistence, And Desktop Productization
 
 ## Product Goal
 
 FlowScribe is a local-first audio/video transcription tool. It supports local
 files, URL audio extraction, structured transcript outputs, keyword timestamp
-location, and is moving toward a desktop GUI suitable for non-technical users.
+location, and now ships with a usable desktop GUI for non-technical users.
 
 The long-term goal is an open-source, portfolio-quality project that can:
 
@@ -25,7 +25,7 @@ The long-term goal is an open-source, portfolio-quality project that can:
 
 ## Current Release
 
-- Target wrap-up release: `v0.2.3`
+- Latest successful GitHub Release: `v0.2.3`
 - Release assets:
   - `FlowScribe-v0.2.3-windows-x64.zip`
   - `FlowScribeGUI-v0.2.3-windows-x64.zip`
@@ -129,6 +129,7 @@ output classes.
 
 - PySide6 GUI skeleton.
 - Local file selection.
+- Drag-and-drop local source handling.
 - URL input field.
 - Output directory field.
 - Model, language, preset, output format controls.
@@ -139,6 +140,11 @@ output classes.
 - Progress messages displayed in the GUI.
 - Output file paths displayed in the GUI.
 - Failure messages displayed in the GUI.
+- Transcript JSON viewer.
+- Transcript keyword search UI.
+- Transcript-bound local media playback and seek.
+- Checkbox-based remembered local source selection.
+- Quiet packaged GUI logging defaults.
 - GUI executable smoke build:
 
   ```text
@@ -169,9 +175,10 @@ Packaged GUI behavior:
   .\dist\FlowScribeGUI\FlowScribeGUI.exe --self-test
   ```
 
-## Current GUI Milestones
+## Phase 3 Outcome
 
-Recent GUI milestones completed in the working tree:
+Phase 3 is now complete from a product-milestone perspective. It delivered the
+first usable desktop workflow:
 
 - Milestone 3.2: local-source drag/drop now accepts the same local files and
   folders supported by the CLI.
@@ -187,7 +194,7 @@ Recent GUI milestones completed in the working tree:
 - Source list selection has been refined from implicit batch inputs to explicit
   checkbox-based local source selection with remembered checked state.
 
-Change summary:
+Phase 3 summary:
 
 - Added shared local-source acceptance checks for GUI drag/drop and file lists.
 - Reused URL safety validation inside GUI form validation.
@@ -207,6 +214,12 @@ Change summary:
 - Added focused tests for GUI state, URL option passthrough, transcript viewer,
   transcript search integration, GUI local-source state payload handling, and
   GUI logging/entry-point behavior.
+
+Reference document:
+
+```text
+docs/phase-3-summary-and-phase-4-plan.md
+```
 
 Validated with:
 
@@ -263,9 +276,19 @@ asks for Wrap-Up Mode.
 
 ## Likely Next Tasks
 
-Possible next Milestone 3 tasks:
+Phase 4 starting points:
 
-- GUI job status improvements.
+- Non-sensitive GUI settings persistence.
 - GUI cancel task support.
 - GUI open output directory button.
-- Segment-level media seek from transcript.
+- Recent job / recent transcript history.
+- System audio capture prototype.
+- Stronger transcript/media synchronization feedback during playback.
+
+Current Phase 4 progress:
+
+- Milestone 4.1 is in progress.
+- Non-sensitive GUI preferences can now be saved and restored.
+- The GUI exposes explicit `Save Settings` and `View Settings` actions.
+- Settings inspection now opens in a dedicated window instead of mixing with run
+  details.
