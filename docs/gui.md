@@ -35,6 +35,15 @@ Phase 4 has now started with the first persistence-oriented desktop refinement:
   the output directory.
 - Keep settings inspection separate from run details by showing preferences in a
   dedicated window.
+- Add a dedicated `Recent Work` window that can reopen recent transcript JSON
+  files, recent output directories, recent lightweight jobs, and recent
+  transcript/media bindings.
+- Keep recent-work state across GUI restarts and remove missing entries
+  gracefully when users try to reopen them.
+- Strengthen transcript/media review so playback, transcript selection, and
+  search-hit navigation stay more consistent during review.
+- Show clearer transcript-media binding state and mismatch feedback inside the
+  GUI.
 
 ## Install GUI Dependencies
 
@@ -95,6 +104,15 @@ Media sync is intentionally transcript-bound. The GUI first tries to resolve the
 original local media from the transcript metadata; if it cannot, the user binds
 one local media file to that transcript explicitly.
 
+The review surface is now more stateful:
+
+- current playback position can advance transcript selection automatically
+- search-hit jumps, segment clicks, and playback updates converge on the same
+  segment-selection behavior
+- the GUI shows whether media is unbound, auto-bound, or manually bound
+- suspicious transcript/media mismatches are called out with a warning instead
+  of staying silent
+
 Preference persistence currently remains intentionally narrow:
 
 - only non-sensitive values are saved
@@ -106,6 +124,13 @@ Task control also remains intentionally lightweight:
 - one active GUI transcription job at a time
 - cooperative cancellation rather than hard process termination
 - no full multi-job queue yet
+
+Recent-work support also remains intentionally lightweight:
+
+- the GUI remembers a short recent list rather than building a project library
+- recent jobs are for reopening context quickly, not for full queue management
+- recent transcript/media bindings help restore review sessions without creating
+  a persistent asset database
 
 ## Logging Modes
 

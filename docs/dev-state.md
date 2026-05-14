@@ -287,14 +287,31 @@ Phase 4 starting points:
 
 Current Phase 4 progress:
 
-- Milestone 4.1 is in progress.
+- Milestone 4.1 is implemented in the current working flow.
 - Non-sensitive GUI preferences can now be saved and restored.
 - The GUI exposes explicit `Save Settings` and `View Settings` actions.
 - Settings inspection now opens in a dedicated window instead of mixing with run
   details.
-- Milestone 4.2 is in progress.
+- Milestone 4.2 is implemented in the current working flow.
 - The GUI now exposes `Cancel Transcription` and `Open Output Folder`.
 - Cancellation uses a cooperative canceled-state flow instead of reporting a
   generic failure.
 - Right-side action buttons have been rearranged into a more compact multi-row
   layout so they stay visible without horizontal scrolling.
+- Milestone 4.3 is implemented in the current working flow.
+- The GUI now remembers recent transcript JSON files, recent output
+  directories, recent transcription tasks, and recent transcript/media binding
+  pairs.
+- Recent work opens in a dedicated desktop window so users can reopen prior
+  transcript review state quickly after restart.
+- Missing recent files and folders are handled gracefully and removed from the
+  remembered list when selected.
+- Milestone 4.4 is implemented in the current working flow.
+- Playback now keeps transcript segment selection aligned with current media
+  position.
+- Search-hit navigation, segment activation, and playback progress now share a
+  more consistent transcript-selection path.
+- Media binding state is now shown explicitly as unbound, auto-bound, or
+  manually bound.
+- Transcript/media mismatch warnings are now surfaced in the GUI instead of
+  remaining implicit.

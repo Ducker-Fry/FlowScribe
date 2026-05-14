@@ -135,6 +135,32 @@ def transcript_search_hit_seek_seconds(hit: TranscriptSearchHitView) -> float:
     return 0.0
 
 
+def transcript_segment_index_for_seconds(view: TranscriptView, seconds: float) -> int | None:
+    if not view.segments:
+        return None
+
+    target = max(0.0, float(seconds))
+    fallback_index: int | None = None
+    for index, segment in enumerate(view.segments):
+        segment_start = segment.start_seconds
+        segment_end = segment.end_seconds
+        if segment_start is None and segment_end is None:
+            continue
+        if segment_start is None:
+            segment_start = segment_end
+        if segment_end is None:
+            segment_end = segment_start
+        if segment_start is None or segment_end is None:
+            continue
+        if segment_start <= target <= segment_end:
+            return index
+        if segment_start <= target:
+            fallback_index = index
+            continue
+        break
+    return fallback_index
+
+
 def resolve_transcript_media_path(view: TranscriptView) -> Path | None:
     source = view.source.strip()
     if not source:
@@ -148,6 +174,31 @@ def resolve_transcript_media_path(view: TranscriptView) -> Path | None:
         candidate = (view.path.parent / source_path).resolve()
         if candidate.is_file():
             return candidate
+    return None
+
+
+def transcript_media_binding_warning(view: TranscriptView, media_path: Path) -> str | None:
+    try:
+        candidate = media_path.resolve()
+    except OSError:
+        candidate = media_path
+
+    expected = resolve_transcript_media_path(view)
+    if expected is not None:
+        try:
+            resolved_expected = expected.resolve()
+        except OSError:
+            resolved_expected = expected
+        if resolved_expected != candidate:
+            return (
+                f"Transcript source suggests {resolved_expected.name}, "
+                f"but bound media is {candidate.name}."
+            )
+        return None
+
+    source_name = Path(view.source.strip()).name
+    if source_name and source_name != candidate.name:
+        return f"Transcript source is {source_name}, but bound media is {candidate.name}."
     return None
 
 

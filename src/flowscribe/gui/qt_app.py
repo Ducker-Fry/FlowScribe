@@ -26,6 +26,8 @@ from flowscribe.gui.transcript_viewer import (
     render_transcript_summary,
     resolve_transcript_media_path,
     search_transcript_view,
+    transcript_media_binding_warning,
+    transcript_segment_index_for_seconds,
     transcript_search_hit_seek_seconds,
     transcript_segment_seek_seconds,
 )
@@ -49,6 +51,19 @@ DEFAULT_GUI_PREFERENCES = {
     "network_family": "auto",
     "proxy": "",
 }
+MAX_RECENT_TRANSCRIPTS = 8
+MAX_RECENT_OUTPUT_DIRS = 8
+MAX_RECENT_JOBS = 10
+MAX_RECENT_MEDIA_BINDINGS = 8
+
+
+def _default_recent_work() -> dict[str, list[dict[str, object]] | list[str]]:
+    return {
+        "recent_transcripts": [],
+        "recent_output_dirs": [],
+        "recent_jobs": [],
+        "recent_media_bindings": [],
+    }
 
 
 def _normalize_local_source_state_payload(payload: object) -> tuple[list[Path], set[str]]:
@@ -127,22 +142,160 @@ def _gui_state_payload(
     paths: list[Path],
     checked_paths: list[Path],
     preferences: dict[str, object],
+    recent_work: dict[str, list[dict[str, object]] | list[str]] | None = None,
 ) -> dict[str, object]:
     return {
-        "version": 2,
+        "version": 3,
         "preferences": _gui_preferences_payload(preferences),
         "local_sources": _local_source_state_payload(paths, checked_paths),
+        "recent_work": _recent_work_payload(recent_work),
     }
 
 
-def _normalize_gui_state_payload(payload: object) -> tuple[list[Path], set[str], dict[str, object]]:
+def _normalize_recent_work_entry_paths(
+    values: object,
+    *,
+    max_items: int,
+    expect_directory: bool = False,
+) -> list[str]:
+    if not isinstance(values, list):
+        return []
+
+    seen: set[str] = set()
+    normalized: list[str] = []
+    for raw_value in values:
+        if not isinstance(raw_value, str) or not raw_value.strip():
+            continue
+        try:
+            path = Path(raw_value)
+        except OSError:
+            continue
+        path_text = str(path)
+        if path_text in seen:
+            continue
+        if path.exists():
+            if expect_directory and not path.is_dir():
+                continue
+            if not expect_directory and not path.is_file():
+                continue
+        seen.add(path_text)
+        normalized.append(path_text)
+        if len(normalized) >= max_items:
+            break
+    return normalized
+
+
+def _normalize_recent_job_entries(values: object) -> list[dict[str, str]]:
+    if not isinstance(values, list):
+        return []
+
+    normalized: list[dict[str, str]] = []
+    seen: set[tuple[str, str, str, str, str]] = set()
+    for raw_value in values:
+        if not isinstance(raw_value, dict):
+            continue
+
+        label = raw_value.get("label")
+        status = raw_value.get("status")
+        output_dir = raw_value.get("output_dir")
+        transcript_path = raw_value.get("transcript_path")
+        media_path = raw_value.get("media_path")
+
+        if not isinstance(label, str) or not label.strip():
+            continue
+        if not isinstance(status, str) or not status.strip():
+            continue
+        if not isinstance(output_dir, str) or not output_dir.strip():
+            continue
+        if transcript_path is not None and not isinstance(transcript_path, str):
+            transcript_path = None
+        if media_path is not None and not isinstance(media_path, str):
+            media_path = None
+
+        identity = (
+            label.strip(),
+            status.strip(),
+            output_dir.strip(),
+            (transcript_path or "").strip(),
+            (media_path or "").strip(),
+        )
+        if identity in seen:
+            continue
+        seen.add(identity)
+        normalized.append(
+            {
+                "label": identity[0],
+                "status": identity[1],
+                "output_dir": identity[2],
+                "transcript_path": identity[3],
+                "media_path": identity[4],
+            }
+        )
+        if len(normalized) >= MAX_RECENT_JOBS:
+            break
+    return normalized
+
+
+def _normalize_recent_media_bindings(values: object) -> list[dict[str, str]]:
+    if not isinstance(values, list):
+        return []
+
+    normalized: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for raw_value in values:
+        if not isinstance(raw_value, dict):
+            continue
+        transcript_path = raw_value.get("transcript_path")
+        media_path = raw_value.get("media_path")
+        if not isinstance(transcript_path, str) or not transcript_path.strip():
+            continue
+        if not isinstance(media_path, str) or not media_path.strip():
+            continue
+        identity = (transcript_path.strip(), media_path.strip())
+        if identity in seen:
+            continue
+        seen.add(identity)
+        normalized.append(
+            {
+                "transcript_path": identity[0],
+                "media_path": identity[1],
+            }
+        )
+        if len(normalized) >= MAX_RECENT_MEDIA_BINDINGS:
+            break
+    return normalized
+
+
+def _recent_work_payload(payload: object) -> dict[str, list[dict[str, object]] | list[str]]:
+    source = payload if isinstance(payload, dict) else {}
+    return {
+        "recent_transcripts": _normalize_recent_work_entry_paths(
+            source.get("recent_transcripts"),
+            max_items=MAX_RECENT_TRANSCRIPTS,
+        ),
+        "recent_output_dirs": _normalize_recent_work_entry_paths(
+            source.get("recent_output_dirs"),
+            max_items=MAX_RECENT_OUTPUT_DIRS,
+            expect_directory=True,
+        ),
+        "recent_jobs": _normalize_recent_job_entries(source.get("recent_jobs")),
+        "recent_media_bindings": _normalize_recent_media_bindings(
+            source.get("recent_media_bindings")
+        ),
+    }
+
+
+def _normalize_gui_state_payload(
+    payload: object,
+) -> tuple[list[Path], set[str], dict[str, object], dict[str, list[dict[str, object]] | list[str]]]:
     if not isinstance(payload, dict):
-        return [], set(), _gui_preferences_payload(DEFAULT_GUI_PREFERENCES)
+        return [], set(), _gui_preferences_payload(DEFAULT_GUI_PREFERENCES), _default_recent_work()
 
     local_payload = payload.get("local_sources") if isinstance(payload.get("local_sources"), dict) else payload
     local_paths, checked = _normalize_local_source_state_payload(local_payload)
     preferences = _normalize_gui_preferences_payload(payload)
-    return local_paths, checked, preferences
+    recent_work = _recent_work_payload(payload.get("recent_work"))
+    return local_paths, checked, preferences, recent_work
 
 
 def run_gui(argv: list[str] | None = None) -> int:
@@ -253,25 +406,31 @@ class FlowScribeMainWindow:
             base_dir = Path(app_data) if app_data else (Path.home() / ".flowscribe")
             return base_dir / "gui-state.json"
 
-        def _load_gui_state() -> tuple[list[Path], set[str], dict[str, object]]:
+        def _load_gui_state() -> tuple[
+            list[Path],
+            set[str],
+            dict[str, object],
+            dict[str, list[dict[str, object]] | list[str]],
+        ]:
             path = _gui_state_path()
             try:
                 payload = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
-                return [], set(), _gui_preferences_payload(DEFAULT_GUI_PREFERENCES)
+                return [], set(), _gui_preferences_payload(DEFAULT_GUI_PREFERENCES), _default_recent_work()
             return _normalize_gui_state_payload(payload)
 
         def _save_gui_state(
             paths: list[Path],
             checked_paths: list[Path],
             preferences: dict[str, object],
+            recent_work: dict[str, list[dict[str, object]] | list[str]],
         ) -> None:
             path = _gui_state_path()
             try:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(
                     json.dumps(
-                        _gui_state_payload(paths, checked_paths, preferences),
+                        _gui_state_payload(paths, checked_paths, preferences, recent_work),
                         ensure_ascii=False,
                         indent=2,
                     )
@@ -295,8 +454,16 @@ class FlowScribeMainWindow:
                 self._transcript_view: TranscriptView | None = None
                 self._search_hits: tuple[TranscriptSearchHitView, ...] = ()
                 self._media_path: Path | None = None
+                self._media_binding_mode = "unbound"
+                self._active_segment_row = -1
                 self._settings_dialog: object | None = None
                 self._settings_viewer: object | None = None
+                self._recent_work = _default_recent_work()
+                self._recent_work_dialog: object | None = None
+                self._recent_transcripts_list: object | None = None
+                self._recent_output_dirs_list: object | None = None
+                self._recent_jobs_list: object | None = None
+                self._recent_media_bindings_list: object | None = None
                 self._setup_window()
                 self._restore_gui_state()
 
@@ -451,6 +618,8 @@ class FlowScribeMainWindow:
                 self.open_transcript_button = open_transcript_button
                 self.view_settings_button = QPushButton("View Settings")
                 self.view_settings_button.clicked.connect(self._show_saved_settings)
+                self.view_recent_work_button = QPushButton("Recent Work")
+                self.view_recent_work_button.clicked.connect(self._show_recent_work)
                 self.save_settings_button = QPushButton("Save Settings")
                 self.save_settings_button.clicked.connect(self._save_settings)
                 collect_button = QPushButton("Collect State")
@@ -467,6 +636,7 @@ class FlowScribeMainWindow:
                 action_buttons = [
                     open_transcript_button,
                     self.view_settings_button,
+                    self.view_recent_work_button,
                     self.save_settings_button,
                     collect_button,
                     self.start_button,
@@ -508,10 +678,13 @@ class FlowScribeMainWindow:
 
                 self.media_status_label = QLabel("Open a transcript JSON file to bind media.")
                 self.media_status_label.setWordWrap(True)
+                self.media_binding_label = QLabel("Binding: Unbound")
+                self.media_binding_label.setWordWrap(True)
 
                 media_layout.addWidget(self.video_widget)
                 media_layout.addLayout(media_controls)
                 media_layout.addWidget(self.media_position_slider)
+                media_layout.addWidget(self.media_binding_label)
                 media_layout.addWidget(self.media_status_label)
 
                 self._audio_output = QAudioOutput(self)
@@ -668,6 +841,7 @@ class FlowScribeMainWindow:
                 path = QFileDialog.getExistingDirectory(self, "Choose output directory")
                 if path:
                     self.output_dir_input.setText(path)
+                    self._remember_recent_output_dir(Path(path))
 
             def _choose_cookies(self) -> None:
                 from PySide6.QtWidgets import QFileDialog
@@ -807,6 +981,83 @@ class FlowScribeMainWindow:
                 self._settings_dialog.raise_()
                 self._settings_dialog.activateWindow()
 
+            def _show_recent_work(self) -> None:
+                from PySide6.QtWidgets import (
+                    QDialog,
+                    QGroupBox,
+                    QHBoxLayout,
+                    QListWidget,
+                    QPushButton,
+                    QVBoxLayout,
+                )
+
+                self.status_label.setText("Showing recent work history.")
+                if self._recent_work_dialog is None:
+                    dialog = QDialog(self)
+                    dialog.setWindowTitle("Recent Work")
+                    dialog.resize(820, 720)
+
+                    layout = QVBoxLayout(dialog)
+
+                    transcripts_box = QGroupBox("Recent transcript JSON")
+                    transcripts_layout = QVBoxLayout(transcripts_box)
+                    recent_transcripts_list = QListWidget(transcripts_box)
+                    recent_transcripts_list.itemActivated.connect(self._open_selected_recent_transcript)
+                    transcripts_layout.addWidget(recent_transcripts_list)
+                    open_transcript_button = QPushButton("Open Selected Transcript", transcripts_box)
+                    open_transcript_button.clicked.connect(self._open_selected_recent_transcript)
+                    transcripts_layout.addWidget(open_transcript_button)
+
+                    outputs_box = QGroupBox("Recent output directories")
+                    outputs_layout = QVBoxLayout(outputs_box)
+                    recent_output_dirs_list = QListWidget(outputs_box)
+                    recent_output_dirs_list.itemActivated.connect(self._open_selected_recent_output_dir)
+                    outputs_layout.addWidget(recent_output_dirs_list)
+                    open_output_button = QPushButton("Open Selected Output Directory", outputs_box)
+                    open_output_button.clicked.connect(self._open_selected_recent_output_dir)
+                    outputs_layout.addWidget(open_output_button)
+
+                    jobs_box = QGroupBox("Recent transcription tasks")
+                    jobs_layout = QVBoxLayout(jobs_box)
+                    recent_jobs_list = QListWidget(jobs_box)
+                    recent_jobs_list.itemActivated.connect(self._open_selected_recent_job)
+                    jobs_layout.addWidget(recent_jobs_list)
+                    open_job_button = QPushButton("Open Selected Job Result", jobs_box)
+                    open_job_button.clicked.connect(self._open_selected_recent_job)
+                    jobs_layout.addWidget(open_job_button)
+
+                    bindings_box = QGroupBox("Recent transcript-media bindings")
+                    bindings_layout = QVBoxLayout(bindings_box)
+                    recent_media_bindings_list = QListWidget(bindings_box)
+                    recent_media_bindings_list.itemActivated.connect(self._rebind_selected_recent_media)
+                    bindings_layout.addWidget(recent_media_bindings_list)
+                    rebind_button = QPushButton("Rebind Selected Media", bindings_box)
+                    rebind_button.clicked.connect(self._rebind_selected_recent_media)
+                    bindings_layout.addWidget(rebind_button)
+
+                    layout.addWidget(transcripts_box)
+                    layout.addWidget(outputs_box)
+                    layout.addWidget(jobs_box)
+                    layout.addWidget(bindings_box)
+
+                    close_button = QPushButton("Close", dialog)
+                    close_button.clicked.connect(dialog.accept)
+                    button_row = QHBoxLayout()
+                    button_row.addStretch(1)
+                    button_row.addWidget(close_button)
+                    layout.addLayout(button_row)
+
+                    self._recent_work_dialog = dialog
+                    self._recent_transcripts_list = recent_transcripts_list
+                    self._recent_output_dirs_list = recent_output_dirs_list
+                    self._recent_jobs_list = recent_jobs_list
+                    self._recent_media_bindings_list = recent_media_bindings_list
+
+                self._refresh_recent_work_lists()
+                self._recent_work_dialog.show()
+                self._recent_work_dialog.raise_()
+                self._recent_work_dialog.activateWindow()
+
             def _show_state_preview(self) -> None:
                 selection_error = self._local_selection_error()
                 if selection_error:
@@ -852,6 +1103,7 @@ class FlowScribeMainWindow:
                 self.status_label.setText("Running transcription in the background...")
                 self.progress_bar.setRange(0, 0)
                 self._cancel_requested = False
+                self._remember_recent_output_dir(job.output_dir)
                 self.start_button.setEnabled(False)
                 self.collect_button.setEnabled(False)
                 self.cancel_button.setEnabled(True)
@@ -918,8 +1170,10 @@ class FlowScribeMainWindow:
                 self.open_output_button.setEnabled(bool(result.outputs))
                 if result.outputs:
                     self._last_output_dir = result.job.output_dir
+                    self._remember_recent_output_dir(result.job.output_dir)
 
                 if result.canceled:
+                    self._remember_recent_job(result, "canceled")
                     self.status_label.setText(
                         f"Canceled. Succeeded before cancel: {result.succeeded}. Failed: {result.failed}."
                     )
@@ -931,6 +1185,7 @@ class FlowScribeMainWindow:
                     return
 
                 if result.errors:
+                    self._remember_recent_job(result, "failed")
                     self.status_label.setText(
                         f"Done with errors. Succeeded: {result.succeeded}. Failed: {result.failed}."
                     )
@@ -939,6 +1194,7 @@ class FlowScribeMainWindow:
                         self.preview_output.append(f"- {error.source}: {error.message}")
                     return
 
+                self._remember_recent_job(result, "completed")
                 self.status_label.setText(f"Done. Succeeded: {result.succeeded}.")
                 self.preview_output.append("\nOutput files:")
                 transcript_loaded = False
@@ -959,6 +1215,7 @@ class FlowScribeMainWindow:
                 self.cancel_button.setEnabled(False)
                 self.status_label.setText("Transcription failed.")
                 self.preview_output.append(f"\nError: {message}")
+                self._remember_recent_failed_run(message)
 
             def _clear_worker_refs(self) -> None:
                 self._thread = None
@@ -978,6 +1235,7 @@ class FlowScribeMainWindow:
 
                 self._transcript_path = path
                 self._transcript_view = view
+                self._remember_recent_transcript(path)
                 self._search_hits = ()
                 self.search_results.clear()
                 self._clear_media_binding()
@@ -986,6 +1244,7 @@ class FlowScribeMainWindow:
                 self.transcript_segments.clear()
                 for segment in view.segments:
                     self.transcript_segments.addItem(render_segment_line(segment))
+                self._active_segment_row = -1
                 self._load_media_for_transcript(view)
                 self.status_label.setText(f"Loaded transcript JSON: {path.name}")
                 return True
@@ -1044,11 +1303,7 @@ class FlowScribeMainWindow:
                 if hit.segment_index >= len(self._transcript_view.segments):
                     return
 
-                self.transcript_segments.setCurrentRow(hit.segment_index)
-                item = self.transcript_segments.currentItem()
-                if item is not None:
-                    self.transcript_segments.scrollToItem(item)
-                self.transcript_segments.setFocus()
+                self._select_transcript_segment(hit.segment_index, follow=True, focus=True)
                 self._seek_media_seconds(transcript_search_hit_seek_seconds(hit), autoplay=True)
 
             def _activate_selected_segment(self, *_args) -> None:
@@ -1057,12 +1312,15 @@ class FlowScribeMainWindow:
                 row = self.transcript_segments.currentRow()
                 if row < 0 or row >= len(self._transcript_view.segments):
                     return
+                self._select_transcript_segment(row, follow=True, focus=True)
                 segment = self._transcript_view.segments[row]
                 self._seek_media_seconds(transcript_segment_seek_seconds(segment), autoplay=True)
 
             def _load_media_for_transcript(self, view: TranscriptView) -> None:
                 media_path = resolve_transcript_media_path(view)
                 if media_path is None:
+                    self._media_binding_mode = "unbound"
+                    self._update_media_binding_feedback()
                     self.media_status_label.setText(
                         "Transcript loaded. Bind a local media file to enable sync playback."
                     )
@@ -1080,10 +1338,13 @@ class FlowScribeMainWindow:
                     return False
 
                 self._media_path = path
+                self._media_binding_mode = "auto-bound" if auto_bound else "manually bound"
                 self._media_player.setSource(QUrl.fromLocalFile(str(path.resolve())))
                 self.media_position_slider.setValue(0)
                 self.play_media_button.setEnabled(True)
                 self.media_position_slider.setEnabled(True)
+                self._update_media_binding_feedback()
+                self._remember_recent_media_binding(path)
                 if auto_bound:
                     self.media_status_label.setText(f"Auto-bound media: {path.name}")
                 else:
@@ -1116,6 +1377,7 @@ class FlowScribeMainWindow:
             def _on_media_position_changed(self, position: int) -> None:
                 if not self.media_position_slider.isSliderDown():
                     self.media_position_slider.setValue(position)
+                self._sync_transcript_to_media_position(position)
 
             def _on_media_duration_changed(self, duration: int) -> None:
                 self.media_position_slider.setRange(0, max(0, duration))
@@ -1132,12 +1394,51 @@ class FlowScribeMainWindow:
 
             def _clear_media_binding(self) -> None:
                 self._media_path = None
+                self._media_binding_mode = "unbound"
                 self._media_player.stop()
                 self._media_player.setSource(QUrl())
                 self.media_position_slider.setRange(0, 0)
                 self.media_position_slider.setValue(0)
                 self.media_position_slider.setEnabled(False)
                 self.play_media_button.setEnabled(False)
+                self._active_segment_row = -1
+                self._update_media_binding_feedback()
+
+            def _select_transcript_segment(self, row: int, *, follow: bool, focus: bool = False) -> None:
+                if row < 0 or row >= self.transcript_segments.count():
+                    return
+                self._active_segment_row = row
+                self.transcript_segments.setCurrentRow(row)
+                item = self.transcript_segments.item(row)
+                if item is not None and follow:
+                    self.transcript_segments.scrollToItem(item)
+                if focus:
+                    self.transcript_segments.setFocus()
+
+            def _sync_transcript_to_media_position(self, position_milliseconds: int) -> None:
+                if self._transcript_view is None or self._media_path is None:
+                    return
+                row = transcript_segment_index_for_seconds(
+                    self._transcript_view,
+                    position_milliseconds / 1000.0,
+                )
+                if row is None or row == self._active_segment_row:
+                    return
+                self._select_transcript_segment(row, follow=True, focus=False)
+
+            def _update_media_binding_feedback(self) -> None:
+                if self._media_path is None or self._transcript_view is None:
+                    self.media_binding_label.setText("Binding: Unbound")
+                    return
+
+                mode = self._media_binding_mode.title()
+                warning = transcript_media_binding_warning(self._transcript_view, self._media_path)
+                if warning:
+                    self.media_binding_label.setText(
+                        f"Binding: {mode} - {self._media_path.name}\nWarning: {warning}"
+                    )
+                    return
+                self.media_binding_label.setText(f"Binding: {mode} - {self._media_path.name}")
 
             def _checked_local_paths(self) -> list[Path]:
                 checked_paths: list[Path] = []
@@ -1163,9 +1464,10 @@ class FlowScribeMainWindow:
             def _restore_gui_state(self) -> None:
                 from PySide6.QtCore import QSignalBlocker
 
-                local_paths, checked, preferences = _load_gui_state()
+                local_paths, checked, preferences, recent_work = _load_gui_state()
                 self._saved_checked_local_paths = checked
                 self._saved_preferences = preferences
+                self._recent_work = _recent_work_payload(recent_work)
                 blocker = QSignalBlocker(self.file_list)
                 try:
                     self._apply_gui_preferences(preferences)
@@ -1184,10 +1486,259 @@ class FlowScribeMainWindow:
                     self._local_paths,
                     self._checked_local_paths(),
                     self._saved_preferences,
+                    self._recent_work,
                 )
 
             def _persist_local_source_state(self) -> None:
                 self._persist_gui_state()
+
+            def _remember_recent_transcript(self, path: Path) -> None:
+                self._remember_recent_path("recent_transcripts", path)
+
+            def _remember_recent_output_dir(self, path: Path) -> None:
+                self._remember_recent_path("recent_output_dirs", path, expect_directory=True)
+
+            def _remember_recent_path(
+                self,
+                key: str,
+                path: Path,
+                *,
+                expect_directory: bool = False,
+            ) -> None:
+                try:
+                    normalized = str(path.resolve())
+                except OSError:
+                    normalized = str(path)
+                entries = [item for item in self._recent_work.get(key, []) if isinstance(item, str)]
+                entries = [item for item in entries if item != normalized]
+                entries.insert(0, normalized)
+                limit = MAX_RECENT_OUTPUT_DIRS if expect_directory else MAX_RECENT_TRANSCRIPTS
+                self._recent_work[key] = entries[:limit]
+                self._persist_gui_state()
+                self._refresh_recent_work_lists()
+
+            def _remember_recent_job(self, result, status: str) -> None:
+                source_count = len(result.job.sources)
+                label = f"{source_count} source(s) -> {result.job.output_dir.name}"
+                transcript_path = ""
+                for artifacts in result.outputs:
+                    for path in artifacts.paths:
+                        if path.suffix.lower() == ".json":
+                            transcript_path = str(path)
+                            break
+                    if transcript_path:
+                        break
+
+                entry = {
+                    "label": label,
+                    "status": status,
+                    "output_dir": str(result.job.output_dir),
+                    "transcript_path": transcript_path,
+                    "media_path": str(self._media_path) if self._media_path is not None else "",
+                }
+                self._prepend_recent_job_entry(entry)
+
+            def _remember_recent_failed_run(self, message: str) -> None:
+                entry = {
+                    "label": message.strip() or "Transcription failed",
+                    "status": "failed",
+                    "output_dir": self.output_dir_input.text().strip() or "outputs",
+                    "transcript_path": "",
+                    "media_path": "",
+                }
+                self._prepend_recent_job_entry(entry)
+
+            def _prepend_recent_job_entry(self, entry: dict[str, str]) -> None:
+                entries = [
+                    item
+                    for item in self._recent_work.get("recent_jobs", [])
+                    if isinstance(item, dict)
+                ]
+                entries = [
+                    item
+                    for item in entries
+                    if not (
+                        item.get("label") == entry["label"]
+                        and item.get("status") == entry["status"]
+                        and item.get("output_dir") == entry["output_dir"]
+                        and item.get("transcript_path") == entry["transcript_path"]
+                        and item.get("media_path") == entry["media_path"]
+                    )
+                ]
+                entries.insert(0, entry)
+                self._recent_work["recent_jobs"] = entries[:MAX_RECENT_JOBS]
+                self._persist_gui_state()
+                self._refresh_recent_work_lists()
+
+            def _remember_recent_media_binding(self, media_path: Path) -> None:
+                if self._transcript_path is None:
+                    return
+                entry = {
+                    "transcript_path": str(self._transcript_path),
+                    "media_path": str(media_path),
+                }
+                entries = [
+                    item
+                    for item in self._recent_work.get("recent_media_bindings", [])
+                    if isinstance(item, dict)
+                ]
+                entries = [
+                    item
+                    for item in entries
+                    if not (
+                        item.get("transcript_path") == entry["transcript_path"]
+                        and item.get("media_path") == entry["media_path"]
+                    )
+                ]
+                entries.insert(0, entry)
+                self._recent_work["recent_media_bindings"] = entries[:MAX_RECENT_MEDIA_BINDINGS]
+                self._persist_gui_state()
+                self._refresh_recent_work_lists()
+
+            def _refresh_recent_work_lists(self) -> None:
+                if self._recent_transcripts_list is not None:
+                    self._recent_transcripts_list.clear()
+                    for path_text in self._recent_work.get("recent_transcripts", []):
+                        self._recent_transcripts_list.addItem(str(path_text))
+                if self._recent_output_dirs_list is not None:
+                    self._recent_output_dirs_list.clear()
+                    for path_text in self._recent_work.get("recent_output_dirs", []):
+                        self._recent_output_dirs_list.addItem(str(path_text))
+                if self._recent_jobs_list is not None:
+                    self._recent_jobs_list.clear()
+                    for item in self._recent_work.get("recent_jobs", []):
+                        if not isinstance(item, dict):
+                            continue
+                        label = (
+                            f"[{item.get('status', 'unknown')}] "
+                            f"{item.get('label', '')} | {item.get('output_dir', '')}"
+                        )
+                        self._recent_jobs_list.addItem(label)
+                if self._recent_media_bindings_list is not None:
+                    self._recent_media_bindings_list.clear()
+                    for item in self._recent_work.get("recent_media_bindings", []):
+                        if not isinstance(item, dict):
+                            continue
+                        transcript_path = str(item.get("transcript_path", ""))
+                        media_path = str(item.get("media_path", ""))
+                        self._recent_media_bindings_list.addItem(
+                            f"{Path(transcript_path).name} -> {Path(media_path).name}"
+                        )
+
+            def _selected_recent_path(self, list_widget) -> str | None:
+                if list_widget is None:
+                    return None
+                item = list_widget.currentItem()
+                if item is None:
+                    return None
+                text = item.text().strip()
+                return text or None
+
+            def _drop_missing_recent_path(self, key: str, target: Path) -> None:
+                target_text = str(target)
+                entries = [item for item in self._recent_work.get(key, []) if isinstance(item, str)]
+                self._recent_work[key] = [item for item in entries if item != target_text]
+                self._persist_gui_state()
+                self._refresh_recent_work_lists()
+
+            def _drop_recent_media_binding(self, transcript_path: Path, media_path: Path) -> None:
+                entries = [
+                    item
+                    for item in self._recent_work.get("recent_media_bindings", [])
+                    if isinstance(item, dict)
+                ]
+                self._recent_work["recent_media_bindings"] = [
+                    item
+                    for item in entries
+                    if not (
+                        item.get("transcript_path") == str(transcript_path)
+                        and item.get("media_path") == str(media_path)
+                    )
+                ]
+                self._persist_gui_state()
+                self._refresh_recent_work_lists()
+
+            def _open_selected_recent_transcript(self, *_args) -> None:
+                selected = self._selected_recent_path(self._recent_transcripts_list)
+                if not selected:
+                    self.status_label.setText("Select a recent transcript JSON first.")
+                    return
+                path = Path(selected)
+                if not path.is_file():
+                    self._drop_missing_recent_path("recent_transcripts", path)
+                    self.status_label.setText(f"Recent transcript is missing and was removed: {path}")
+                    return
+                self._load_transcript_json(path)
+
+            def _open_selected_recent_output_dir(self, *_args) -> None:
+                selected = self._selected_recent_path(self._recent_output_dirs_list)
+                if not selected:
+                    self.status_label.setText("Select a recent output directory first.")
+                    return
+                self._open_recent_output_dir(Path(selected))
+
+            def _open_recent_output_dir(self, path: Path) -> None:
+                from PySide6.QtCore import QUrl
+                from PySide6.QtGui import QDesktopServices
+
+                if not path.is_dir():
+                    self._drop_missing_recent_path("recent_output_dirs", path)
+                    self.status_label.setText(f"Recent output directory is missing and was removed: {path}")
+                    return
+                if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(path))):
+                    self.status_label.setText(f"Could not open output directory: {path}")
+                    return
+                self.status_label.setText(f"Opened output directory: {path}")
+
+            def _open_selected_recent_job(self, *_args) -> None:
+                if self._recent_jobs_list is None:
+                    return
+                row = self._recent_jobs_list.currentRow()
+                jobs = [
+                    item
+                    for item in self._recent_work.get("recent_jobs", [])
+                    if isinstance(item, dict)
+                ]
+                if row < 0 or row >= len(jobs):
+                    self.status_label.setText("Select a recent job first.")
+                    return
+                entry = jobs[row]
+                transcript_path = Path(str(entry.get("transcript_path", ""))) if entry.get("transcript_path") else None
+                if transcript_path and transcript_path.is_file():
+                    self._load_transcript_json(transcript_path)
+                    return
+                output_dir = Path(str(entry.get("output_dir", "")))
+                self._open_recent_output_dir(output_dir)
+
+            def _rebind_selected_recent_media(self, *_args) -> None:
+                if self._recent_media_bindings_list is None:
+                    return
+                row = self._recent_media_bindings_list.currentRow()
+                bindings = [
+                    item
+                    for item in self._recent_work.get("recent_media_bindings", [])
+                    if isinstance(item, dict)
+                ]
+                if row < 0 or row >= len(bindings):
+                    self.status_label.setText("Select a recent transcript-media binding first.")
+                    return
+                entry = bindings[row]
+                transcript_path = Path(str(entry.get("transcript_path", "")))
+                media_path = Path(str(entry.get("media_path", "")))
+                if not transcript_path.is_file():
+                    self._drop_recent_media_binding(transcript_path, media_path)
+                    self.status_label.setText(f"Recent transcript is missing: {transcript_path}")
+                    return
+                if not media_path.is_file():
+                    self._drop_recent_media_binding(transcript_path, media_path)
+                    self.status_label.setText(f"Recent media is missing: {media_path}")
+                    return
+                if not self._load_transcript_json(transcript_path):
+                    return
+                if self._bind_media_path(media_path):
+                    self.status_label.setText(
+                        f"Reopened transcript and rebound media: {transcript_path.name} -> {media_path.name}"
+                    )
 
             def _check_newly_added_sources(self, paths) -> None:
                 added = {str(Path(path)) for path in paths}

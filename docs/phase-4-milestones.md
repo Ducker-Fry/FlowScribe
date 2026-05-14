@@ -102,6 +102,8 @@ generated outputs.
 
 ## Milestone 4.3: Recent Work History
 
+Current implementation status: implemented in the current working flow.
+
 ### Goal
 
 Help users quickly resume recent work without manually rediscovering files,
@@ -129,6 +131,8 @@ transcripts, or output locations.
   corpus.
 
 ## Milestone 4.4: Transcript-Media Review Enhancement
+
+Current implementation status: implemented in the current working flow.
 
 ### Goal
 

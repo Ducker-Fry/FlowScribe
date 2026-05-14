@@ -8,6 +8,8 @@ from flowscribe.gui.transcript_viewer import (
     render_transcript_view,
     render_transcript_summary,
     search_transcript_view,
+    transcript_media_binding_warning,
+    transcript_segment_index_for_seconds,
     transcript_search_hit_seek_seconds,
     transcript_segment_seek_seconds,
 )
@@ -175,3 +177,47 @@ def test_transcript_seek_helpers_prefer_start_time(tmp_path: Path) -> None:
 
     assert transcript_segment_seek_seconds(view.segments[0]) == 1.25
     assert transcript_search_hit_seek_seconds(hits[0]) == 1.6
+
+
+def test_transcript_segment_index_for_seconds_follows_playback_position(tmp_path: Path) -> None:
+    transcript = tmp_path / "lesson.json"
+    transcript.write_text(
+        """
+{
+  "source": "lesson.mp4",
+  "segments": [
+    {"text": "Intro", "start_seconds": 0.0, "end_seconds": 1.0},
+    {"text": "Middle", "start_seconds": 1.2, "end_seconds": 2.5},
+    {"text": "End", "start_seconds": 3.0, "end_seconds": 4.0}
+  ]
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    view = load_transcript_view(transcript)
+
+    assert transcript_segment_index_for_seconds(view, 0.4) == 0
+    assert transcript_segment_index_for_seconds(view, 2.0) == 1
+    assert transcript_segment_index_for_seconds(view, 2.8) == 1
+    assert transcript_segment_index_for_seconds(view, 3.5) == 2
+
+
+def test_transcript_media_binding_warning_flags_manual_mismatch(tmp_path: Path) -> None:
+    expected_media = tmp_path / "lesson.mp4"
+    expected_media.write_bytes(b"media")
+    other_media = tmp_path / "other.mp4"
+    other_media.write_bytes(b"media")
+    transcript = tmp_path / "lesson.json"
+    transcript.write_text(
+        '{"source": "lesson.mp4", "segments": []}',
+        encoding="utf-8",
+    )
+
+    view = load_transcript_view(transcript)
+
+    assert transcript_media_binding_warning(view, expected_media) is None
+    warning = transcript_media_binding_warning(view, other_media)
+    assert warning is not None
+    assert "lesson.mp4" in warning
+    assert "other.mp4" in warning
