@@ -133,3 +133,19 @@ def test_transcript_artifact_writer_writes_selected_formats(tmp_path: Path) -> N
     vtt = (tmp_path / "lesson.vtt").read_text(encoding="utf-8")
     assert vtt.startswith("WEBVTT\n\n")
     assert "00:00:00.000 --> 00:00:01.500\nHello world." in vtt
+
+
+def test_transcript_artifact_writer_uses_custom_output_base_name(tmp_path: Path) -> None:
+    transcript = build_transcript(tmp_path)
+    path_builder = OutputPathBuilder(overwrite=True, base_name="custom-session")
+    writer = TranscriptArtifactWriter(
+        formats=("txt", "json"),
+        txt_writer=TxtTranscriptWriter(path_builder),
+        json_writer=JsonTranscriptWriter(path_builder),
+    )
+
+    artifacts = writer.write_all(transcript, tmp_path)
+
+    assert {path.name for path in artifacts.paths} == {"custom-session.txt", "custom-session.json"}
+    assert (tmp_path / "custom-session.txt").is_file()
+    assert (tmp_path / "custom-session.json").is_file()

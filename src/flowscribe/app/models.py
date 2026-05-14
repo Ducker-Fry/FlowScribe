@@ -30,6 +30,7 @@ class TranscriptionJob:
 
     sources: tuple[SourceSpec, ...]
     output_dir: Path = Path("outputs")
+    output_name_base: str | None = None
     work_dir: Path | None = None
     model_name: str = "small"
     language: str | None = None

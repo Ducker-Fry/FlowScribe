@@ -14,6 +14,7 @@ workflow end to end:
 - Remember local source list and checked state across restarts.
 - Paste a public URL.
 - Choose an output directory.
+- Optionally choose a custom output basename for generated transcript files.
 - Set model, language, preset, output formats, network family, proxy, and cookies path.
 - Collect and preview form state as a `TranscriptionJob`-compatible payload.
 - Start a transcription job for checked local sources or a URL.
@@ -35,6 +36,8 @@ Phase 4 has now started with the first persistence-oriented desktop refinement:
   the output directory.
 - Keep settings inspection separate from run details by showing preferences in a
   dedicated window.
+- Let users override transcript artifact basenames from the GUI so output files
+  can follow a task/session name instead of the source stem.
 - Add a dedicated `Recent Work` window that can reopen recent transcript JSON
   files, recent output directories, recent lightweight jobs, and recent
   transcript/media bindings.
@@ -44,6 +47,9 @@ Phase 4 has now started with the first persistence-oriented desktop refinement:
   search-hit navigation stay more consistent during review.
 - Show clearer transcript-media binding state and mismatch feedback inside the
   GUI.
+- Add a Windows-focused system-audio capture MVP that records to WAV, returns
+  the result as a normal local source, and can auto-delete temporary captures
+  after transcription.
 
 ## Install GUI Dependencies
 
@@ -118,6 +124,8 @@ Preference persistence currently remains intentionally narrow:
 - only non-sensitive values are saved
 - cookie contents are not stored
 - saved preferences are inspectable from the GUI
+- custom output basenames can be saved and restored with the other non-sensitive
+  GUI defaults
 
 Task control also remains intentionally lightweight:
 
@@ -131,6 +139,18 @@ Recent-work support also remains intentionally lightweight:
 - recent jobs are for reopening context quickly, not for full queue management
 - recent transcript/media bindings help restore review sessions without creating
   a persistent asset database
+
+System-audio capture currently remains intentionally conservative:
+
+- FlowScribe only enables capture when ffmpeg can see a loopback-like Windows
+  input device such as `Stereo Mix`, `What U Hear`, `Wave Out`, or a virtual
+  loopback device
+- capture writes a normal WAV file and then reuses the existing local-source
+  transcription path
+- silent or empty recordings are treated as failures rather than successful
+  captures
+- machines that only expose microphone/headphone dshow endpoints are reported as
+  unsupported instead of producing misleading blank audio
 
 ## Logging Modes
 

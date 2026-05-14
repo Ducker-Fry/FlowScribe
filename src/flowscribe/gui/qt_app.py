@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from flowscribe import __version__
 from flowscribe.app.models import ProgressEvent
 from flowscribe.app.service import TranscriptionService
-from flowscribe.core.errors import SearchError
+from flowscribe.core.errors import MediaPreparationError, SearchError
 from flowscribe.input.file_filter import is_supported_media
 from flowscribe.gui.gui_logging import configure_gui_logging, get_gui_logger
+from flowscribe.media.system_audio_capture import FfmpegSystemAudioRecorder
 from flowscribe.output.time_format import format_timestamp
 from flowscribe.gui.state import (
     GuiTranscriptionForm,
@@ -40,6 +42,7 @@ GUI_PRESET_OPTIONS = ("none", "zh")
 GUI_NETWORK_OPTIONS = ("auto", "ipv4", "ipv6")
 DEFAULT_GUI_PREFERENCES = {
     "output_dir": "outputs",
+    "output_name_base": "",
     "model_name": "small",
     "language": "auto",
     "preset": "none",
@@ -117,6 +120,7 @@ def _normalize_gui_preferences_payload(payload: object) -> dict[str, object]:
     ]
 
     output_dir = source.get("output_dir")
+    output_name_base = source.get("output_name_base")
     model_name = source.get("model_name")
     language = source.get("language")
     preset = source.get("preset")
@@ -125,6 +129,7 @@ def _normalize_gui_preferences_payload(payload: object) -> dict[str, object]:
 
     return {
         "output_dir": output_dir if isinstance(output_dir, str) and output_dir.strip() else "outputs",
+        "output_name_base": output_name_base if isinstance(output_name_base, str) else "",
         "model_name": model_name if model_name in GUI_MODEL_OPTIONS else "small",
         "language": language if language in GUI_LANGUAGE_OPTIONS else "auto",
         "preset": preset if preset in GUI_PRESET_OPTIONS else "none",
@@ -464,8 +469,14 @@ class FlowScribeMainWindow:
                 self._recent_output_dirs_list: object | None = None
                 self._recent_jobs_list: object | None = None
                 self._recent_media_bindings_list: object | None = None
+                self._capture_recorder = FfmpegSystemAudioRecorder()
+                self._capture_backend: str | None = None
+                self._active_capture_path: Path | None = None
+                self._temporary_capture_paths: set[Path] = set()
+                self._capture_supported = False
                 self._setup_window()
                 self._restore_gui_state()
+                self._refresh_capture_support()
 
             def _setup_window(self) -> None:
                 from PySide6.QtWidgets import (
@@ -529,6 +540,25 @@ class FlowScribeMainWindow:
                 left_layout.addSpacing(8)
                 left_layout.addWidget(QLabel("URL"))
                 left_layout.addWidget(self.url_input)
+                left_layout.addSpacing(8)
+                left_layout.addWidget(QLabel("System audio capture"))
+
+                capture_controls = QHBoxLayout()
+                self.start_capture_button = QPushButton("Start Capture")
+                self.start_capture_button.clicked.connect(self._start_system_capture)
+                self.stop_capture_button = QPushButton("Stop Capture")
+                self.stop_capture_button.clicked.connect(self._stop_system_capture)
+                self.stop_capture_button.setEnabled(False)
+                capture_controls.addWidget(self.start_capture_button)
+                capture_controls.addWidget(self.stop_capture_button)
+
+                self.keep_capture_file_check = QCheckBox("Keep capture file")
+                self.capture_status_label = QLabel("System capture is idle.")
+                self.capture_status_label.setWordWrap(True)
+
+                left_layout.addLayout(capture_controls)
+                left_layout.addWidget(self.keep_capture_file_check)
+                left_layout.addWidget(self.capture_status_label)
                 left_panel.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
 
                 right_panel = QWidget()
@@ -545,6 +575,8 @@ class FlowScribeMainWindow:
                 self.output_dir_input = QLineEdit("outputs")
                 choose_output_button = QPushButton("Browse")
                 choose_output_button.clicked.connect(self._choose_output_dir)
+                self.output_name_input = QLineEdit()
+                self.output_name_input.setPlaceholderText("Optional custom output name")
 
                 output_row = QHBoxLayout()
                 output_row.addWidget(self.output_dir_input)
@@ -591,24 +623,26 @@ class FlowScribeMainWindow:
 
                 settings_layout.addWidget(QLabel("Output directory"), 0, 0)
                 settings_layout.addLayout(output_row, 0, 1)
-                settings_layout.addWidget(QLabel("Model"), 1, 0)
-                settings_layout.addWidget(self.model_combo, 1, 1)
-                settings_layout.addWidget(QLabel("Language"), 2, 0)
-                settings_layout.addWidget(self.language_combo, 2, 1)
-                settings_layout.addWidget(QLabel("Preset"), 3, 0)
-                settings_layout.addWidget(self.preset_combo, 3, 1)
-                settings_layout.addWidget(QLabel("Formats"), 4, 0)
-                settings_layout.addLayout(format_row, 4, 1)
-                settings_layout.addWidget(QLabel("Network"), 5, 0)
-                settings_layout.addWidget(self.network_combo, 5, 1)
-                settings_layout.addWidget(QLabel("Proxy"), 6, 0)
-                settings_layout.addWidget(self.proxy_input, 6, 1)
-                settings_layout.addWidget(QLabel("Cookies"), 7, 0)
-                settings_layout.addLayout(cookies_row, 7, 1)
-                settings_layout.addWidget(self.timestamps_check, 8, 1)
-                settings_layout.addWidget(self.word_timestamps_check, 9, 1)
-                settings_layout.addWidget(self.overwrite_check, 10, 1)
-                settings_layout.addWidget(self.keep_media_check, 11, 1)
+                settings_layout.addWidget(QLabel("Output name"), 1, 0)
+                settings_layout.addWidget(self.output_name_input, 1, 1)
+                settings_layout.addWidget(QLabel("Model"), 2, 0)
+                settings_layout.addWidget(self.model_combo, 2, 1)
+                settings_layout.addWidget(QLabel("Language"), 3, 0)
+                settings_layout.addWidget(self.language_combo, 3, 1)
+                settings_layout.addWidget(QLabel("Preset"), 4, 0)
+                settings_layout.addWidget(self.preset_combo, 4, 1)
+                settings_layout.addWidget(QLabel("Formats"), 5, 0)
+                settings_layout.addLayout(format_row, 5, 1)
+                settings_layout.addWidget(QLabel("Network"), 6, 0)
+                settings_layout.addWidget(self.network_combo, 6, 1)
+                settings_layout.addWidget(QLabel("Proxy"), 7, 0)
+                settings_layout.addWidget(self.proxy_input, 7, 1)
+                settings_layout.addWidget(QLabel("Cookies"), 8, 0)
+                settings_layout.addLayout(cookies_row, 8, 1)
+                settings_layout.addWidget(self.timestamps_check, 9, 1)
+                settings_layout.addWidget(self.word_timestamps_check, 10, 1)
+                settings_layout.addWidget(self.overwrite_check, 11, 1)
+                settings_layout.addWidget(self.keep_media_check, 12, 1)
 
                 action_layout = QGridLayout()
                 action_layout.setHorizontalSpacing(8)
@@ -824,6 +858,7 @@ class FlowScribeMainWindow:
                 return True
 
             def _clear_files(self) -> None:
+                self._cleanup_temporary_capture_files()
                 self._local_paths.clear()
                 self.file_list.clear()
                 self._persist_local_source_state()
@@ -890,6 +925,7 @@ class FlowScribeMainWindow:
                     local_paths=selected_local_paths,
                     url=self.url_input.text(),
                     output_dir=Path(self.output_dir_input.text().strip() or "outputs"),
+                    output_name_base=self.output_name_input.text(),
                     model_name=self.model_combo.currentText(),
                     language="" if language == "auto" else language,
                     preset="" if preset == "none" else preset,
@@ -906,6 +942,7 @@ class FlowScribeMainWindow:
             def _current_gui_preferences(self) -> dict[str, object]:
                 return {
                     "output_dir": self.output_dir_input.text().strip() or "outputs",
+                    "output_name_base": self.output_name_input.text(),
                     "model_name": self.model_combo.currentText(),
                     "language": self.language_combo.currentText(),
                     "preset": self.preset_combo.currentText(),
@@ -924,6 +961,7 @@ class FlowScribeMainWindow:
 
             def _apply_gui_preferences(self, preferences: dict[str, object]) -> None:
                 self.output_dir_input.setText(str(preferences["output_dir"]))
+                self.output_name_input.setText(str(preferences["output_name_base"]))
                 self.model_combo.setCurrentText(str(preferences["model_name"]))
                 self.language_combo.setCurrentText(str(preferences["language"]))
                 self.preset_combo.setCurrentText(str(preferences["preset"]))
@@ -1064,6 +1102,10 @@ class FlowScribeMainWindow:
                     self.status_label.setText(selection_error)
                     self.preview_output.clear()
                     return
+                if self._capture_recorder.is_recording:
+                    self.status_label.setText("Stop system capture before collecting or starting transcription.")
+                    self.preview_output.clear()
+                    return
 
                 form = self._form()
                 errors = form.validate()
@@ -1079,6 +1121,9 @@ class FlowScribeMainWindow:
             def _start_transcription(self) -> None:
                 if self._thread is not None:
                     self.status_label.setText("A transcription job is already running.")
+                    return
+                if self._capture_recorder.is_recording:
+                    self.status_label.setText("Stop system capture before starting transcription.")
                     return
 
                 selection_error = self._local_selection_error()
@@ -1177,6 +1222,7 @@ class FlowScribeMainWindow:
                     self.status_label.setText(
                         f"Canceled. Succeeded before cancel: {result.succeeded}. Failed: {result.failed}."
                     )
+                    self._cleanup_temporary_capture_files()
                     if result.outputs:
                         self.preview_output.append("\nOutput files before cancellation:")
                         for artifacts in result.outputs:
@@ -1192,6 +1238,7 @@ class FlowScribeMainWindow:
                     self.preview_output.append("\nFailures:")
                     for error in result.errors:
                         self.preview_output.append(f"- {error.source}: {error.message}")
+                    self._cleanup_temporary_capture_files()
                     return
 
                 self._remember_recent_job(result, "completed")
@@ -1206,6 +1253,7 @@ class FlowScribeMainWindow:
                 if not transcript_loaded:
                     self.transcript_summary.setPlainText("No transcript JSON output was generated for this run.")
                     self.transcript_segments.clear()
+                self._cleanup_temporary_capture_files()
 
             def _fail_transcription(self, message: str) -> None:
                 self.progress_bar.setRange(0, 1)
@@ -1216,11 +1264,13 @@ class FlowScribeMainWindow:
                 self.status_label.setText("Transcription failed.")
                 self.preview_output.append(f"\nError: {message}")
                 self._remember_recent_failed_run(message)
+                self._cleanup_temporary_capture_files()
 
             def _clear_worker_refs(self) -> None:
                 self._thread = None
                 self._worker = None
                 self._cancel_requested = False
+                self._refresh_capture_support()
 
             def _load_transcript_json(self, path: Path) -> bool:
                 try:
@@ -1404,6 +1454,12 @@ class FlowScribeMainWindow:
                 self._active_segment_row = -1
                 self._update_media_binding_feedback()
 
+            def closeEvent(self, event) -> None:
+                if self._capture_recorder.is_recording:
+                    self._capture_recorder.abort()
+                self._cleanup_temporary_capture_files()
+                super().closeEvent(event)
+
             def _select_transcript_segment(self, row: int, *, follow: bool, focus: bool = False) -> None:
                 if row < 0 or row >= self.transcript_segments.count():
                     return
@@ -1460,6 +1516,127 @@ class FlowScribeMainWindow:
                 if self._checked_local_paths():
                     return None
                 return "Check at least one local source or paste a URL."
+
+            def _capture_output_dir(self) -> Path:
+                return Path(self.output_dir_input.text().strip() or "outputs") / ".flowscribe-capture"
+
+            def _start_system_capture(self) -> None:
+                self._refresh_capture_support()
+                if not self._capture_supported:
+                    self.status_label.setText("System audio capture is not available on this machine.")
+                    return
+                if self._capture_recorder.is_recording:
+                    self.capture_status_label.setText("System audio capture is already running.")
+                    return
+                if self._thread is not None:
+                    self.capture_status_label.setText("Wait for the current transcription job to finish first.")
+                    return
+
+                timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                output_path = self._capture_output_dir() / f"capture-{timestamp}.wav"
+                try:
+                    started = self._capture_recorder.start(output_path)
+                except MediaPreparationError as exc:
+                    self.capture_status_label.setText(str(exc))
+                    self.status_label.setText("Could not start system audio capture.")
+                    return
+
+                self._active_capture_path = started.output_path
+                self._capture_backend = started.backend
+                self.start_capture_button.setEnabled(False)
+                self.stop_capture_button.setEnabled(True)
+                self.capture_status_label.setText(
+                    f"Capturing system audio with {started.backend}..."
+                )
+                self.status_label.setText("System audio capture started.")
+
+            def _stop_system_capture(self) -> None:
+                if not self._capture_recorder.is_recording:
+                    self.capture_status_label.setText("System audio capture is not running.")
+                    return
+
+                try:
+                    output_path = self._capture_recorder.stop()
+                except MediaPreparationError as exc:
+                    self.start_capture_button.setEnabled(True)
+                    self.stop_capture_button.setEnabled(False)
+                    self._active_capture_path = None
+                    self._capture_backend = None
+                    self.capture_status_label.setText(str(exc))
+                    self.status_label.setText("System audio capture failed.")
+                    return
+
+                self.start_capture_button.setEnabled(True)
+                self.stop_capture_button.setEnabled(False)
+                self._capture_backend = None
+                self._active_capture_path = None
+                self._add_local_file(output_path)
+                self._check_newly_added_sources([output_path])
+                if not self.keep_capture_file_check.isChecked():
+                    self._temporary_capture_paths.add(output_path)
+                    self.capture_status_label.setText(
+                        f"Captured audio ready for transcription. It will be deleted after the run: {output_path.name}"
+                    )
+                else:
+                    self.capture_status_label.setText(
+                        f"Captured audio saved as local source: {output_path.name}"
+                    )
+                self.status_label.setText(f"Captured system audio: {output_path.name}")
+                self._persist_local_source_state()
+
+            def _cleanup_temporary_capture_files(self) -> None:
+                if not self._temporary_capture_paths:
+                    return
+
+                removed_paths: list[Path] = []
+                for path in list(self._temporary_capture_paths):
+                    try:
+                        path.unlink(missing_ok=True)
+                    except OSError:
+                        continue
+                    removed_paths.append(path)
+                    self._temporary_capture_paths.discard(path)
+
+                if not removed_paths:
+                    return
+
+                removed_set = {path.resolve() if path.exists() else path for path in removed_paths}
+                self._local_paths = [
+                    path
+                    for path in self._local_paths
+                    if (path.resolve() if path.exists() else path) not in removed_set
+                ]
+                for index in range(self.file_list.count() - 1, -1, -1):
+                    item = self.file_list.item(index)
+                    if item is None:
+                        continue
+                    item_path = Path(item.text())
+                    comparable = item_path.resolve() if item_path.exists() else item_path
+                    if comparable in removed_set:
+                        self.file_list.takeItem(index)
+                self._persist_local_source_state()
+
+            def _refresh_capture_support(self) -> None:
+                try:
+                    supported, message = self._capture_recorder.support_status()
+                except MediaPreparationError as exc:
+                    supported = False
+                    message = str(exc)
+
+                self._capture_supported = supported
+                if self._capture_recorder.is_recording:
+                    self.start_capture_button.setEnabled(False)
+                    self.stop_capture_button.setEnabled(True)
+                    return
+
+                self.start_capture_button.setEnabled(supported and self._thread is None)
+                self.stop_capture_button.setEnabled(False)
+                if not supported:
+                    self.capture_status_label.setText(message)
+                elif self.capture_status_label.text().startswith("Could not start system audio capture"):
+                    self.capture_status_label.setText(message)
+                elif self.capture_status_label.text() == "System capture is idle.":
+                    self.capture_status_label.setText(message)
 
             def _restore_gui_state(self) -> None:
                 from PySide6.QtCore import QSignalBlocker

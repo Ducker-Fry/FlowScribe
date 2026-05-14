@@ -133,6 +133,7 @@ output classes.
 - URL input field.
 - Output directory field.
 - Model, language, preset, output format controls.
+- Optional custom output basename control for generated artifacts.
 - Proxy, cookies, and network family controls.
 - `Collect State` button to preview job state.
 - `Start Transcription` button connected to `TranscriptionService`.
@@ -315,3 +316,17 @@ Current Phase 4 progress:
   manually bound.
 - Transcript/media mismatch warnings are now surfaced in the GUI instead of
   remaining implicit.
+- The GUI can now persist and reuse a custom output basename so generated
+  transcript artifacts do not have to follow the source stem.
+- Milestone 4.5 is implemented as a Windows-focused MVP in the current working
+  flow.
+- The GUI now exposes `Start Capture` and `Stop Capture` for system-audio
+  recording, writing captured audio to WAV and feeding it back into the normal
+  local-source transcription path.
+- Capture can keep the WAV file or delete it automatically after the current
+  transcription run.
+- The current capture implementation now refuses fake-success silent recordings
+  and only enables capture when ffmpeg can see a loopback-like Windows device
+  such as `Stereo Mix`, `What U Hear`, `Wave Out`, or `virtual-audio-capturer`.
+- On machines without a loopback-capable input path, the GUI now reports that
+  limitation clearly instead of leaving behind misleading silent WAV files.

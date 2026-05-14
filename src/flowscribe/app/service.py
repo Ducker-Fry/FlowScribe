@@ -317,7 +317,10 @@ def _error_from_exception(exc: FlowScribeError, *, source: str) -> ErrorInfo:
 
 
 def _build_pipeline(job: TranscriptionJob, settings: AppSettings) -> LocalTranscriptionPipeline:
-    path_builder = OutputPathBuilder(overwrite=settings.overwrite)
+    path_builder = OutputPathBuilder(
+        overwrite=settings.overwrite,
+        base_name=job.output_name_base,
+    )
     return LocalTranscriptionPipeline(
         media_preparer=FfmpegAudioExtractor(sample_rate=settings.sample_rate),
         transcriber=LocalWhisperTranscriber(

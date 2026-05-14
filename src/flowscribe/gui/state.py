@@ -10,6 +10,7 @@ from flowscribe.app.models import SourceSpec, TranscriptionJob
 from flowscribe.core.errors import DownloadError
 from flowscribe.input.file_filter import is_supported_media
 from flowscribe.input.url_security import validate_public_http_url
+from flowscribe.output.paths import sanitize_output_base_name
 
 
 SUPPORTED_GUI_FORMATS = ("txt", "md", "json", "srt", "vtt")
@@ -22,6 +23,7 @@ class GuiTranscriptionForm:
     local_paths: tuple[Path, ...] = ()
     url: str = ""
     output_dir: Path = Path("outputs")
+    output_name_base: str = ""
     model_name: str = "small"
     language: str = ""
     preset: str = ""
@@ -56,6 +58,9 @@ class GuiTranscriptionForm:
         if not self.output_formats:
             errors.append("Select at least one output format.")
 
+        if self.output_name_base.strip() and sanitize_output_base_name(self.output_name_base) is None:
+            errors.append("Output name cannot be empty after trimming.")
+
         unsupported = [
             output_format
             for output_format in self.output_formats
@@ -89,6 +94,7 @@ class GuiTranscriptionForm:
         return TranscriptionJob(
             sources=tuple(sources),
             output_dir=self.output_dir,
+            output_name_base=sanitize_output_base_name(self.output_name_base),
             model_name=self.model_name.strip() or "small",
             language=language,
             preset=preset,
@@ -115,6 +121,7 @@ class GuiTranscriptionForm:
                 for source in job.sources
             ],
             "output_dir": str(job.output_dir),
+            "output_name_base": job.output_name_base,
             "model_name": job.model_name,
             "language": job.language,
             "preset": job.preset,

@@ -63,6 +63,7 @@ def test_normalize_gui_preferences_payload_filters_invalid_values() -> None:
     preferences = _normalize_gui_preferences_payload(
         {
             "output_dir": "",
+            "output_name_base": 123,
             "model_name": "bad-model",
             "language": "fr",
             "preset": "bad-preset",
@@ -78,6 +79,7 @@ def test_normalize_gui_preferences_payload_filters_invalid_values() -> None:
 
     assert preferences == {
         "output_dir": "outputs",
+        "output_name_base": "",
         "model_name": "small",
         "language": "auto",
         "preset": "none",
@@ -104,6 +106,7 @@ def test_gui_state_payload_uses_nested_preferences_and_local_sources(tmp_path: P
         [media],
         {
             "output_dir": "saved-outputs",
+            "output_name_base": "custom-name",
             "model_name": "medium",
             "language": "zh",
             "preset": "zh",
@@ -140,6 +143,7 @@ def test_gui_state_payload_uses_nested_preferences_and_local_sources(tmp_path: P
         "version": 3,
         "preferences": {
             "output_dir": "saved-outputs",
+            "output_name_base": "custom-name",
             "model_name": "medium",
             "language": "zh",
             "preset": "zh",
@@ -189,6 +193,7 @@ def test_normalize_gui_state_payload_supports_nested_and_legacy_formats(tmp_path
         {
             "preferences": {
                 "output_dir": "custom-out",
+                "output_name_base": "phase4-note",
                 "model_name": "medium",
                 "language": "zh",
                 "preset": "zh",
@@ -229,6 +234,7 @@ def test_normalize_gui_state_payload_supports_nested_and_legacy_formats(tmp_path
     assert local_paths == [media]
     assert checked == {str(media)}
     assert preferences["output_dir"] == "custom-out"
+    assert preferences["output_name_base"] == "phase4-note"
     assert preferences["model_name"] == "medium"
     assert preferences["output_formats"] == ["txt", "vtt"]
     assert recent_work["recent_transcripts"] == [str(transcript)]
@@ -239,6 +245,7 @@ def test_normalize_gui_state_payload_supports_nested_and_legacy_formats(tmp_path
             "local_paths": [str(media)],
             "selected_paths": [str(media)],
             "output_dir": "legacy-out",
+            "output_name_base": "legacy-name",
             "model_name": "tiny",
             "language": "en",
             "preset": "none",
@@ -251,6 +258,7 @@ def test_normalize_gui_state_payload_supports_nested_and_legacy_formats(tmp_path
     assert legacy_local_paths == [media]
     assert legacy_checked == {str(media)}
     assert legacy_preferences["output_dir"] == "legacy-out"
+    assert legacy_preferences["output_name_base"] == "legacy-name"
     assert legacy_preferences["model_name"] == "tiny"
     assert legacy_preferences["language"] == "en"
     assert legacy_preferences["output_formats"] == ["json"]

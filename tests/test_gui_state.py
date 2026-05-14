@@ -13,6 +13,7 @@ def test_gui_form_builds_local_job(tmp_path: Path) -> None:
     form = GuiTranscriptionForm(
         local_paths=(media,),
         output_dir=output,
+        output_name_base="custom-lesson",
         model_name="medium",
         language="zh",
         preset="zh",
@@ -27,6 +28,7 @@ def test_gui_form_builds_local_job(tmp_path: Path) -> None:
     assert job.sources[0].kind == "local"
     assert job.sources[0].value == str(media)
     assert job.output_dir == output
+    assert job.output_name_base == "custom-lesson"
     assert job.model_name == "medium"
     assert job.language == "zh"
     assert job.preset == "zh"
@@ -102,6 +104,7 @@ def test_gui_form_preview_is_plain_data(tmp_path: Path) -> None:
     assert preview["sources"][0]["kind"] == "local"
     assert preview["sources"][1]["kind"] == "url"
     assert preview["cookies_path"].endswith("cookies.txt")
+    assert preview["output_name_base"] is None
 
 
 def test_gui_accepts_cli_supported_local_sources(tmp_path: Path) -> None:

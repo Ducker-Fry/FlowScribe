@@ -169,6 +169,9 @@ searching, and listening at the same time.
 
 ## Milestone 4.5: System Audio Capture MVP
 
+Current implementation status: implemented in the current working flow, with a
+Windows ffmpeg loopback-device requirement.
+
 ### Goal
 
 Let users capture audio being played locally, save it as a normal local artifact,
@@ -190,6 +193,10 @@ and run it through the existing transcription pipeline.
 - Stopping capture produces a local audio artifact.
 - The captured artifact can be transcribed without a special second pipeline.
 - Failure states are reported clearly in the GUI.
+- Temporary captures can be removed automatically after the current
+  transcription run if the user does not want to keep the WAV.
+- The GUI should not report silent or fake-success capture results as valid
+  recordings.
 
 ### Non-Goals
 
@@ -197,6 +204,8 @@ and run it through the existing transcription pipeline.
 - Do not add DRM bypass or protected-stream circumvention.
 - Do not assume browser-session extraction is a substitute for user-controlled
   capture.
+- Do not pretend microphone/headphone dshow endpoints are reliable system
+  playback loopback devices when they are not.
 
 ## Milestone 4.6: Release Hardening And Desktop Validation
 
