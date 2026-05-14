@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "flowscribe"
-version = "0.2.2"
+version = "0.2.3"
 description = "Local-first media transcription toolkit for turning audio and video into raw readable transcripts."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -12,10 +12,11 @@ license = { text = "MIT" }
 authors = [
   { name = "FlowScribe contributors" }
 ]
-keywords = ["transcription", "whisper", "audio", "video", "cli"]
+keywords = ["transcription", "whisper", "audio", "video", "cli", "gui"]
 classifiers = [
   "Development Status :: 2 - Pre-Alpha",
   "Environment :: Console",
+  "Environment :: X11 Applications :: Qt",
   "Intended Audience :: End Users/Desktop",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",

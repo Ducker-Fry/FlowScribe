@@ -6,22 +6,22 @@ memorizing CLI commands while keeping the UI replaceable later.
 
 ## Current Milestone
 
-Milestone 3.2 connects the GUI skeleton to local-file transcription:
+The current Phase 3 GUI build now covers the first interactive transcript
+workflow end to end:
 
 - Open a desktop window.
-- Choose local media files.
-- Drag local media files into the window.
-- Paste a URL.
+- Add local files and folders with explicit checkbox selection.
+- Remember local source list and checked state across restarts.
+- Paste a public URL.
 - Choose an output directory.
 - Set model, language, preset, output formats, network family, proxy, and cookies path.
 - Collect and preview form state as a `TranscriptionJob`-compatible payload.
-- Start a transcription job for local files.
-- Display progress messages.
-- Display output file paths.
-- Display structured failure messages.
-
-URL fields are already present in the form, but Phase 3.2's acceptance focus is
-local-file transcription from the GUI.
+- Start a transcription job for checked local sources or a URL.
+- Display progress messages, output file paths, and structured failures.
+- Open an existing transcript JSON file inside the GUI.
+- Render segment text and timestamps in a transcript viewer.
+- Search transcript keywords and jump to hits.
+- Bind local media to a transcript and seek playback from segments or search hits.
 
 ## Install GUI Dependencies
 
@@ -72,11 +72,26 @@ such as WebView, a web UI, or a more polished native interface.
 
 ## Current Boundary
 
-The `Start Transcription` button now runs the collected job in a background Qt
-thread, so the GUI should remain responsive while local transcription is running.
+The GUI is still a lightweight desktop shell. It focuses on one active
+transcription/review surface rather than a full project library or batch queue.
 
-Milestone 3.3 will polish URL transcription from the GUI and add stronger
-job-level controls.
+The `Start Transcription` button runs the collected job in a background Qt
+thread, so the GUI should remain responsive while transcription is running.
+
+Media sync is intentionally transcript-bound. The GUI first tries to resolve the
+original local media from the transcript metadata; if it cannot, the user binds
+one local media file to that transcript explicitly.
+
+## Logging Modes
+
+The GUI supports two runtime noise modes through `FLOWSCRIBE_GUI_LOG_MODE`:
+
+- `dev`: keep development-oriented logging visible.
+- `user`: quiet packaged mode for normal end users.
+
+Source runs default to `dev`. Frozen packaged GUI builds default to `user`.
+The packaged GUI also starts with a windowed entry point, so users do not see a
+console window during normal launch.
 
 ## Build A GUI Executable
 
@@ -94,5 +109,15 @@ dist/FlowScribeGUI/
 `-- _internal/
 ```
 
-This package currently validates that the GUI shell can be built. It does not
-replace the CLI release package yet.
+The packaged GUI build now defaults to quiet `user` logging by using a
+PyInstaller runtime hook. This keeps routine `qt.multimedia` startup chatter out
+of end-user sessions while still allowing source runs to use `dev` mode during
+development.
+
+For packaging smoke tests:
+
+```powershell
+.\dist\FlowScribeGUI\FlowScribeGUI.exe --self-test
+```
+
+Release automation can ship the GUI package alongside the CLI release package.

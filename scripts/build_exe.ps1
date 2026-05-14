@@ -14,6 +14,7 @@ $DistRoot = Join-Path $ProjectRoot "dist"
 $BuildRoot = Join-Path $ProjectRoot "build"
 $PackageDir = Join-Path $DistRoot $AppName
 $ReleaseReadme = Join-Path $PackageDir "README-USER.txt"
+$UserBase = Join-Path $ProjectRoot ".py-user-base"
 
 function Write-Step {
     param([string]$Message)
@@ -79,6 +80,9 @@ function Copy-Tool {
 
 Push-Location $ProjectRoot
 try {
+    $env:PYTHONNOUSERSITE = "1"
+    $env:PYTHONUSERBASE = $UserBase
+
     Write-Step "Create or reuse packaging virtual environment"
     if (-not (Test-Path $PythonExe)) {
         & $Python -m venv $VenvFullPath
@@ -86,7 +90,8 @@ try {
 
     Write-Step "Install project dependencies and PyInstaller"
     & $PythonExe -m pip install --upgrade pip
-    & $PythonExe -m pip install -e ".[dev]"
+    & $PythonExe -m pip install --upgrade setuptools
+    & $PythonExe -m pip install --no-build-isolation -e ".[dev]"
     & $PythonExe -m pip install pyinstaller
 
     if (-not $SkipClean) {

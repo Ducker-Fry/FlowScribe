@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version, for example v0.1.1"
+        description: "Release version, for example v0.2.3"
         required: true
         type: string
 
@@ -41,7 +41,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e .[dev]
+          python -m pip install -e .[dev,gui]
 
       - name: Run tests
         run: python -m pytest
@@ -57,21 +57,43 @@ jobs:
         shell: pwsh
         run: .\scripts\build_exe.ps1 -Python python
 
+      - name: Build GUI executable
+        shell: pwsh
+        run: .\scripts\build_gui_exe.ps1 -Python python
+
       - name: Verify packaged executable
         shell: pwsh
         run: .\dist\FlowScribe\FlowScribe.exe doctor -o release-smoke-test --model small
 
-      - name: Create release archive
+      - name: Verify packaged GUI executable
         shell: pwsh
         run: |
-          $zipName = "FlowScribe-$env:RELEASE_VERSION-windows-x64.zip"
-          $zipPath = Join-Path "dist" $zipName
-          if (Test-Path $zipPath) {
-            Remove-Item -LiteralPath $zipPath -Force
+          .\dist\FlowScribeGUI\FlowScribeGUI.exe --self-test
+          if ($LASTEXITCODE -ne 0) {
+            throw "GUI self-test failed with exit code $LASTEXITCODE"
           }
-          Compress-Archive -LiteralPath "dist\FlowScribe" -DestinationPath $zipPath -CompressionLevel Optimal
-          "RELEASE_ZIP=$zipPath" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "RELEASE_ZIP_NAME=$zipName" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Create release archives
+        shell: pwsh
+        run: |
+          $cliZipName = "FlowScribe-$env:RELEASE_VERSION-windows-x64.zip"
+          $cliZipPath = Join-Path "dist" $cliZipName
+          if (Test-Path $cliZipPath) {
+            Remove-Item -LiteralPath $cliZipPath -Force
+          }
+          Compress-Archive -LiteralPath "dist\FlowScribe" -DestinationPath $cliZipPath -CompressionLevel Optimal
+
+          $guiZipName = "FlowScribeGUI-$env:RELEASE_VERSION-windows-x64.zip"
+          $guiZipPath = Join-Path "dist" $guiZipName
+          if (Test-Path $guiZipPath) {
+            Remove-Item -LiteralPath $guiZipPath -Force
+          }
+          Compress-Archive -LiteralPath "dist\FlowScribeGUI" -DestinationPath $guiZipPath -CompressionLevel Optimal
+
+          "RELEASE_CLI_ZIP=$cliZipPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "RELEASE_CLI_ZIP_NAME=$cliZipName" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "RELEASE_GUI_ZIP=$guiZipPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "RELEASE_GUI_ZIP_NAME=$guiZipName" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Write release notes
         shell: pwsh
@@ -85,6 +107,7 @@ jobs:
           ## What's Included
 
           - Local audio/video transcription CLI.
+          - PySide6 desktop GUI for transcription, transcript viewing, search, and media sync.
           - Public URL transcription with audio-first download/extraction.
           - Local and URL media inspection with `flowscribe inspect`.
           - Keyword search and timestamp location with `flowscribe search`.
@@ -99,10 +122,21 @@ jobs:
 
           ## Download
 
-          Download `{{ZIP_NAME}}`, unzip it, and run:
+          Download one of these Windows x64 portable packages:
+
+          - `{{CLI_ZIP_NAME}}` for the CLI build
+          - `{{GUI_ZIP_NAME}}` for the desktop GUI build
+
+          CLI quick check:
 
           ```powershell
           .\FlowScribe\FlowScribe.exe doctor
+          ```
+
+          GUI quick start:
+
+          ```powershell
+          .\FlowScribeGUI\FlowScribeGUI.exe
           ```
 
           ## Notes
@@ -110,6 +144,7 @@ jobs:
           - Windows x64 portable build.
           - Whisper models are not bundled in the executable.
           - The first transcription with a selected model may download model files from Hugging Face.
+          - The GUI release defaults to quiet `user` logging mode and launches without a console window.
           - `tiny` is recommended only for smoke tests.
           - `small` is the recommended starting model for real use.
           - Use `medium` or larger models when accuracy matters more than speed.
@@ -118,7 +153,9 @@ jobs:
 
           FlowScribe is intended for personal learning, accessibility, research notes, and lawful information processing. Do not use it to bypass DRM, crack applications, or redistribute copyrighted transcripts without permission.
           '@
-          $notes = $notes.Replace("{{VERSION}}", $env:RELEASE_VERSION).Replace("{{ZIP_NAME}}", $env:RELEASE_ZIP_NAME)
+          $notes = $notes.Replace("{{VERSION}}", $env:RELEASE_VERSION)
+          $notes = $notes.Replace("{{CLI_ZIP_NAME}}", $env:RELEASE_CLI_ZIP_NAME)
+          $notes = $notes.Replace("{{GUI_ZIP_NAME}}", $env:RELEASE_GUI_ZIP_NAME)
           $notes | Set-Content -LiteralPath $notesPath -Encoding UTF8
           "RELEASE_NOTES=$notesPath" | Out-File -FilePath $env:GITHUB_ENV -Append
 
@@ -127,7 +164,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$env:RELEASE_VERSION" "$env:RELEASE_ZIP" `
+          gh release create "$env:RELEASE_VERSION" "$env:RELEASE_CLI_ZIP" "$env:RELEASE_GUI_ZIP" `
             --title "FlowScribe $env:RELEASE_VERSION" `
             --notes-file "$env:RELEASE_NOTES" `
             --verify-tag

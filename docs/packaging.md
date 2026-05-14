@@ -1,18 +1,21 @@
 # Packaging
 
-This document explains how to build a Windows portable release for FlowScribe.
+This document explains how to build Windows portable releases for FlowScribe.
 
 ## Packaging Strategy
 
-FlowScribe should first be packaged as a PyInstaller one-folder application:
+FlowScribe is packaged as PyInstaller one-folder applications:
 
 ```text
 dist/
-`-- FlowScribe/
-    |-- FlowScribe.exe
-    |-- ffmpeg.exe
-    |-- ffprobe.exe
-    |-- README-USER.txt
+|-- FlowScribe/
+|   |-- FlowScribe.exe
+|   |-- ffmpeg.exe
+|   |-- ffprobe.exe
+|   |-- README-USER.txt
+|   `-- supporting runtime files
+`-- FlowScribeGUI/
+    |-- FlowScribeGUI.exe
     `-- supporting runtime files
 ```
 
@@ -37,16 +40,17 @@ ffmpeg -version
 ffprobe -version
 ```
 
-## Build Command
+## Build Commands
 
 From the repository root:
 
 ```powershell
 cd E:\Draft\FlowScribe
 .\scripts\build_exe.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_gui_exe.ps1 -Python python
 ```
 
-The script will:
+The CLI script will:
 
 1. Create or reuse `.venv-build`.
 2. Install FlowScribe dependencies.
@@ -55,6 +59,14 @@ The script will:
 5. Build a one-folder executable.
 6. Copy `ffmpeg.exe` and `ffprobe.exe` into the release folder.
 7. Generate `README-USER.txt` for end users.
+
+The GUI script will:
+
+1. Reuse the active Python environment.
+2. Clean previous GUI build artifacts unless `-SkipClean` is used.
+3. Build a one-folder GUI executable with PyInstaller.
+4. Apply a runtime hook that defaults packaged GUI builds to `FLOWSCRIBE_GUI_LOG_MODE=user`.
+5. Launch the GUI with `--windowed`, so end-user runs do not open a console window.
 
 Optional parameters:
 
@@ -65,7 +77,7 @@ Optional parameters:
 
 ## Build Output
 
-The main artifact is:
+The CLI artifact is:
 
 ```text
 dist/FlowScribe/FlowScribe.exe
@@ -73,7 +85,15 @@ dist/FlowScribe/FlowScribe.exe
 
 The whole `dist/FlowScribe/` folder is the portable application. Do not distribute only the `.exe`; the surrounding runtime files are required.
 
-## Testing the EXE
+The GUI artifact is:
+
+```text
+dist/FlowScribeGUI/FlowScribeGUI.exe
+```
+
+The whole `dist/FlowScribeGUI/` folder is required for GUI distribution.
+
+## Testing the EXEs
 
 Run environment diagnostics:
 
@@ -101,15 +121,28 @@ outputs/
 `-- sample.md
 ```
 
+Test the GUI package entry point:
+
+```powershell
+.\dist\FlowScribeGUI\FlowScribeGUI.exe --self-test
+```
+
+For a visual smoke test, start the GUI normally:
+
+```powershell
+.\dist\FlowScribeGUI\FlowScribeGUI.exe
+```
+
 ## GitHub Release Contents
 
 For a GitHub Release, upload:
 
 ```text
-FlowScribe-v0.1.0-windows-x64.zip
+FlowScribe-v0.2.3-windows-x64.zip
+FlowScribeGUI-v0.2.3-windows-x64.zip
 ```
 
-The ZIP should contain the entire `dist/FlowScribe/` folder, including:
+The CLI ZIP should contain the entire `dist/FlowScribe/` folder, including:
 
 - `FlowScribe.exe`
 - `ffmpeg.exe`
@@ -117,13 +150,20 @@ The ZIP should contain the entire `dist/FlowScribe/` folder, including:
 - `README-USER.txt`
 - all PyInstaller runtime files
 
+The GUI ZIP should contain the entire `dist/FlowScribeGUI/` folder, including:
+
+- `FlowScribeGUI.exe`
+- all PyInstaller runtime files
+
 Release notes should include:
 
 - Supported platform: Windows x64.
 - First run may download Whisper model files.
 - Models are not bundled.
+- The GUI package launches without a console window and defaults to quiet `user` logging mode.
 - Recommended model: `small`.
 - Quick test command: `FlowScribe.exe doctor`.
+- GUI smoke test command: `FlowScribeGUI.exe --self-test`.
 - Legal and ethical use boundary.
 
 ## Why Not One-File Yet?

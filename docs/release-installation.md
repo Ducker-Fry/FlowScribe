@@ -13,7 +13,8 @@ https://github.com/Ducker-Fry/FlowScribe/releases
 Download the Windows zip package:
 
 ```text
-FlowScribe-v0.1.0-windows-x64.zip
+FlowScribe-v0.2.3-windows-x64.zip
+FlowScribeGUI-v0.2.3-windows-x64.zip
 ```
 
 ## Install
@@ -24,7 +25,7 @@ Unzip the file to a folder you control, for example:
 D:\Tools\FlowScribe
 ```
 
-After extraction, the folder should contain:
+After extracting the CLI package, the folder should contain:
 
 ```text
 FlowScribe/
@@ -37,6 +38,16 @@ FlowScribe/
 
 Do not move only `FlowScribe.exe` by itself. The surrounding files are required.
 
+After extracting the GUI package, the folder should contain:
+
+```text
+FlowScribeGUI/
+|-- FlowScribeGUI.exe
+`-- _internal/
+```
+
+Do not move only `FlowScribeGUI.exe` by itself.
+
 ## First Check
 
 Open PowerShell in the extracted folder and run:
@@ -44,6 +55,15 @@ Open PowerShell in the extracted folder and run:
 ```powershell
 .\FlowScribe\FlowScribe.exe doctor
 ```
+
+For the GUI package, start:
+
+```powershell
+.\FlowScribeGUI\FlowScribeGUI.exe
+```
+
+The packaged GUI launches in quiet `user` logging mode and does not open a
+console window during normal use.
 
 You should see checks for:
 
@@ -79,6 +99,16 @@ Quick smoke test:
 ```powershell
 .\FlowScribe\FlowScribe.exe "D:\media\short.wav" -o outputs --model tiny --overwrite
 ```
+
+## Use The Desktop GUI
+
+Inside the GUI package you can:
+
+- add local files and folders with checkbox selection
+- paste a public URL
+- open an existing transcript JSON
+- search transcript keywords
+- bind local media to a transcript for playback sync
 
 ## Output
 

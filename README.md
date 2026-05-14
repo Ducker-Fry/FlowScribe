@@ -7,7 +7,7 @@
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)](docs/packaging.md)
 [![Local First](https://img.shields.io/badge/local--first-transcription-green)](docs/ethics-and-boundaries.md)
 
-FlowScribe is a local-first command-line transcription tool that turns local media and public URL audio into readable transcripts. It is designed as an extensible open-source project: the current CLI focuses on local files and audio-first URL input, while the architecture leaves room for system audio capture, desktop GUI, and optional external speech-to-text providers.
+FlowScribe is a local-first transcription toolkit that turns local media and public URL audio into readable transcripts. It ships with a command-line interface for batch-oriented workflows and a PySide6 desktop GUI for interactive transcript viewing, search, and local media sync.
 
 ## Features
 
@@ -19,28 +19,32 @@ FlowScribe is a local-first command-line transcription tool that turns local med
 - Transcribe locally with `faster-whisper`.
 - Export raw transcripts as `.txt` and `.md`.
 - Export structured `.json` and subtitle `.srt` files.
+- Open transcript JSON in the desktop GUI and read timestamped segments.
+- Search transcript keywords in the GUI and jump to matching context.
+- Bind local media to a transcript and seek playback from segments or search hits.
 - Request word-level timing data for future text-to-video navigation.
 - Support Chinese, English, and mixed-language workflows.
 - Tune transcription with `--beam-size`, `--vad-filter`, `--initial-prompt`, and `--task`.
 - Use `--preset zh` for Chinese-oriented defaults.
 - Check user environments with `flowscribe doctor`.
 - Build a portable Windows one-folder executable with PyInstaller.
+- Build a portable Windows GUI executable with quiet packaged startup defaults.
 
 ## Current Scope
 
-FlowScribe v0.1 focuses on:
+FlowScribe v0.2 focuses on:
 
 - Input: local audio/video files, folders, and public audio-first URLs.
 - Processing: normalize media into transcription-ready audio.
-- Transcription: local speech recognition.
-- Output: `.txt` and `.md` transcript files.
+- Transcription: local speech recognition with CLI and desktop GUI entry points.
+- Output: `.txt`, `.md`, `.json`, `.srt`, and `.vtt` transcript files.
+- Interactive transcript review: desktop viewing, keyword search, and local media sync.
 
-Out of scope for v0.1:
+Out of scope for the current release line:
 
 - Summary generation.
 - Opinion extraction.
 - Database-backed library management.
-- Desktop GUI.
 - DRM circumvention or protected media extraction.
 - Default high-resolution video downloading from URL pages.
 
@@ -77,6 +81,12 @@ Check the local environment:
 
 ```powershell
 flowscribe doctor
+```
+
+Run the desktop GUI from source:
+
+```powershell
+flowscribe gui
 ```
 
 ## Quick Start
@@ -227,9 +237,33 @@ outputs/
 `-- lecture.vtt
 ```
 
+## Desktop GUI
+
+Run the GUI from source:
+
+```powershell
+flowscribe gui
+```
+
+or:
+
+```powershell
+python -m flowscribe.gui
+```
+
+The GUI currently supports:
+
+- Local file and folder selection with remembered checkbox state.
+- Public URL transcription with proxy, cookies, and network-family options.
+- Opening existing transcript JSON files.
+- Transcript search with clickable hit lists.
+- Transcript-bound local media playback and seek-on-click.
+
+See [Desktop GUI](docs/gui.md) for the current workflow and packaging notes.
+
 ## Portable Windows Build
 
-Build a one-folder executable:
+Build the CLI one-folder executable:
 
 ```powershell
 .\scripts\build_exe.ps1
@@ -252,7 +286,23 @@ Test the packaged executable:
 .\dist\FlowScribe\FlowScribe.exe doctor
 ```
 
-See [Packaging](docs/packaging.md) for release details.
+Build the desktop GUI package:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_gui_exe.ps1 -Python python
+```
+
+The GUI output folder will be:
+
+```text
+dist/FlowScribeGUI/
+|-- FlowScribeGUI.exe
+`-- _internal/
+```
+
+Packaged GUI builds default to quiet `user` logging mode and use a windowed launch path, so normal end-user runs do not open a console window.
+
+See [Packaging](docs/packaging.md) and [Desktop GUI](docs/gui.md) for release details.
 
 ## Useful Options
 

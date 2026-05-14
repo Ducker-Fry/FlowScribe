@@ -25,8 +25,10 @@ The long-term goal is an open-source, portfolio-quality project that can:
 
 ## Current Release
 
-- Latest successful GitHub Release: `v0.2.2`
-- Release asset: `FlowScribe-v0.2.2-windows-x64.zip`
+- Target wrap-up release: `v0.2.3`
+- Release assets:
+  - `FlowScribe-v0.2.3-windows-x64.zip`
+  - `FlowScribeGUI-v0.2.3-windows-x64.zip`
 - Current branch: `main`
 
 ## Completed Capabilities
@@ -157,6 +159,16 @@ It can build a GUI one-folder executable:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_gui_exe.ps1 -Python python
 ```
 
+Packaged GUI behavior:
+
+- PyInstaller `--windowed` launch path, so release builds do not open a console window.
+- Runtime hook defaults packaged GUI runs to `FLOWSCRIBE_GUI_LOG_MODE=user`.
+- GUI smoke test entry point:
+
+  ```powershell
+  .\dist\FlowScribeGUI\FlowScribeGUI.exe --self-test
+  ```
+
 ## Current GUI Milestones
 
 Recent GUI milestones completed in the working tree:
@@ -175,19 +187,6 @@ Recent GUI milestones completed in the working tree:
 - Source list selection has been refined from implicit batch inputs to explicit
   checkbox-based local source selection with remembered checked state.
 
-Current uncommitted files:
-
-```text
-docs/dev-state.md
-src/flowscribe/gui/qt_app.py
-src/flowscribe/gui/state.py
-src/flowscribe/gui/transcript_viewer.py
-tests/test_app_service.py
-tests/test_gui_qt_app.py
-tests/test_gui_state.py
-tests/test_transcript_viewer.py
-```
-
 Change summary:
 
 - Added shared local-source acceptance checks for GUI drag/drop and file lists.
@@ -203,15 +202,20 @@ Change summary:
 - Changed the local source list to visible checkbox selection, so only checked
   local items participate in preview/transcription.
 - Added remembered local-source checked state across GUI restarts.
+- Added GUI runtime log mode control with `dev` and `user` behavior, plus quiet packaged defaults.
+- Added a packaged GUI `--self-test` entry point for smoke validation and release automation.
 - Added focused tests for GUI state, URL option passthrough, transcript viewer,
-  transcript search integration, and GUI local-source state payload handling.
+  transcript search integration, GUI local-source state payload handling, and
+  GUI logging/entry-point behavior.
 
 Validated with:
 
 ```powershell
-python -m pytest tests\test_gui_qt_app.py tests\test_gui_state.py tests\test_app_service.py tests\test_url_input.py tests\test_transcript_viewer.py tests\test_transcript_search.py
-python -m ruff check src\flowscribe\gui tests\test_gui_qt_app.py tests\test_gui_state.py tests\test_app_service.py tests\test_url_input.py tests\test_transcript_viewer.py tests\test_transcript_search.py
+python -m pytest
+python -m ruff check src tests
 python -m compileall src\flowscribe\gui
+.\dist\FlowScribe\FlowScribe.exe doctor
+.\dist\FlowScribeGUI\FlowScribeGUI.exe --self-test
 ```
 
 ## User Workflow Preference

@@ -10,6 +10,8 @@ $ProjectRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $DistRoot = Join-Path $ProjectRoot "dist"
 $BuildRoot = Join-Path $ProjectRoot "build"
 $PackageDir = Join-Path $DistRoot $AppName
+$RuntimeHook = Join-Path $ProjectRoot "scripts\pyinstaller_gui_runtime_hook.py"
+$UserBase = Join-Path $ProjectRoot ".py-user-base"
 
 function Write-Step {
     param([string]$Message)
@@ -29,6 +31,7 @@ function Assert-InProject {
 Push-Location $ProjectRoot
 try {
     $env:PYTHONNOUSERSITE = "1"
+    $env:PYTHONUSERBASE = $UserBase
 
     Write-Step "Check GUI dependencies"
     & $Python -c "import PySide6; print('PySide6', PySide6.__version__)"
@@ -55,8 +58,11 @@ try {
         --windowed `
         --clean `
         --noconfirm `
+        --runtime-hook $RuntimeHook `
         --hidden-import PySide6.QtCore `
         --hidden-import PySide6.QtGui `
+        --hidden-import PySide6.QtMultimedia `
+        --hidden-import PySide6.QtMultimediaWidgets `
         --hidden-import PySide6.QtWidgets `
         "src\flowscribe\gui\__main__.py"
 

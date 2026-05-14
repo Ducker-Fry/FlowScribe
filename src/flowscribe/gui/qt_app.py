@@ -11,6 +11,7 @@ from flowscribe.app.models import ProgressEvent
 from flowscribe.app.service import TranscriptionService
 from flowscribe.core.errors import SearchError
 from flowscribe.input.file_filter import is_supported_media
+from flowscribe.gui.gui_logging import configure_gui_logging, get_gui_logger
 from flowscribe.output.time_format import format_timestamp
 from flowscribe.gui.state import (
     GuiTranscriptionForm,
@@ -28,6 +29,8 @@ from flowscribe.gui.transcript_viewer import (
     transcript_search_hit_seek_seconds,
     transcript_segment_seek_seconds,
 )
+
+LOGGER = get_gui_logger(__name__)
 
 
 def _normalize_local_source_state_payload(payload: object) -> tuple[list[Path], set[str]]:
@@ -63,6 +66,7 @@ def _local_source_state_payload(paths: list[Path], checked_paths: list[Path]) ->
 
 
 def run_gui(argv: list[str] | None = None) -> int:
+    log_mode = configure_gui_logging()
     try:
         from PySide6.QtCore import Qt
         from PySide6.QtWidgets import QApplication
@@ -77,6 +81,7 @@ def run_gui(argv: list[str] | None = None) -> int:
     app = QApplication(argv or sys.argv)
     app.setApplicationName("FlowScribe")
     app.setApplicationVersion(__version__)
+    LOGGER.debug("Starting GUI in %s mode.", log_mode)
     window = FlowScribeMainWindow()
     window.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
     window.show()
