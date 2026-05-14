@@ -35,7 +35,13 @@ try {
 
     Write-Step "Check GUI dependencies"
     & $Python -c "import PySide6; print('PySide6', PySide6.__version__)"
+    if ($LASTEXITCODE -ne 0) {
+        throw "PySide6 is not installed in the selected Python environment."
+    }
     & $Python -s -m PyInstaller --version
+    if ($LASTEXITCODE -ne 0) {
+        throw "PyInstaller is not installed in the selected Python environment."
+    }
 
     if (-not $SkipClean) {
         Write-Step "Clean previous GUI build artifacts"
