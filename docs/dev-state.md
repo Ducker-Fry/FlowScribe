@@ -170,6 +170,10 @@ Recent GUI milestones completed in the working tree:
   existing `.json` transcript and auto-loading JSON output from a completed run.
 - Milestone 3.5: search UI added to the GUI, including keyword search, hit
   list display, and click-to-jump transcript navigation.
+- Milestone 3.6: local media sync MVP added, including transcript-bound media
+  binding, local playback, and seek-on-segment / seek-on-search-hit behavior.
+- Source list selection has been refined from implicit batch inputs to explicit
+  checkbox-based local source selection with remembered checked state.
 
 Current uncommitted files:
 
@@ -179,6 +183,7 @@ src/flowscribe/gui/qt_app.py
 src/flowscribe/gui/state.py
 src/flowscribe/gui/transcript_viewer.py
 tests/test_app_service.py
+tests/test_gui_qt_app.py
 tests/test_gui_state.py
 tests/test_transcript_viewer.py
 ```
@@ -193,14 +198,19 @@ Change summary:
   generated JSON output after transcription.
 - Added GUI keyword search UI with hit list display and click-to-scroll
   transcript navigation.
+- Added transcript-bound local media playback with explicit media binding when
+  the original transcript source cannot be auto-resolved.
+- Changed the local source list to visible checkbox selection, so only checked
+  local items participate in preview/transcription.
+- Added remembered local-source checked state across GUI restarts.
 - Added focused tests for GUI state, URL option passthrough, transcript viewer,
-  and transcript search integration.
+  transcript search integration, and GUI local-source state payload handling.
 
 Validated with:
 
 ```powershell
-python -m pytest tests\test_gui_state.py tests\test_app_service.py tests\test_url_input.py tests\test_transcript_viewer.py tests\test_transcript_search.py
-python -m ruff check src\flowscribe\gui tests\test_gui_state.py tests\test_app_service.py tests\test_url_input.py tests\test_transcript_viewer.py tests\test_transcript_search.py
+python -m pytest tests\test_gui_qt_app.py tests\test_gui_state.py tests\test_app_service.py tests\test_url_input.py tests\test_transcript_viewer.py tests\test_transcript_search.py
+python -m ruff check src\flowscribe\gui tests\test_gui_qt_app.py tests\test_gui_state.py tests\test_app_service.py tests\test_url_input.py tests\test_transcript_viewer.py tests\test_transcript_search.py
 python -m compileall src\flowscribe\gui
 ```
 
@@ -251,8 +261,6 @@ asks for Wrap-Up Mode.
 
 Possible next Milestone 3 tasks:
 
-- Finish and optionally commit the current drag/drop local source change.
-- GUI URL transcription.
 - GUI job status improvements.
 - GUI cancel task support.
 - GUI open output directory button.

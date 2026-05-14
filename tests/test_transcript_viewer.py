@@ -4,8 +4,12 @@ import pytest
 
 from flowscribe.gui.transcript_viewer import (
     load_transcript_view,
+    resolve_transcript_media_path,
     render_transcript_view,
+    render_transcript_summary,
     search_transcript_view,
+    transcript_search_hit_seek_seconds,
+    transcript_segment_seek_seconds,
 )
 
 
@@ -120,3 +124,54 @@ def test_search_transcript_view_maps_hits_to_segments(tmp_path: Path) -> None:
     assert hits[0].segment_index == 0
     assert hits[1].segment_index == 1
     assert "keyword" in hits[0].context
+
+
+def test_render_transcript_summary_formats_metadata(tmp_path: Path) -> None:
+    path = tmp_path / "lesson.json"
+    path.write_text('{"source": "lesson.mp4", "segments": []}', encoding="utf-8")
+
+    summary = render_transcript_summary(load_transcript_view(path))
+
+    assert "Transcript: lesson.json" in summary
+    assert "Source: lesson.mp4" in summary
+    assert "Segments: 0" in summary
+
+
+def test_resolve_transcript_media_path_handles_relative_source(tmp_path: Path) -> None:
+    media = tmp_path / "lesson.mp4"
+    media.write_bytes(b"media")
+    transcript = tmp_path / "lesson.json"
+    transcript.write_text('{"source": "lesson.mp4", "segments": []}', encoding="utf-8")
+
+    resolved = resolve_transcript_media_path(load_transcript_view(transcript))
+
+    assert resolved == media.resolve()
+
+
+def test_transcript_seek_helpers_prefer_start_time(tmp_path: Path) -> None:
+    transcript = tmp_path / "lesson.json"
+    transcript.write_text(
+        """
+{
+  "source": "lesson.mp4",
+  "segments": [
+    {
+      "text": "Hello world.",
+      "start_seconds": 1.25,
+      "end_seconds": 2.5,
+      "words": [
+        {"text": "Hello", "start_seconds": 1.25, "end_seconds": 1.6},
+        {"text": "world", "start_seconds": 1.6, "end_seconds": 2.5}
+      ]
+    }
+  ]
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    view = load_transcript_view(transcript)
+    hits = search_transcript_view(transcript, view, "world")
+
+    assert transcript_segment_seek_seconds(view.segments[0]) == 1.25
+    assert transcript_search_hit_seek_seconds(hits[0]) == 1.6

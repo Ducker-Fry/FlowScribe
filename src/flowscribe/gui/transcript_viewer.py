@@ -73,14 +73,7 @@ def load_transcript_view(path: Path) -> TranscriptView:
 
 
 def render_transcript_view(view: TranscriptView) -> str:
-    lines = [
-        f"Transcript: {view.path.name}",
-        f"Source: {view.source}",
-        f"Language: {view.language or 'unknown'}",
-        f"Model: {view.model or 'unknown'}",
-        f"Segments: {len(view.segments)}",
-        "",
-    ]
+    lines = [render_transcript_summary(view), ""]
 
     if not view.segments:
         lines.append("No transcript segments found.")
@@ -89,6 +82,18 @@ def render_transcript_view(view: TranscriptView) -> str:
     for segment in view.segments:
         lines.append(render_segment_line(segment))
     return "\n".join(lines)
+
+
+def render_transcript_summary(view: TranscriptView) -> str:
+    return "\n".join(
+        [
+            f"Transcript: {view.path.name}",
+            f"Source: {view.source}",
+            f"Language: {view.language or 'unknown'}",
+            f"Model: {view.model or 'unknown'}",
+            f"Segments: {len(view.segments)}",
+        ]
+    )
 
 
 def search_transcript_view(
@@ -116,6 +121,34 @@ def render_segment_line(segment: TranscriptSegmentView) -> str:
         f"[{format_timestamp(segment.start_seconds)} - {format_timestamp(segment.end_seconds)}] "
         f"{segment.text or '(empty segment)'}"
     )
+
+
+def transcript_segment_seek_seconds(segment: TranscriptSegmentView) -> float:
+    return 0.0 if segment.start_seconds is None else max(0.0, float(segment.start_seconds))
+
+
+def transcript_search_hit_seek_seconds(hit: TranscriptSearchHitView) -> float:
+    if hit.start_seconds is not None:
+        return max(0.0, float(hit.start_seconds))
+    if hit.end_seconds is not None:
+        return max(0.0, float(hit.end_seconds))
+    return 0.0
+
+
+def resolve_transcript_media_path(view: TranscriptView) -> Path | None:
+    source = view.source.strip()
+    if not source:
+        return None
+
+    source_path = Path(source)
+    if source_path.is_file():
+        return source_path
+
+    if not source_path.is_absolute():
+        candidate = (view.path.parent / source_path).resolve()
+        if candidate.is_file():
+            return candidate
+    return None
 
 
 def _segment_index(raw_segment: dict, fallback: int) -> int:
