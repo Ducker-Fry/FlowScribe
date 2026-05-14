@@ -131,6 +131,7 @@ class FlowScribeMainWindow:
                 from PySide6.QtWidgets import (
                     QCheckBox,
                     QComboBox,
+                    QFrame,
                     QGridLayout,
                     QGroupBox,
                     QHBoxLayout,
@@ -139,13 +140,15 @@ class FlowScribeMainWindow:
                     QListWidget,
                     QProgressBar,
                     QPushButton,
+                    QScrollArea,
+                    QSizePolicy,
                     QTextEdit,
                     QVBoxLayout,
                     QWidget,
                 )
 
                 self.setWindowTitle("FlowScribe")
-                self.resize(1040, 680)
+                self.resize(1200, 820)
                 self.setAcceptDrops(True)
 
                 root = QWidget()
@@ -156,9 +159,11 @@ class FlowScribeMainWindow:
                 left_panel = QGroupBox("Sources")
                 left_layout = QVBoxLayout(left_panel)
                 left_layout.setSpacing(10)
+                left_layout.setContentsMargins(12, 16, 12, 12)
 
                 self.file_list = _SourceListWidget()
                 self.file_list.setMinimumWidth(300)
+                self.file_list.setMinimumHeight(240)
                 self.file_list.files_dropped.connect(self._add_dropped_files)
 
                 file_actions = QHBoxLayout()
@@ -173,17 +178,20 @@ class FlowScribeMainWindow:
                 self.url_input.setPlaceholderText("https://example.com/video")
 
                 left_layout.addWidget(QLabel("Local files"))
-                left_layout.addWidget(self.file_list)
+                left_layout.addWidget(self.file_list, 1)
                 left_layout.addLayout(file_actions)
                 left_layout.addSpacing(8)
                 left_layout.addWidget(QLabel("URL"))
                 left_layout.addWidget(self.url_input)
+                left_panel.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
 
                 right_panel = QWidget()
                 right_layout = QVBoxLayout(right_panel)
                 right_layout.setSpacing(12)
+                right_layout.setContentsMargins(0, 0, 0, 0)
 
                 settings_box = QGroupBox("Settings")
+                settings_box.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
                 settings_layout = QGridLayout(settings_box)
                 settings_layout.setHorizontalSpacing(10)
                 settings_layout.setVerticalSpacing(10)
@@ -279,14 +287,22 @@ class FlowScribeMainWindow:
 
                 self.preview_output = QTextEdit()
                 self.preview_output.setReadOnly(True)
-                self.preview_output.setMinimumHeight(180)
+                self.preview_output.setMinimumHeight(140)
                 self.preview_output.setPlaceholderText("Progress and output files will appear here.")
+                self.preview_output.setSizePolicy(
+                    QSizePolicy.Policy.Preferred,
+                    QSizePolicy.Policy.Expanding,
+                )
 
                 self.transcript_output = QTextEdit()
                 self.transcript_output.setReadOnly(True)
                 self.transcript_output.setMinimumHeight(220)
                 self.transcript_output.setPlaceholderText(
                     "Transcript segments and timestamps will appear here."
+                )
+                self.transcript_output.setSizePolicy(
+                    QSizePolicy.Policy.Preferred,
+                    QSizePolicy.Policy.Expanding,
                 )
 
                 search_row = QHBoxLayout()
@@ -299,6 +315,8 @@ class FlowScribeMainWindow:
                 search_row.addWidget(self.search_button)
 
                 self.search_results = QListWidget()
+                self.search_results.setMinimumHeight(110)
+                self.search_results.setMaximumHeight(180)
                 self.search_results.itemActivated.connect(self._jump_to_selected_hit)
                 self.search_results.itemClicked.connect(self._jump_to_selected_hit)
 
@@ -312,10 +330,20 @@ class FlowScribeMainWindow:
                 right_layout.addLayout(search_row)
                 right_layout.addWidget(QLabel("Search results"))
                 right_layout.addWidget(self.search_results)
-                right_layout.addWidget(self.transcript_output)
+                right_layout.addWidget(self.transcript_output, 1)
 
-                root_layout.addWidget(left_panel, 1)
-                root_layout.addWidget(right_panel, 2)
+                left_scroll = QScrollArea()
+                left_scroll.setWidgetResizable(True)
+                left_scroll.setFrameShape(QFrame.Shape.NoFrame)
+                left_scroll.setWidget(left_panel)
+
+                right_scroll = QScrollArea()
+                right_scroll.setWidgetResizable(True)
+                right_scroll.setFrameShape(QFrame.Shape.NoFrame)
+                right_scroll.setWidget(right_panel)
+
+                root_layout.addWidget(left_scroll, 1)
+                root_layout.addWidget(right_scroll, 2)
                 self.setCentralWidget(root)
 
             def dragEnterEvent(self, event) -> None:
