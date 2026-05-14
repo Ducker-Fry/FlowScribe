@@ -69,9 +69,14 @@ jobs:
       - name: Verify packaged GUI executable
         shell: pwsh
         run: |
-          .\dist\FlowScribeGUI\FlowScribeGUI.exe --self-test
-          if ($LASTEXITCODE -ne 0) {
-            throw "GUI self-test failed with exit code $LASTEXITCODE"
+          $process = Start-Process `
+            -FilePath ".\dist\FlowScribeGUI\FlowScribeGUI.exe" `
+            -ArgumentList "--self-test" `
+            -PassThru `
+            -Wait `
+            -WindowStyle Hidden
+          if ($process.ExitCode -ne 0) {
+            throw "GUI self-test failed with exit code $($process.ExitCode)"
           }
 
       - name: Create release archives
