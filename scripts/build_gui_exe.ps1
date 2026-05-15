@@ -1,6 +1,8 @@
 param(
     [string]$Python = "python",
     [string]$AppName = "FlowScribeGUI",
+    [string]$DotNet = "dotnet",
+    [switch]$SkipHelperBuild,
     [switch]$SkipClean
 )
 
@@ -11,6 +13,8 @@ $DistRoot = Join-Path $ProjectRoot "dist"
 $BuildRoot = Join-Path $ProjectRoot "build"
 $PackageDir = Join-Path $DistRoot $AppName
 $RuntimeHook = Join-Path $ProjectRoot "scripts\pyinstaller_gui_runtime_hook.py"
+$HelperBuildScript = Join-Path $ProjectRoot "scripts\build_wasapi_helper.ps1"
+$HelperStageDir = Join-Path $ProjectRoot "build\wasapi-helper"
 $UserBase = Join-Path $ProjectRoot ".py-user-base"
 
 function Write-Step {
@@ -28,6 +32,31 @@ function Assert-InProject {
     }
 }
 
+function Copy-WasapiHelper {
+    param(
+        [string]$SourceDir,
+        [string]$DestinationDir
+    )
+
+    $helperExe = Join-Path $SourceDir "WasapiCaptureHelper.exe"
+    if (-not (Test-Path $helperExe)) {
+        throw "WASAPI helper was not found in staging output: $helperExe"
+    }
+
+    Get-ChildItem -LiteralPath $SourceDir -File |
+        Copy-Item -Destination $DestinationDir -Force
+
+    $packagedHelper = Join-Path $DestinationDir "WasapiCaptureHelper.exe"
+    if (-not (Test-Path $packagedHelper)) {
+        throw "WASAPI helper was not copied into GUI package: $packagedHelper"
+    }
+
+    & $packagedHelper version | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+        throw "Packaged WASAPI helper version smoke test failed."
+    }
+}
+
 Push-Location $ProjectRoot
 try {
     $env:PYTHONNOUSERSITE = "1"
@@ -41,6 +70,17 @@ try {
     & $Python -s -m PyInstaller --version
     if ($LASTEXITCODE -ne 0) {
         throw "PyInstaller is not installed in the selected Python environment."
+    }
+
+    if (-not $SkipHelperBuild) {
+        Write-Step "Build WASAPI helper"
+        & $HelperBuildScript -DotNet $DotNet
+        if ($LASTEXITCODE -ne 0) {
+            throw "WASAPI helper build failed."
+        }
+    }
+    elseif (-not (Test-Path (Join-Path $HelperStageDir "WasapiCaptureHelper.exe"))) {
+        throw "WASAPI helper staging output is missing. Run scripts\build_wasapi_helper.ps1 first."
     }
 
     if (-not $SkipClean) {
@@ -76,6 +116,9 @@ try {
     if (-not (Test-Path $exePath)) {
         throw "Expected GUI executable was not created: $exePath"
     }
+
+    Write-Step "Copy WASAPI helper into GUI release folder"
+    Copy-WasapiHelper -SourceDir $HelperStageDir -DestinationDir $PackageDir
 
     Write-Step "Done"
     Write-Host "GUI release folder: $PackageDir" -ForegroundColor Green

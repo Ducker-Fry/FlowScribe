@@ -359,6 +359,25 @@ Current Phase 4 progress:
 - GUI start/stop capture now runs through the helper-backed controller while
   preserving the existing captured-WAV local-source workflow and keep/delete
   behavior.
+- WASAPI helper Phase 5 is implemented.
+- `scripts/build_wasapi_helper.ps1` publishes the helper into
+  `build/wasapi-helper/`.
+- `scripts/build_gui_exe.ps1` now builds or verifies the helper, copies the
+  helper executable plus framework-dependent runtime files into
+  `dist/FlowScribeGUI/`, and smoke-tests the packaged helper with `version`.
+- WASAPI helper Phase 6 is implemented.
+- `.github/workflows/release.yml` now sets up .NET 8 before packaging, relies
+  on the GUI build to bundle the helper, verifies `WasapiCaptureHelper.exe`
+  exists inside `dist/FlowScribeGUI/`, and runs packaged helper `version` and
+  `probe` smoke checks before creating release archives.
+- WASAPI helper Phase 7 is implemented.
+- The previous ffmpeg/DirectShow capture implementation now lives in
+  `src/flowscribe/media/system_audio_capture_legacy.py` as
+  `LegacyDshowCaptureRecorder`.
+- `src/flowscribe/media/system_audio_capture.py` is now a compatibility import
+  module for older callers only.
+- Normal GUI capture remains helper-first through `CaptureController`; dshow no
+  longer defines the GUI capture UX.
 - Current helper validation:
 
   ```powershell
@@ -370,4 +389,11 @@ Current Phase 4 progress:
   python -m ruff check src\flowscribe\media\system_audio_capture_helper.py src\flowscribe\media\system_audio_capture_models.py tests\test_system_audio_capture_helper.py
   python -m pytest tests\test_gui_qt_app.py tests\test_gui_state.py tests\test_system_audio_capture_helper.py
   python -m compileall src\flowscribe\gui src\flowscribe\media
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_wasapi_helper.ps1
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_gui_exe.ps1 -Python python -SkipHelperBuild
+  .\dist\FlowScribeGUI\WasapiCaptureHelper.exe version
+  .\dist\FlowScribeGUI\WasapiCaptureHelper.exe probe
+  .\dist\FlowScribeGUI\FlowScribeGUI.exe --self-test
+  python -m pytest tests\test_system_audio_capture.py tests\test_system_audio_capture_helper.py tests\test_gui_qt_app.py
+  python -m ruff check src\flowscribe\media\system_audio_capture.py src\flowscribe\media\system_audio_capture_legacy.py tests\test_system_audio_capture.py
   ```

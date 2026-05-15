@@ -38,6 +38,11 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -61,6 +66,24 @@ jobs:
       - name: Build GUI executable
         shell: pwsh
         run: .\scripts\build_gui_exe.ps1 -Python python
+
+      - name: Verify packaged WASAPI helper
+        shell: pwsh
+        run: |
+          $helperPath = ".\dist\FlowScribeGUI\WasapiCaptureHelper.exe"
+          if (-not (Test-Path $helperPath)) {
+            throw "WASAPI helper is missing from the GUI package: $helperPath"
+          }
+
+          & $helperPath version
+          if ($LASTEXITCODE -ne 0) {
+            throw "WASAPI helper version smoke check failed."
+          }
+
+          & $helperPath probe
+          if ($LASTEXITCODE -notin @(0, 2)) {
+            throw "WASAPI helper probe smoke check failed with exit code $LASTEXITCODE."
+          }
 
       - name: Verify packaged executable
         shell: pwsh
@@ -118,6 +141,7 @@ jobs:
           - Local and URL media inspection with `flowscribe inspect`.
           - Keyword search and timestamp location with `flowscribe search`.
           - TXT, Markdown, JSON, SRT, and VTT transcript output.
+          - GUI system-playback capture through bundled `WasapiCaptureHelper.exe`.
           - Chinese, English, and mixed-language workflows.
           - Word timestamp data for future text-to-video navigation.
           - Explicit cookies and proxy support for URL media access.
@@ -151,6 +175,7 @@ jobs:
           - Whisper models are not bundled in the executable.
           - The first transcription with a selected model may download model files from Hugging Face.
           - The GUI release defaults to quiet `user` logging mode and launches without a console window.
+          - The GUI package includes `WasapiCaptureHelper.exe` for Windows system-playback capture.
           - `tiny` is recommended only for smoke tests.
           - `small` is the recommended starting model for real use.
           - Use `medium` or larger models when accuracy matters more than speed.

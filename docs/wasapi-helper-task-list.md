@@ -32,8 +32,9 @@ Recommended implementation sequence:
 2. implement the first helper CLI contract - complete
 3. add Python-side helper process integration - complete
 4. connect GUI capture flow to the helper - complete
-5. package the helper into the GUI release
-6. move `dshow` capture behind a compatibility boundary
+5. package the helper into the GUI release - complete
+6. release workflow integration - complete
+7. move `dshow` capture behind a compatibility boundary - complete
 
 ---
 
@@ -622,8 +623,24 @@ Decide whether CLI package should include the helper:
 
 ### Acceptance Criteria
 
-- local GUI packaging includes the helper
-- packaged GUI can find the helper without depending on PATH
+- Complete: local GUI packaging includes the helper.
+- Complete: packaged GUI can find the helper without depending on PATH.
+
+### Implementation Status
+
+Completed in the current working flow:
+
+- Added `scripts/build_wasapi_helper.ps1`.
+- Helper publishing stages framework-dependent output in `build/wasapi-helper/`.
+- Helper staging is smoke-tested with `WasapiCaptureHelper.exe version`.
+- Updated `scripts/build_gui_exe.ps1` to build or verify helper staging before
+  packaging.
+- Updated GUI packaging to copy `WasapiCaptureHelper.exe`,
+  `WasapiCaptureHelper.*`, and NAudio dependency DLLs into
+  `dist/FlowScribeGUI/`.
+- Packaged helper presence and `version` compatibility are verified during GUI
+  packaging.
+- CLI packaging remains unchanged because capture is GUI-only in this phase.
 
 ---
 
@@ -662,9 +679,24 @@ Add lighter validation for:
 
 ### Acceptance Criteria
 
-- release workflow builds helper + GUI package together
-- release artifact contains `WasapiCaptureHelper.exe`
-- helper smoke checks pass in release automation
+- Complete: release workflow builds helper + GUI package together.
+- Complete: release artifact contains `WasapiCaptureHelper.exe`.
+- Complete: helper smoke checks pass in release automation.
+
+### Implementation Status
+
+Completed in the current working flow:
+
+- `.github/workflows/release.yml` now sets up .NET 8 for helper publishing.
+- The release GUI build uses `scripts/build_gui_exe.ps1`, which builds and
+  bundles the helper.
+- Release automation verifies `dist/FlowScribeGUI/WasapiCaptureHelper.exe`
+  exists before archives are created.
+- Release automation runs packaged helper smoke checks:
+  - `WasapiCaptureHelper.exe version`
+  - `WasapiCaptureHelper.exe probe`
+- The release notes now mention GUI system-playback capture through the bundled
+  helper.
 
 ---
 
@@ -693,9 +725,24 @@ In normal packaged GUI use:
 
 ### Acceptance Criteria
 
-- helper path is primary
-- `dshow` no longer defines the capture UX
-- code ownership is clearer between formal and legacy paths
+- Complete: helper path is primary.
+- Complete: `dshow` no longer defines the capture UX.
+- Complete: code ownership is clearer between formal and legacy paths.
+
+### Implementation Status
+
+Completed in the current working flow:
+
+- Added `src/flowscribe/media/system_audio_capture_legacy.py`.
+- Moved the previous ffmpeg/DirectShow recorder behind
+  `LegacyDshowCaptureRecorder`.
+- Left `src/flowscribe/media/system_audio_capture.py` as a compatibility import
+  module for older callers.
+- Updated legacy tests to target `system_audio_capture_legacy` directly.
+- Added a compatibility assertion that the old `FfmpegSystemAudioRecorder`
+  import still resolves to the legacy recorder.
+- Confirmed the GUI imports `CaptureController`, not the legacy DirectShow
+  recorder.
 
 ---
 
@@ -753,10 +800,10 @@ If starting implementation right now, do this in order:
 8. add `CaptureController` - complete
 9. wire GUI to helper support detection - complete
 10. wire GUI start/stop capture flow - complete
-11. create `scripts/build_wasapi_helper.ps1`
-12. update `scripts/build_gui_exe.ps1`
-13. update `release.yml`
-14. move current `dshow` path behind a compatibility label
+11. create `scripts/build_wasapi_helper.ps1` - complete
+12. update `scripts/build_gui_exe.ps1` - complete
+13. update `release.yml` - complete
+14. move current `dshow` path behind a compatibility label - complete
 
 ---
 

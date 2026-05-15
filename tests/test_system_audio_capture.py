@@ -3,9 +3,10 @@ from pathlib import Path
 import pytest
 
 from flowscribe.core.errors import MediaPreparationError
-from flowscribe.media.system_audio_capture import (
-    CaptureDeviceInfo,
-    FfmpegSystemAudioRecorder,
+from flowscribe.media.system_audio_capture import FfmpegSystemAudioRecorder
+from flowscribe.media.system_audio_capture_legacy import (
+    LegacyCaptureDeviceInfo,
+    LegacyDshowCaptureRecorder,
     _capture_commands,
     _is_loopback_like_device,
     _parse_dshow_audio_devices,
@@ -16,12 +17,12 @@ from flowscribe.media.system_audio_capture import (
 
 def test_capture_commands_include_windows_backends(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(
-        "flowscribe.media.system_audio_capture._list_dshow_audio_devices",
+        "flowscribe.media.system_audio_capture_legacy._list_dshow_audio_devices",
         lambda _ffmpeg: (),
     )
     commands = _capture_commands("ffmpeg", tmp_path / "capture.wav")
 
-    assert commands[0][0] == "DirectShow virtual-audio-capturer"
+    assert commands[0][0] == "Legacy DirectShow virtual-audio-capturer"
     assert commands[0][1] == "virtual-audio-capturer"
     assert commands[0][2][:6] == ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f"]
     assert any("virtual-audio-capturer" in token for token in commands[0][2])
@@ -77,19 +78,19 @@ def test_system_audio_recorder_falls_back_to_second_backend(monkeypatch, tmp_pat
         return processes.pop(0)
 
     monkeypatch.setattr(
-        "flowscribe.media.system_audio_capture._list_dshow_audio_devices",
+        "flowscribe.media.system_audio_capture_legacy._list_dshow_audio_devices",
         lambda _ffmpeg: (
-            CaptureDeviceInfo(backend="dshow", name="麦克风阵列"),
-            CaptureDeviceInfo(backend="dshow", name="Stereo Mix"),
+            LegacyCaptureDeviceInfo(backend="dshow", name="麦克风阵列"),
+            LegacyCaptureDeviceInfo(backend="dshow", name="Stereo Mix"),
         ),
     )
-    monkeypatch.setattr("flowscribe.media.system_audio_capture.subprocess.Popen", fake_popen)
-    monkeypatch.setattr("flowscribe.media.system_audio_capture.time.sleep", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("flowscribe.media.system_audio_capture_legacy.subprocess.Popen", fake_popen)
+    monkeypatch.setattr("flowscribe.media.system_audio_capture_legacy.time.sleep", lambda *_args, **_kwargs: None)
 
-    recorder = FfmpegSystemAudioRecorder(ffmpeg_executable="ffmpeg")
+    recorder = LegacyDshowCaptureRecorder(ffmpeg_executable="ffmpeg")
     started = recorder.start(tmp_path / "capture.wav")
 
-    assert started.backend == "DirectShow virtual-audio-capturer: virtual-audio-capturer"
+    assert started.backend == "Legacy DirectShow virtual-audio-capturer: virtual-audio-capturer"
     assert len(attempts) == 2
 
 
@@ -134,7 +135,7 @@ def test_system_audio_recorder_stop_finalizes_wav(monkeypatch, tmp_path: Path) -
             self.returncode = -9
 
     process = FakeProcess()
-    recorder = FfmpegSystemAudioRecorder(ffmpeg_executable="ffmpeg")
+    recorder = LegacyDshowCaptureRecorder(ffmpeg_executable="ffmpeg")
     monkeypatch.setattr(recorder, "_process", process)
     monkeypatch.setattr(recorder, "_output_path", output_path)
     monkeypatch.setattr(recorder, "_backend", "WASAPI default output")
@@ -163,18 +164,18 @@ def test_system_audio_recorder_raises_when_backend_never_starts(monkeypatch, tmp
             return 1
 
     monkeypatch.setattr(
-        "flowscribe.media.system_audio_capture._list_dshow_audio_devices",
+        "flowscribe.media.system_audio_capture_legacy._list_dshow_audio_devices",
         lambda _ffmpeg: (),
     )
     monkeypatch.setattr(
-        "flowscribe.media.system_audio_capture.subprocess.Popen",
+        "flowscribe.media.system_audio_capture_legacy.subprocess.Popen",
         lambda *args, **kwargs: FakeProcess(),
     )
-    monkeypatch.setattr("flowscribe.media.system_audio_capture.time.sleep", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("flowscribe.media.system_audio_capture_legacy.time.sleep", lambda *_args, **_kwargs: None)
 
-    recorder = FfmpegSystemAudioRecorder(ffmpeg_executable="ffmpeg")
+    recorder = LegacyDshowCaptureRecorder(ffmpeg_executable="ffmpeg")
 
-    with pytest.raises(MediaPreparationError, match="Could not start system audio capture"):
+    with pytest.raises(MediaPreparationError, match="Could not start legacy DirectShow"):
         recorder.start(tmp_path / "capture.wav")
 
 
@@ -189,16 +190,16 @@ def test_parse_dshow_audio_devices_reads_display_and_alternative_names() -> None
     devices = _parse_dshow_audio_devices(output)
 
     assert devices == (
-        CaptureDeviceInfo(backend="dshow", name="麦克风阵列", alternative_name="@device_cm_microphone"),
-        CaptureDeviceInfo(backend="dshow", name="耳机 (soundcore Q20i)", alternative_name="@device_cm_headphone"),
+        LegacyCaptureDeviceInfo(backend="dshow", name="麦克风阵列", alternative_name="@device_cm_microphone"),
+        LegacyCaptureDeviceInfo(backend="dshow", name="耳机 (soundcore Q20i)", alternative_name="@device_cm_headphone"),
     )
 
 
 def test_sorted_capture_devices_prefers_output_like_devices() -> None:
     devices = (
-        CaptureDeviceInfo(backend="dshow", name="麦克风阵列"),
-        CaptureDeviceInfo(backend="dshow", name="耳机 (soundcore Q20i)"),
-        CaptureDeviceInfo(backend="dshow", name="Stereo Mix"),
+        LegacyCaptureDeviceInfo(backend="dshow", name="麦克风阵列"),
+        LegacyCaptureDeviceInfo(backend="dshow", name="耳机 (soundcore Q20i)"),
+        LegacyCaptureDeviceInfo(backend="dshow", name="Stereo Mix"),
     )
 
     sorted_devices = _sorted_capture_devices(devices)
@@ -211,10 +212,10 @@ def test_sorted_capture_devices_prefers_output_like_devices() -> None:
 
 
 def test_loopback_like_device_detection_is_strict() -> None:
-    assert _is_loopback_like_device(CaptureDeviceInfo(backend="dshow", name="Stereo Mix")) is True
-    assert _is_loopback_like_device(CaptureDeviceInfo(backend="dshow", name="virtual-audio-capturer")) is True
-    assert _is_loopback_like_device(CaptureDeviceInfo(backend="dshow", name="耳机 (soundcore Q20i)")) is False
-    assert _is_loopback_like_device(CaptureDeviceInfo(backend="dshow", name="麦克风阵列")) is False
+    assert _is_loopback_like_device(LegacyCaptureDeviceInfo(backend="dshow", name="Stereo Mix")) is True
+    assert _is_loopback_like_device(LegacyCaptureDeviceInfo(backend="dshow", name="virtual-audio-capturer")) is True
+    assert _is_loopback_like_device(LegacyCaptureDeviceInfo(backend="dshow", name="耳机 (soundcore Q20i)")) is False
+    assert _is_loopback_like_device(LegacyCaptureDeviceInfo(backend="dshow", name="麦克风阵列")) is False
 
 
 def test_is_probably_silent_wav_detects_empty_capture(tmp_path: Path) -> None:
@@ -231,13 +232,13 @@ def test_is_probably_silent_wav_detects_empty_capture(tmp_path: Path) -> None:
 
 
 def test_support_status_requires_loopback_like_device(monkeypatch) -> None:
-    recorder = FfmpegSystemAudioRecorder(ffmpeg_executable="ffmpeg")
+    recorder = LegacyDshowCaptureRecorder(ffmpeg_executable="ffmpeg")
     monkeypatch.setattr(
         recorder,
         "list_available_devices",
         lambda: (
-            CaptureDeviceInfo(backend="dshow", name="Stereo Mix"),
-            CaptureDeviceInfo(backend="dshow", name="麦克风阵列"),
+            LegacyCaptureDeviceInfo(backend="dshow", name="Stereo Mix"),
+            LegacyCaptureDeviceInfo(backend="dshow", name="麦克风阵列"),
         ),
     )
 
@@ -248,17 +249,21 @@ def test_support_status_requires_loopback_like_device(monkeypatch) -> None:
 
 
 def test_support_status_reports_missing_loopback_devices(monkeypatch) -> None:
-    recorder = FfmpegSystemAudioRecorder(ffmpeg_executable="ffmpeg")
+    recorder = LegacyDshowCaptureRecorder(ffmpeg_executable="ffmpeg")
     monkeypatch.setattr(
         recorder,
         "list_available_devices",
         lambda: (
-            CaptureDeviceInfo(backend="dshow", name="耳机 (soundcore Q20i)"),
-            CaptureDeviceInfo(backend="dshow", name="麦克风阵列"),
+            LegacyCaptureDeviceInfo(backend="dshow", name="耳机 (soundcore Q20i)"),
+            LegacyCaptureDeviceInfo(backend="dshow", name="麦克风阵列"),
         ),
     )
 
     supported, message = recorder.support_status()
 
     assert supported is False
-    assert "No supported system loopback capture device" in message
+    assert "No supported legacy DirectShow loopback capture device" in message
+
+
+def test_legacy_recorder_remains_available_from_compatibility_module() -> None:
+    assert FfmpegSystemAudioRecorder is LegacyDshowCaptureRecorder

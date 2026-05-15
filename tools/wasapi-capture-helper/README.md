@@ -19,6 +19,15 @@ dotnet build .\tools\wasapi-capture-helper\WasapiCaptureHelper.sln -c Release
 
 The project targets `net8.0-windows` and `win-x64`.
 
+For packaging, use the repository build script:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_wasapi_helper.ps1
+```
+
+That publishes the helper and its framework-dependent runtime files into
+`build\wasapi-helper\` for the GUI package step.
+
 ## FlowScribe Integration
 
 The GUI will call the helper as a controlled subprocess:
