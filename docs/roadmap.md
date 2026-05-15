@@ -73,8 +73,22 @@ a cleaner provider boundary.
 - Provider-facing transcription interface around the local backend.
 - Provider capability and cost or latency documentation.
 
-Status: planned. See `docs/phase-4-summary-and-phase-5-plan.md` and
-`docs/phase-5-task-list.md`.
+Status: completed incrementally and wrapped up in `v0.2.5`. See
+`docs/phase-5-summary-and-phase-6-plan.md` and `docs/phase-6-task-list.md`.
+
+## v0.6 Workspace Consolidation, Onboarding, And Release Reliability
+
+Goal: make the transcript workspace denser, easier to learn, and less fragile
+to operate or release.
+
+- Consolidated transcript review and artifact viewing workflows.
+- Faster transcript library review with better filtering and sorting.
+- Better artifact inspection ergonomics.
+- Stronger onboarding and user-facing diagnostics.
+- More repeatable and idempotent release operations.
+
+Status: planned. See `docs/phase-5-summary-and-phase-6-plan.md` and
+`docs/phase-6-task-list.md`.
 
 ## v1.0 Open Source Release
 

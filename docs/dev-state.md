@@ -7,7 +7,7 @@ Use this file as the compact handoff context when starting a new conversation.
 - Name: FlowScribe
 - Path: `E:\Draft\FlowScribe`
 - Language: Python
-- Current phase: Phase 5, Transcript Library, Editing Workflow, And Provider Readiness
+- Current phase: Phase 6, Workspace Consolidation, Onboarding, And Release Reliability
 
 ## Product Goal
 
@@ -279,6 +279,9 @@ asks for Wrap-Up Mode.
 
 Phase 4 is complete and shipped in `v0.2.4`.
 
+Phase 5 is complete from a product-milestone perspective and wrapped in
+`v0.2.5`.
+
 Phase 5 progress:
 
 - Milestone 5.1 is implemented in the current working flow.
@@ -344,6 +347,13 @@ Phase 5 progress:
 - CLI and GUI package smoke checks remain intact, and packaging docs now note
   that CLI and GUI build scripts should run sequentially because they share the
   top-level `build/` workspace.
+- The release workflow now needs to tolerate reruns and existing release tags as
+  part of normal maintenance rather than assuming create-only release paths.
+
+Phase 6 planning is tracked in:
+
+- `docs/phase-5-summary-and-phase-6-plan.md`
+- `docs/phase-6-task-list.md`
 
 Phase 4 completion details:
 
