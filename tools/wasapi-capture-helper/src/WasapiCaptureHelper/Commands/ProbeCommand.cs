@@ -32,7 +32,11 @@ internal static class ProbeCommand
         }
         catch (Exception ex)
         {
-            JsonConsole.WriteError(ex.Message);
+            JsonConsole.Write(new ProbeResult(
+                Command: "probe",
+                Supported: false,
+                DefaultOutputDevice: null,
+                Reason: ex.Message));
             return 2;
         }
     }

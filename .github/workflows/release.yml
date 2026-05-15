@@ -80,9 +80,12 @@ jobs:
             throw "WASAPI helper version smoke check failed."
           }
 
+          $PSNativeCommandUseErrorActionPreference = $false
           & $helperPath probe
-          if ($LASTEXITCODE -notin @(0, 2)) {
-            throw "WASAPI helper probe smoke check failed with exit code $LASTEXITCODE."
+          $probeExitCode = $LASTEXITCODE
+          $PSNativeCommandUseErrorActionPreference = $true
+          if ($probeExitCode -notin @(0, 2)) {
+            throw "WASAPI helper probe smoke check failed with exit code $probeExitCode."
           }
 
       - name: Verify packaged executable
