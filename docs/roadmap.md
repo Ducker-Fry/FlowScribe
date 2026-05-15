@@ -87,8 +87,9 @@ to operate or release.
 - Stronger onboarding and user-facing diagnostics.
 - More repeatable and idempotent release operations.
 
-Status: planned. See `docs/phase-5-summary-and-phase-6-plan.md` and
-`docs/phase-6-task-list.md`.
+Status: in progress. Workspace consolidation and transcript-library review
+ergonomics have started landing in the desktop GUI. See
+`docs/phase-5-summary-and-phase-6-plan.md` and `docs/phase-6-task-list.md`.
 
 ## v1.0 Open Source Release
 

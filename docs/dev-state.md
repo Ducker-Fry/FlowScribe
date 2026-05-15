@@ -144,6 +144,13 @@ output classes.
 - Transcript JSON viewer.
 - Transcript keyword search UI.
 - Transcript-bound local media playback and seek.
+- Consolidated `Views` workspace for run details, transcript review, artifact
+  inspection, and transcript library access.
+- Transcript segment editing, corrected-save flow, and transcript re-export.
+- Local transcript library with missing-state tracking and output discovery.
+- Library filtering by source kind, missing state, and opened state.
+- Library sorting by last opened, updated, created, and label order.
+- Recent transcript labels aligned more closely with library metadata.
 - Checkbox-based remembered local source selection.
 - Quiet packaged GUI logging defaults.
 - GUI executable smoke build:
@@ -240,10 +247,34 @@ Use explicit work modes:
 
 ```text
 Only change code.
-Do not update docs.
-Do not commit.
+Skip non-essential docs by default.
+Do not commit unless asked.
 Run only focused tests/checks.
 ```
+
+## Phase 6 Progress
+
+Phase 6 is in progress.
+
+Implemented so far:
+
+- Phase 6.1 workspace consolidation:
+  - `Views` is now the main review workspace instead of a loose collection of
+    separate windows.
+  - Transcript playback, search, segment review, editing, and artifact
+    inspection are grouped into one denser workspace layout.
+  - Transcript library actions can run inside `Views`.
+  - Base `Views` tab visibility and current-tab preferences are persisted as
+    non-sensitive GUI state.
+- Phase 6.2 transcript library review ergonomics:
+  - Transcript library entries can be filtered by source kind, missing state,
+    and opened state.
+  - Transcript library entries can be sorted by created time, updated time,
+    last opened time, or label, with ascending or descending direction.
+  - Library summary text surfaces how many results are shown and how many are
+    missing.
+  - Recent transcript display is closer to library display so reopening work
+    feels more consistent.
 
 ### Standard Mode
 

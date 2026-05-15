@@ -7,6 +7,8 @@ from flowscribe.library import (
     TranscriptLibraryEntry,
     TranscriptLibraryStore,
     derive_library_entry_id,
+    filter_transcript_library_entries,
+    sort_transcript_library_entries,
 )
 
 
@@ -234,3 +236,124 @@ def test_transcript_library_store_can_cleanup_missing_transcript_entries(tmp_pat
     remaining = store.list_entries()
     assert len(remaining) == 1
     assert remaining[0].display_label == "Keep"
+
+
+def test_filter_transcript_library_entries_supports_source_missing_and_opened_filters(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "outputs"
+    output_dir.mkdir()
+
+    local_transcript = output_dir / "local.json"
+    local_transcript.write_text('{"segments": []}', encoding="utf-8")
+    opened_entry = TranscriptLibraryEntry.create(
+        transcript_path=local_transcript,
+        output_dir=output_dir,
+        display_label="Opened local",
+        source_kind="local",
+        last_opened_at=datetime(2026, 5, 15, 10, 0, 0),
+    )
+
+    missing_transcript = output_dir / "missing.json"
+    missing_transcript.write_text('{"segments": []}', encoding="utf-8")
+    missing_entry = TranscriptLibraryEntry.create(
+        transcript_path=missing_transcript,
+        output_dir=output_dir,
+        display_label="Missing url",
+        source_kind="url",
+    )
+    missing_transcript.unlink()
+    missing_entry = missing_entry.refresh_missing_status()
+
+    capture_transcript = output_dir / "capture.json"
+    capture_transcript.write_text('{"segments": []}', encoding="utf-8")
+    never_opened_entry = TranscriptLibraryEntry.create(
+        transcript_path=capture_transcript,
+        output_dir=output_dir,
+        display_label="Never opened capture",
+        source_kind="capture",
+    )
+
+    entries = (opened_entry, missing_entry, never_opened_entry)
+
+    assert filter_transcript_library_entries(entries, source_kind="local") == (opened_entry,)
+    assert filter_transcript_library_entries(entries, missing_filter="missing_only") == (
+        missing_entry,
+    )
+    assert filter_transcript_library_entries(entries, missing_filter="available_only") == (
+        opened_entry,
+        never_opened_entry,
+    )
+    assert filter_transcript_library_entries(entries, opened_filter="opened") == (opened_entry,)
+    assert filter_transcript_library_entries(entries, opened_filter="never_opened") == (
+        missing_entry,
+        never_opened_entry,
+    )
+
+
+def test_sort_transcript_library_entries_supports_multiple_modes(tmp_path: Path) -> None:
+    output_dir = tmp_path / "outputs"
+    output_dir.mkdir()
+
+    alpha_path = output_dir / "alpha.json"
+    alpha_path.write_text('{"segments": []}', encoding="utf-8")
+    beta_path = output_dir / "beta.json"
+    beta_path.write_text('{"segments": []}', encoding="utf-8")
+    gamma_path = output_dir / "gamma.json"
+    gamma_path.write_text('{"segments": []}', encoding="utf-8")
+
+    alpha = TranscriptLibraryEntry.create(
+        transcript_path=alpha_path,
+        output_dir=output_dir,
+        display_label="Alpha",
+        created_at=datetime(2026, 5, 15, 8, 0, 0),
+        updated_at=datetime(2026, 5, 15, 12, 0, 0),
+        last_opened_at=datetime(2026, 5, 15, 13, 0, 0),
+    )
+    beta = TranscriptLibraryEntry.create(
+        transcript_path=beta_path,
+        output_dir=output_dir,
+        display_label="Beta",
+        created_at=datetime(2026, 5, 15, 9, 0, 0),
+        updated_at=datetime(2026, 5, 15, 11, 0, 0),
+        last_opened_at=datetime(2026, 5, 15, 10, 0, 0),
+    )
+    gamma = TranscriptLibraryEntry.create(
+        transcript_path=gamma_path,
+        output_dir=output_dir,
+        display_label="Gamma",
+        created_at=datetime(2026, 5, 15, 10, 0, 0),
+        updated_at=datetime(2026, 5, 15, 14, 0, 0),
+    )
+
+    entries = (beta, gamma, alpha)
+
+    assert sort_transcript_library_entries(entries, sort_mode="last_opened") == (
+        alpha,
+        beta,
+        gamma,
+    )
+    assert sort_transcript_library_entries(entries, sort_mode="updated") == (
+        gamma,
+        alpha,
+        beta,
+    )
+    assert sort_transcript_library_entries(entries, sort_mode="created") == (
+        gamma,
+        beta,
+        alpha,
+    )
+    assert sort_transcript_library_entries(entries, sort_mode="label") == (
+        gamma,
+        beta,
+        alpha,
+    )
+    assert sort_transcript_library_entries(
+        entries,
+        sort_mode="created",
+        descending=False,
+    ) == (
+        alpha,
+        beta,
+        gamma,
+    )

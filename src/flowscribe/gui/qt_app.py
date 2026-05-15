@@ -29,6 +29,8 @@ from flowscribe.library import (
     LibraryOutputRecord,
     TranscriptLibraryEntry,
     TranscriptLibraryStore,
+    filter_transcript_library_entries,
+    sort_transcript_library_entries,
 )
 from flowscribe.output.time_format import format_timestamp
 from flowscribe.gui.state import (
@@ -77,6 +79,14 @@ DEFAULT_GUI_PREFERENCES = {
     "keep_media": False,
     "network_family": "auto",
     "proxy": "",
+}
+DEFAULT_VIEW_PREFERENCES = {
+    "visible_tabs": {
+        "run_details": True,
+        "transcript": True,
+        "library": True,
+    },
+    "current_tab": "transcript",
 }
 MAX_RECENT_TRANSCRIPTS = 8
 MAX_RECENT_OUTPUT_DIRS = 8
@@ -175,13 +185,51 @@ def _gui_state_payload(
     preferences: dict[str, object],
     recent_work: dict[str, list[dict[str, object]] | list[str]] | None = None,
     export_profiles: tuple[ExportProfile, ...] = (),
+    view_preferences: dict[str, object] | None = None,
 ) -> dict[str, object]:
     return {
-        "version": 4,
+        "version": 5,
         "preferences": _gui_preferences_payload(preferences),
         "local_sources": _local_source_state_payload(paths, checked_paths),
         "recent_work": _recent_work_payload(recent_work),
         "export_profiles": export_profiles_payload(export_profiles),
+        "view_preferences": _view_preferences_payload(view_preferences),
+    }
+
+
+def _view_preferences_payload(preferences: object) -> dict[str, object]:
+    source = preferences if isinstance(preferences, dict) else {}
+    visible_tabs_source = source.get("visible_tabs")
+    current_tab = source.get("current_tab")
+
+    normalized_visible_tabs: dict[str, bool] = {}
+    if isinstance(visible_tabs_source, dict):
+        for key in DEFAULT_VIEW_PREFERENCES["visible_tabs"]:
+            normalized_visible_tabs[key] = bool(
+                visible_tabs_source.get(
+                    key,
+                    DEFAULT_VIEW_PREFERENCES["visible_tabs"][key],
+                )
+            )
+    else:
+        normalized_visible_tabs = dict(DEFAULT_VIEW_PREFERENCES["visible_tabs"])
+
+    if not any(normalized_visible_tabs.values()):
+        normalized_visible_tabs["transcript"] = True
+
+    normalized_current_tab = (
+        current_tab
+        if isinstance(current_tab, str) and current_tab in normalized_visible_tabs
+        else "transcript"
+    )
+    if not normalized_visible_tabs.get(normalized_current_tab, False):
+        normalized_current_tab = next(
+            key for key, visible in normalized_visible_tabs.items() if visible
+        )
+
+    return {
+        "visible_tabs": normalized_visible_tabs,
+        "current_tab": normalized_current_tab,
     }
 
 
@@ -326,16 +374,25 @@ def _normalize_gui_state_payload(
     dict[str, object],
     dict[str, list[dict[str, object]] | list[str]],
     tuple[ExportProfile, ...],
+    dict[str, object],
 ]:
     if not isinstance(payload, dict):
-        return [], set(), _gui_preferences_payload(DEFAULT_GUI_PREFERENCES), _default_recent_work(), ()
+        return (
+            [],
+            set(),
+            _gui_preferences_payload(DEFAULT_GUI_PREFERENCES),
+            _default_recent_work(),
+            (),
+            _view_preferences_payload(DEFAULT_VIEW_PREFERENCES),
+        )
 
     local_payload = payload.get("local_sources") if isinstance(payload.get("local_sources"), dict) else payload
     local_paths, checked = _normalize_local_source_state_payload(local_payload)
     preferences = _normalize_gui_preferences_payload(payload)
     recent_work = _recent_work_payload(payload.get("recent_work"))
     profiles = normalize_export_profiles_payload(payload.get("export_profiles"))
-    return local_paths, checked, preferences, recent_work, profiles
+    view_preferences = _view_preferences_payload(payload.get("view_preferences"))
+    return local_paths, checked, preferences, recent_work, profiles, view_preferences
 
 
 def _transcript_output_records_from_paths(paths: tuple[Path, ...]) -> tuple[LibraryOutputRecord, ...]:
@@ -522,16 +579,35 @@ def _library_entry_missing_summary(entry: TranscriptLibraryEntry) -> str:
 def _sort_library_entries(
     entries: tuple[TranscriptLibraryEntry, ...],
 ) -> tuple[TranscriptLibraryEntry, ...]:
-    return tuple(
-        sorted(
-            entries,
-            key=lambda entry: (
-                entry.last_opened_at or entry.updated_at or entry.created_at,
-                entry.created_at,
-                entry.display_label.lower(),
-            ),
-            reverse=True,
-        )
+    return sort_transcript_library_entries(entries)
+
+
+def _library_results_summary(
+    entries: tuple[TranscriptLibraryEntry, ...],
+    *,
+    total_count: int,
+) -> str:
+    missing_count = sum(1 for entry in entries if entry.missing)
+    opened_count = sum(1 for entry in entries if entry.last_opened_at is not None)
+    return (
+        f"Showing {len(entries)} of {total_count} transcript entr{'y' if total_count == 1 else 'ies'}"
+        f" | missing: {missing_count}"
+        f" | opened: {opened_count}"
+    )
+
+
+def _recent_transcript_list_label(
+    transcript_path: Path,
+    *,
+    entry: TranscriptLibraryEntry | None = None,
+) -> str:
+    if entry is None:
+        return f"{transcript_path.name}\n{transcript_path}"
+    return "\n".join(
+        [
+            f"{transcript_path.name} | Source: {entry.source_kind} | Missing: {_library_entry_missing_summary(entry)}",
+            f"Last opened: {_format_library_datetime(entry.last_opened_at)} | Output dir: {entry.output_dir}",
+        ]
     )
 
 
@@ -672,12 +748,20 @@ class FlowScribeMainWindow:
             dict[str, object],
             dict[str, list[dict[str, object]] | list[str]],
             tuple[ExportProfile, ...],
+            dict[str, object],
         ]:
             path = _gui_state_path()
             try:
                 payload = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
-                return [], set(), _gui_preferences_payload(DEFAULT_GUI_PREFERENCES), _default_recent_work(), ()
+                return (
+                    [],
+                    set(),
+                    _gui_preferences_payload(DEFAULT_GUI_PREFERENCES),
+                    _default_recent_work(),
+                    (),
+                    _view_preferences_payload(DEFAULT_VIEW_PREFERENCES),
+                )
             return _normalize_gui_state_payload(payload)
 
         def _save_gui_state(
@@ -686,6 +770,7 @@ class FlowScribeMainWindow:
             preferences: dict[str, object],
             recent_work: dict[str, list[dict[str, object]] | list[str]],
             export_profiles: tuple[ExportProfile, ...],
+            view_preferences: dict[str, object],
         ) -> None:
             path = _gui_state_path()
             try:
@@ -698,6 +783,7 @@ class FlowScribeMainWindow:
                             preferences,
                             recent_work,
                             export_profiles,
+                            view_preferences,
                         ),
                         ensure_ascii=False,
                         indent=2,
@@ -736,7 +822,18 @@ class FlowScribeMainWindow:
                 self._view_tab_pages: dict[str, object] = {}
                 self._view_tab_titles: dict[str, str] = {}
                 self._view_tab_visibility: dict[str, bool] = {}
+                self._view_preferences = _view_preferences_payload(DEFAULT_VIEW_PREFERENCES)
                 self._artifact_viewers: dict[Path, object] = {}
+                self._workspace_artifact_paths: tuple[Path, ...] = ()
+                self._workspace_artifact_selector: object | None = None
+                self._workspace_artifact_viewer: object | None = None
+                self._workspace_artifact_status_label: object | None = None
+                self._library_source_filter_combo: object | None = None
+                self._library_missing_filter_combo: object | None = None
+                self._library_opened_filter_combo: object | None = None
+                self._library_sort_combo: object | None = None
+                self._library_sort_direction_combo: object | None = None
+                self._library_summary_label: object | None = None
                 self._recent_work = _default_recent_work()
                 self._recent_work_dialog: object | None = None
                 self._recent_transcripts_list: object | None = None
@@ -1171,12 +1268,15 @@ class FlowScribeMainWindow:
             def _create_views_window(self, media_box, search_row, transcript_edit_box) -> None:
                 from PySide6.QtWidgets import (
                     QDialog,
-                    QFrame,
+                    QComboBox,
                     QHBoxLayout,
                     QLabel,
+                    QListWidget,
                     QMenu,
+                    QPlainTextEdit,
                     QPushButton,
-                    QScrollArea,
+                    QSplitter,
+                    QGroupBox,
                     QTabWidget,
                     QToolButton,
                     QVBoxLayout,
@@ -1208,28 +1308,166 @@ class FlowScribeMainWindow:
 
                 run_details_page = QWidget(dialog)
                 run_details_layout = QVBoxLayout(run_details_page)
+                run_details_layout.setContentsMargins(8, 8, 8, 8)
                 run_details_layout.addWidget(self.preview_output)
 
                 transcript_page = QWidget(dialog)
                 transcript_page_layout = QVBoxLayout(transcript_page)
-                transcript_scroll = QScrollArea(transcript_page)
-                transcript_scroll.setWidgetResizable(True)
-                transcript_scroll.setFrameShape(QFrame.Shape.NoFrame)
+                transcript_page_layout.setContentsMargins(8, 8, 8, 8)
+                transcript_page_layout.setSpacing(10)
 
-                transcript_content = QWidget(transcript_scroll)
-                transcript_layout = QVBoxLayout(transcript_content)
-                transcript_layout.addWidget(media_box)
-                transcript_layout.addWidget(self.transcript_summary)
-                transcript_layout.addLayout(search_row)
-                transcript_layout.addWidget(QLabel("Search results"))
-                transcript_layout.addWidget(self.search_results)
-                transcript_layout.addWidget(QLabel("Transcript segments"))
-                transcript_layout.addWidget(self.transcript_segments)
-                transcript_layout.addWidget(transcript_edit_box)
-                transcript_layout.addStretch(1)
+                workspace_summary_label = QLabel(
+                    "Keep playback, segment review, editing, and transcript artifacts in one workspace."
+                )
+                workspace_summary_label.setWordWrap(True)
+                transcript_page_layout.addWidget(workspace_summary_label)
 
-                transcript_scroll.setWidget(transcript_content)
-                transcript_page_layout.addWidget(transcript_scroll)
+                workspace_splitter = QSplitter(Qt.Orientation.Vertical, transcript_page)
+                transcript_page_layout.addWidget(workspace_splitter, 1)
+
+                review_splitter = QSplitter(Qt.Orientation.Horizontal, workspace_splitter)
+
+                review_left = QWidget(review_splitter)
+                review_left_layout = QVBoxLayout(review_left)
+                review_left_layout.setContentsMargins(0, 0, 0, 0)
+                review_left_layout.setSpacing(8)
+                review_left_layout.addWidget(media_box, 3)
+                review_left_layout.addWidget(self.transcript_summary, 1)
+
+                review_right = QSplitter(Qt.Orientation.Vertical, review_splitter)
+
+                search_box = QGroupBox("Transcript search")
+                search_layout = QVBoxLayout(search_box)
+                search_layout.addLayout(search_row)
+                search_layout.addWidget(self.search_results)
+
+                segments_box = QGroupBox("Transcript segments")
+                segments_layout = QVBoxLayout(segments_box)
+                segments_layout.addWidget(self.transcript_segments)
+
+                review_right.addWidget(search_box)
+                review_right.addWidget(segments_box)
+                review_right.addWidget(transcript_edit_box)
+
+                review_splitter.addWidget(review_left)
+                review_splitter.addWidget(review_right)
+
+                artifact_box = QGroupBox("Transcript artifacts")
+                artifact_layout = QVBoxLayout(artifact_box)
+                artifact_toolbar = QHBoxLayout()
+                artifact_toolbar.addWidget(QLabel("Current artifact"))
+                artifact_selector = QComboBox(artifact_box)
+                artifact_selector.currentIndexChanged.connect(self._show_selected_workspace_artifact)
+                artifact_toolbar.addWidget(artifact_selector, 1)
+                open_artifact_tab_button = QPushButton("Open Tab", artifact_box)
+                open_artifact_tab_button.clicked.connect(self._open_selected_workspace_artifact_tab)
+                artifact_toolbar.addWidget(open_artifact_tab_button)
+                artifact_layout.addLayout(artifact_toolbar)
+
+                artifact_status_label = QLabel("Open a transcript or artifact to inspect generated files here.")
+                artifact_status_label.setWordWrap(True)
+                artifact_layout.addWidget(artifact_status_label)
+
+                artifact_viewer = QPlainTextEdit(artifact_box)
+                artifact_viewer.setReadOnly(True)
+                artifact_layout.addWidget(artifact_viewer, 1)
+
+                workspace_splitter.addWidget(review_splitter)
+                workspace_splitter.addWidget(artifact_box)
+                workspace_splitter.setStretchFactor(0, 4)
+                workspace_splitter.setStretchFactor(1, 2)
+                review_splitter.setStretchFactor(0, 3)
+                review_splitter.setStretchFactor(1, 4)
+                review_right.setStretchFactor(0, 1)
+                review_right.setStretchFactor(1, 3)
+                review_right.setStretchFactor(2, 3)
+
+                library_page = QWidget(dialog)
+                library_layout = QVBoxLayout(library_page)
+                library_layout.setContentsMargins(8, 8, 8, 8)
+                library_summary_label = QLabel(
+                    "Use the library to reopen transcript JSON, repair media bindings, and clean missing entries without leaving Views."
+                )
+                library_summary_label.setWordWrap(True)
+                library_layout.addWidget(library_summary_label)
+
+                library_filters_row = QHBoxLayout()
+                library_filters_row.addWidget(QLabel("Source"))
+                library_source_filter_combo = QComboBox(library_page)
+                library_source_filter_combo.addItem("All sources", "all")
+                library_source_filter_combo.addItem("Local", "local")
+                library_source_filter_combo.addItem("URL", "url")
+                library_source_filter_combo.addItem("Capture", "capture")
+                library_source_filter_combo.addItem("Unknown", "unknown")
+                library_source_filter_combo.currentIndexChanged.connect(
+                    self._refresh_transcript_library_list
+                )
+                library_filters_row.addWidget(library_source_filter_combo)
+
+                library_filters_row.addWidget(QLabel("Missing"))
+                library_missing_filter_combo = QComboBox(library_page)
+                library_missing_filter_combo.addItem("All", "all")
+                library_missing_filter_combo.addItem("Missing only", "missing_only")
+                library_missing_filter_combo.addItem("Available only", "available_only")
+                library_missing_filter_combo.currentIndexChanged.connect(
+                    self._refresh_transcript_library_list
+                )
+                library_filters_row.addWidget(library_missing_filter_combo)
+
+                library_filters_row.addWidget(QLabel("Opened"))
+                library_opened_filter_combo = QComboBox(library_page)
+                library_opened_filter_combo.addItem("All", "all")
+                library_opened_filter_combo.addItem("Opened before", "opened")
+                library_opened_filter_combo.addItem("Never opened", "never_opened")
+                library_opened_filter_combo.currentIndexChanged.connect(
+                    self._refresh_transcript_library_list
+                )
+                library_filters_row.addWidget(library_opened_filter_combo)
+
+                library_filters_row.addWidget(QLabel("Sort"))
+                library_sort_combo = QComboBox(library_page)
+                library_sort_combo.addItem("Last opened", "last_opened")
+                library_sort_combo.addItem("Updated", "updated")
+                library_sort_combo.addItem("Created", "created")
+                library_sort_combo.addItem("Label", "label")
+                library_sort_combo.currentIndexChanged.connect(self._refresh_transcript_library_list)
+                library_filters_row.addWidget(library_sort_combo)
+
+                library_sort_direction_combo = QComboBox(library_page)
+                library_sort_direction_combo.addItem("Newest first", "desc")
+                library_sort_direction_combo.addItem("Oldest first", "asc")
+                library_sort_direction_combo.currentIndexChanged.connect(
+                    self._refresh_transcript_library_list
+                )
+                library_filters_row.addWidget(library_sort_direction_combo)
+                library_filters_row.addStretch(1)
+                library_layout.addLayout(library_filters_row)
+
+                library_results_label = QLabel("Library results will appear here.")
+                library_results_label.setWordWrap(True)
+                library_layout.addWidget(library_results_label)
+
+                library_entries_list = QListWidget(library_page)
+                library_entries_list.itemActivated.connect(self._open_selected_library_transcript)
+                library_layout.addWidget(library_entries_list, 1)
+
+                library_action_row = QHBoxLayout()
+                open_transcript_button = QPushButton("Open Selected Transcript", library_page)
+                open_transcript_button.clicked.connect(self._open_selected_library_transcript)
+                open_output_button = QPushButton("Open Output Directory", library_page)
+                open_output_button.clicked.connect(self._open_selected_library_output_dir)
+                bind_media_button = QPushButton("Bind Or Rebind Media", library_page)
+                bind_media_button.clicked.connect(self._rebind_selected_library_media)
+                remove_button = QPushButton("Remove From Library", library_page)
+                remove_button.clicked.connect(self._remove_selected_library_entry)
+                cleanup_button = QPushButton("Clean Missing Entries", library_page)
+                cleanup_button.clicked.connect(self._clean_missing_library_entries)
+                library_action_row.addWidget(open_transcript_button)
+                library_action_row.addWidget(open_output_button)
+                library_action_row.addWidget(bind_media_button)
+                library_action_row.addWidget(remove_button)
+                library_action_row.addWidget(cleanup_button)
+                library_layout.addLayout(library_action_row)
 
                 self._views_dialog = dialog
                 self._views_tab_widget = tabs
@@ -1237,25 +1475,39 @@ class FlowScribeMainWindow:
                 self._view_tab_pages = {
                     "run_details": run_details_page,
                     "transcript": transcript_page,
+                    "library": library_page,
                 }
                 self._view_tab_titles = {
                     "run_details": "Run Details",
-                    "transcript": "Transcript",
+                    "transcript": "Workspace",
+                    "library": "Library",
                 }
-                self._view_tab_visibility = {
-                    "run_details": True,
-                    "transcript": True,
-                }
+                self._view_tab_visibility = dict(self._view_preferences["visible_tabs"])
                 self._artifact_viewers = {}
+                self._workspace_artifact_selector = artifact_selector
+                self._workspace_artifact_viewer = artifact_viewer
+                self._workspace_artifact_status_label = artifact_status_label
+                self._library_source_filter_combo = library_source_filter_combo
+                self._library_missing_filter_combo = library_missing_filter_combo
+                self._library_opened_filter_combo = library_opened_filter_combo
+                self._library_sort_combo = library_sort_combo
+                self._library_sort_direction_combo = library_sort_direction_combo
+                self._library_summary_label = library_results_label
+                self._library_entries_list = library_entries_list
 
-                tabs.addTab(run_details_page, "Run Details")
-                tabs.addTab(transcript_page, "Transcript")
+                for key in ("run_details", "transcript", "library"):
+                    if self._view_tab_visibility.get(key, False):
+                        tabs.addTab(self._view_tab_pages[key], self._view_tab_titles[key])
+                if tabs.count() == 0:
+                    tabs.addTab(transcript_page, self._view_tab_titles["transcript"])
+                    self._view_tab_visibility["transcript"] = True
 
                 menu = QMenu(menu_button)
                 menu_button.setMenu(menu)
                 self._view_menu = menu
                 self.view_menu_button.setMenu(menu)
                 self.view_menu_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+                tabs.currentChanged.connect(self._on_views_tab_changed)
                 self._refresh_view_menu()
 
             def _refresh_view_menu(self) -> None:
@@ -1270,6 +1522,33 @@ class FlowScribeMainWindow:
                     action.setChecked(self._view_tab_visibility.get(key, False))
                     action.toggled.connect(lambda checked, tab_key=key: self._set_view_tab_visible(tab_key, checked))
                     self._view_menu.addAction(action)
+
+            def _capture_view_preferences(self) -> dict[str, object]:
+                current_tab = self._view_preferences.get("current_tab", "transcript")
+                if self._views_tab_widget is not None:
+                    index = self._views_tab_widget.currentIndex()
+                    if index >= 0:
+                        current_page = self._views_tab_widget.widget(index)
+                        for key, page in self._view_tab_pages.items():
+                            if page == current_page:
+                                current_tab = key
+                                break
+                return _view_preferences_payload(
+                    {
+                        "visible_tabs": self._view_tab_visibility,
+                        "current_tab": current_tab,
+                    }
+                )
+
+            def _on_views_tab_changed(self, index: int) -> None:
+                if index < 0 or self._views_tab_widget is None:
+                    return
+                current_page = self._views_tab_widget.widget(index)
+                for key, page in self._view_tab_pages.items():
+                    if page == current_page:
+                        self._view_preferences["current_tab"] = key
+                        self._persist_gui_state()
+                        break
 
             def _find_view_tab_index(self, key: str) -> int:
                 if self._views_tab_widget is None:
@@ -1291,10 +1570,15 @@ class FlowScribeMainWindow:
                     if index < 0:
                         self._views_tab_widget.addTab(page, title)
                     self._view_tab_visibility[key] = True
+                    self._view_preferences = self._capture_view_preferences()
+                    self._persist_gui_state()
+                    self._refresh_view_menu()
                     return
                 if index >= 0 and self._views_tab_widget.count() > 1:
                     self._views_tab_widget.removeTab(index)
                 self._view_tab_visibility[key] = self._views_tab_widget.indexOf(page) >= 0
+                self._view_preferences = self._capture_view_preferences()
+                self._persist_gui_state()
                 self._refresh_view_menu()
 
             def _show_views_window(self) -> None:
@@ -1304,14 +1588,88 @@ class FlowScribeMainWindow:
                 self._views_dialog.raise_()
                 self._views_dialog.activateWindow()
 
-            def _select_view_tab(self, key: str) -> None:
+            def _set_current_view_tab(self, key: str) -> None:
                 if self._views_tab_widget is None:
                     return
                 self._set_view_tab_visible(key, True)
                 index = self._find_view_tab_index(key)
                 if index >= 0:
                     self._views_tab_widget.setCurrentIndex(index)
+                    self._view_preferences["current_tab"] = key
+
+            def _select_view_tab(self, key: str) -> None:
+                self._set_current_view_tab(key)
                 self._show_views_window()
+
+            def _set_workspace_artifact_paths(
+                self,
+                paths: tuple[Path, ...],
+                *,
+                replace: bool,
+                preferred_path: Path | None = None,
+            ) -> None:
+                normalized = _normalize_viewable_artifact_paths(paths)
+                if replace:
+                    merged = normalized
+                else:
+                    merged = _normalize_viewable_artifact_paths(
+                        self._workspace_artifact_paths + normalized
+                    )
+                self._workspace_artifact_paths = merged
+                selector = self._workspace_artifact_selector
+                if selector is None:
+                    return
+                selector.blockSignals(True)
+                try:
+                    selector.clear()
+                    for path in merged:
+                        selector.addItem(_view_tab_title_for_artifact(path), str(path))
+                finally:
+                    selector.blockSignals(False)
+
+                if not merged:
+                    if self._workspace_artifact_viewer is not None:
+                        self._workspace_artifact_viewer.clear()
+                    if self._workspace_artifact_status_label is not None:
+                        self._workspace_artifact_status_label.setText(
+                            "Open a transcript or artifact to inspect generated files here."
+                        )
+                    return
+
+                selected_path = preferred_path if preferred_path in merged else merged[0]
+                selector.setCurrentIndex(merged.index(selected_path))
+                self._show_workspace_artifact(selected_path)
+
+            def _show_selected_workspace_artifact(self, index: int) -> None:
+                if index < 0 or index >= len(self._workspace_artifact_paths):
+                    return
+                self._show_workspace_artifact(self._workspace_artifact_paths[index])
+
+            def _show_workspace_artifact(self, path: Path) -> None:
+                viewer = self._workspace_artifact_viewer
+                status_label = self._workspace_artifact_status_label
+                if viewer is None or status_label is None:
+                    return
+                if not path.is_file():
+                    viewer.clear()
+                    status_label.setText(f"Artifact is missing: {path}")
+                    return
+                viewer.setPlainText(_read_viewable_artifact_text(path))
+                status_label.setText(
+                    f"Inspecting {path.name} in the current transcript workspace."
+                )
+
+            def _open_selected_workspace_artifact_tab(self) -> None:
+                selector = self._workspace_artifact_selector
+                if selector is None:
+                    return
+                index = selector.currentIndex()
+                if index < 0 or index >= len(self._workspace_artifact_paths):
+                    self.status_label.setText("Select an artifact first.")
+                    return
+                path = self._workspace_artifact_paths[index]
+                self._ensure_artifact_view_tab(path)
+                self._select_view_tab(_view_tab_key_for_artifact(path))
 
             def _ensure_artifact_view_tab(self, path: Path) -> None:
                 from PySide6.QtWidgets import QPlainTextEdit, QWidget, QVBoxLayout
@@ -1352,14 +1710,23 @@ class FlowScribeMainWindow:
                     self._view_tab_titles.pop(key, None)
                     self._view_tab_visibility.pop(key, None)
                 self._artifact_viewers = {}
+                self._workspace_artifact_paths = ()
+                self._set_workspace_artifact_paths((), replace=True)
                 self._refresh_view_menu()
 
             def _load_artifact_views(self, paths: tuple[Path, ...], *, replace: bool = False) -> None:
+                normalized_paths = _normalize_viewable_artifact_paths(paths)
                 if replace:
                     self._clear_artifact_view_tabs()
-                for path in _normalize_viewable_artifact_paths(paths):
+                for path in normalized_paths:
                     if path.is_file():
                         self._ensure_artifact_view_tab(path)
+                preferred_path = normalized_paths[0] if normalized_paths else None
+                self._set_workspace_artifact_paths(
+                    normalized_paths,
+                    replace=replace,
+                    preferred_path=preferred_path,
+                )
 
             def _open_view_artifact(self) -> None:
                 from PySide6.QtWidgets import QFileDialog
@@ -1389,7 +1756,7 @@ class FlowScribeMainWindow:
                     return False
                 self._load_artifact_views((normalized,), replace=True)
                 self.status_label.setText(f"Opened artifact view: {normalized.name}")
-                self._select_view_tab(_view_tab_key_for_artifact(normalized))
+                self._select_view_tab("transcript")
                 return True
 
             def _choose_files(self) -> None:
@@ -1632,51 +1999,9 @@ class FlowScribeMainWindow:
                 self._export_profiles_dialog.activateWindow()
 
             def _show_transcript_library(self) -> None:
-                from PySide6.QtWidgets import QDialog, QHBoxLayout, QListWidget, QPushButton, QVBoxLayout
-
-                self.status_label.setText("Showing transcript library.")
-                if self._library_dialog is None:
-                    dialog = QDialog(self)
-                    dialog.setWindowTitle("Transcript Library")
-                    dialog.resize(980, 720)
-
-                    layout = QVBoxLayout(dialog)
-                    library_entries_list = QListWidget(dialog)
-                    library_entries_list.itemActivated.connect(self._open_selected_library_transcript)
-                    layout.addWidget(library_entries_list)
-
-                    action_row = QHBoxLayout()
-                    open_transcript_button = QPushButton("Open Selected Transcript", dialog)
-                    open_transcript_button.clicked.connect(self._open_selected_library_transcript)
-                    open_output_button = QPushButton("Open Output Directory", dialog)
-                    open_output_button.clicked.connect(self._open_selected_library_output_dir)
-                    bind_media_button = QPushButton("Bind Or Rebind Media", dialog)
-                    bind_media_button.clicked.connect(self._rebind_selected_library_media)
-                    remove_button = QPushButton("Remove From Library", dialog)
-                    remove_button.clicked.connect(self._remove_selected_library_entry)
-                    cleanup_button = QPushButton("Clean Missing Entries", dialog)
-                    cleanup_button.clicked.connect(self._clean_missing_library_entries)
-                    action_row.addWidget(open_transcript_button)
-                    action_row.addWidget(open_output_button)
-                    action_row.addWidget(bind_media_button)
-                    action_row.addWidget(remove_button)
-                    action_row.addWidget(cleanup_button)
-                    layout.addLayout(action_row)
-
-                    close_button = QPushButton("Close", dialog)
-                    close_button.clicked.connect(dialog.accept)
-                    close_row = QHBoxLayout()
-                    close_row.addStretch(1)
-                    close_row.addWidget(close_button)
-                    layout.addLayout(close_row)
-
-                    self._library_dialog = dialog
-                    self._library_entries_list = library_entries_list
-
                 self._refresh_transcript_library_list()
-                self._library_dialog.show()
-                self._library_dialog.raise_()
-                self._library_dialog.activateWindow()
+                self._select_view_tab("library")
+                self.status_label.setText("Showing transcript library in Views.")
 
             def _show_recent_work(self) -> None:
                 from PySide6.QtWidgets import (
@@ -1739,11 +2064,14 @@ class FlowScribeMainWindow:
 
                     clean_library_button = QPushButton("Clean Missing Library Entries", dialog)
                     clean_library_button.clicked.connect(self._clean_missing_library_entries)
+                    open_library_button = QPushButton("Open Library In Views", dialog)
+                    open_library_button.clicked.connect(self._show_transcript_library)
 
                     close_button = QPushButton("Close", dialog)
                     close_button.clicked.connect(dialog.accept)
                     button_row = QHBoxLayout()
                     button_row.addWidget(clean_library_button)
+                    button_row.addWidget(open_library_button)
                     button_row.addStretch(1)
                     button_row.addWidget(close_button)
                     layout.addLayout(button_row)
@@ -2407,11 +2735,12 @@ class FlowScribeMainWindow:
             def _restore_gui_state(self) -> None:
                 from PySide6.QtCore import QSignalBlocker
 
-                local_paths, checked, preferences, recent_work, export_profiles = _load_gui_state()
+                local_paths, checked, preferences, recent_work, export_profiles, view_preferences = _load_gui_state()
                 self._saved_checked_local_paths = checked
                 self._saved_preferences = preferences
                 self._recent_work = _recent_work_payload(recent_work)
                 self._export_profiles = export_profiles
+                self._view_preferences = view_preferences
                 blocker = QSignalBlocker(self.file_list)
                 try:
                     self._apply_gui_preferences(preferences)
@@ -2423,15 +2752,23 @@ class FlowScribeMainWindow:
                             item.setCheckState(Qt.CheckState.Checked)
                 finally:
                     del blocker
+                self._view_tab_visibility.update(
+                    self._view_preferences.get("visible_tabs", {})
+                )
+                for key, visible in self._view_preferences.get("visible_tabs", {}).items():
+                    self._set_view_tab_visible(key, visible)
+                self._set_current_view_tab(self._view_preferences.get("current_tab", "transcript"))
                 self._persist_gui_state()
 
             def _persist_gui_state(self) -> None:
+                self._view_preferences = self._capture_view_preferences()
                 _save_gui_state(
                     self._local_paths,
                     self._checked_local_paths(),
                     self._saved_preferences,
                     self._recent_work,
                     self._export_profiles,
+                    self._view_preferences,
                 )
 
             def _persist_local_source_state(self) -> None:
@@ -2504,8 +2841,48 @@ class FlowScribeMainWindow:
                     self.status_label.setText("No missing transcript entries needed cleanup.")
 
             def _refresh_transcript_library_list(self) -> None:
-                entries = _sort_library_entries(self._library_store.list_entries())
+                all_entries = self._library_store.list_entries()
+                source_kind = (
+                    self._library_source_filter_combo.currentData()
+                    if self._library_source_filter_combo is not None
+                    else "all"
+                )
+                missing_filter = (
+                    self._library_missing_filter_combo.currentData()
+                    if self._library_missing_filter_combo is not None
+                    else "all"
+                )
+                opened_filter = (
+                    self._library_opened_filter_combo.currentData()
+                    if self._library_opened_filter_combo is not None
+                    else "all"
+                )
+                sort_mode = (
+                    self._library_sort_combo.currentData()
+                    if self._library_sort_combo is not None
+                    else "last_opened"
+                )
+                descending = (
+                    self._library_sort_direction_combo.currentData() != "asc"
+                    if self._library_sort_direction_combo is not None
+                    else True
+                )
+                entries = sort_transcript_library_entries(
+                    filter_transcript_library_entries(
+                        all_entries,
+                        source_kind=source_kind,
+                        missing_filter=missing_filter,
+                        opened_filter=opened_filter,
+                    ),
+                    sort_mode=sort_mode,
+                    descending=descending,
+                )
                 self._library_entries_cache = entries
+                if self._library_summary_label is not None:
+                    summary = _library_results_summary(entries, total_count=len(all_entries))
+                    if any(entry.missing for entry in all_entries):
+                        summary += " | Use Clean Missing Entries to drop broken transcript records."
+                    self._library_summary_label.setText(summary)
                 if self._library_entries_list is None:
                     return
                 self._library_entries_list.clear()
@@ -3018,14 +3395,25 @@ class FlowScribeMainWindow:
                 self._refresh_recent_work_lists()
 
             def _refresh_recent_work_lists(self) -> None:
+                from PySide6.QtCore import Qt
+                from PySide6.QtWidgets import QListWidgetItem
+
                 if self._recent_transcripts_list is not None:
                     self._recent_transcripts_list.clear()
                     for path_text in self._recent_work.get("recent_transcripts", []):
-                        self._recent_transcripts_list.addItem(str(path_text))
+                        transcript_path = Path(str(path_text))
+                        entry = self._library_store.get_entry_by_transcript_path(transcript_path)
+                        item = QListWidgetItem(
+                            _recent_transcript_list_label(transcript_path, entry=entry)
+                        )
+                        item.setData(Qt.ItemDataRole.UserRole, str(transcript_path))
+                        self._recent_transcripts_list.addItem(item)
                 if self._recent_output_dirs_list is not None:
                     self._recent_output_dirs_list.clear()
                     for path_text in self._recent_work.get("recent_output_dirs", []):
-                        self._recent_output_dirs_list.addItem(str(path_text))
+                        item = QListWidgetItem(str(path_text))
+                        item.setData(Qt.ItemDataRole.UserRole, str(path_text))
+                        self._recent_output_dirs_list.addItem(item)
                 if self._recent_jobs_list is not None:
                     self._recent_jobs_list.clear()
                     for item in self._recent_work.get("recent_jobs", []):
@@ -3048,11 +3436,16 @@ class FlowScribeMainWindow:
                         )
 
             def _selected_recent_path(self, list_widget) -> str | None:
+                from PySide6.QtCore import Qt
+
                 if list_widget is None:
                     return None
                 item = list_widget.currentItem()
                 if item is None:
                     return None
+                stored = item.data(Qt.ItemDataRole.UserRole)
+                if isinstance(stored, str) and stored.strip():
+                    return stored.strip()
                 text = item.text().strip()
                 return text or None
 

@@ -6,8 +6,8 @@ memorizing CLI commands while keeping the UI replaceable later.
 
 ## Current Milestone
 
-The current Phase 3 GUI build now covers the first interactive transcript
-workflow end to end:
+The GUI has now moved beyond the initial Phase 3 shell and supports a more
+consolidated transcript workspace:
 
 - Open a desktop window.
 - Add local files and folders with explicit checkbox selection.
@@ -23,33 +23,21 @@ workflow end to end:
 - Render segment text and timestamps in a transcript viewer.
 - Search transcript keywords and jump to hits.
 - Bind local media to a transcript and seek playback from segments or search hits.
-
-Phase 4 has now started with the first persistence-oriented desktop refinement:
-
-- Persist non-sensitive GUI preferences such as output directory, model,
-  language, preset, formats, timestamp flags, network family, and explicit
-  proxy value.
-- Keep local source list state compatible with older saved payloads.
-- Provide `Save Settings` and `View Settings` actions so persistence is visible
-  and user-controlled instead of hidden.
-- Add direct desktop actions for canceling a running transcription and opening
-  the output directory.
-- Keep settings inspection separate from run details by showing preferences in a
-  dedicated window.
-- Let users override transcript artifact basenames from the GUI so output files
-  can follow a task/session name instead of the source stem.
-- Add a dedicated `Recent Work` window that can reopen recent transcript JSON
-  files, recent output directories, recent lightweight jobs, and recent
-  transcript/media bindings.
-- Keep recent-work state across GUI restarts and remove missing entries
-  gracefully when users try to reopen them.
-- Strengthen transcript/media review so playback, transcript selection, and
-  search-hit navigation stay more consistent during review.
-- Show clearer transcript-media binding state and mismatch feedback inside the
-  GUI.
-- Add a Windows-focused system-audio capture MVP that records to WAV, returns
-  the result as a normal local source, and can auto-delete temporary captures
-  after transcription.
+- Edit transcript segments and save corrected JSON or copies.
+- Re-export transcript artifacts from the current transcript workflow.
+- Save and reapply export profiles.
+- Review transcript artifacts inside `Views` without leaving transcript review.
+- Reopen transcripts through a local transcript library.
+- Filter and sort transcript library entries by source kind, missing state,
+  opened state, and time-oriented sort modes.
+- Review recent transcript work with labels that align more closely with the
+  library.
+- Persist non-sensitive view preferences such as visible base `Views` tabs and
+  the active workspace tab.
+- Cancel active jobs, open output directories, and keep lightweight recent-work
+  shortcuts.
+- Capture Windows system audio to WAV and route it back through the normal
+  local-source transcription flow.
 
 ## Install GUI Dependencies
 
@@ -100,8 +88,9 @@ such as WebView, a web UI, or a more polished native interface.
 
 ## Current Boundary
 
-The GUI is still a lightweight desktop shell. It focuses on one active
-transcription/review surface rather than a full project library or batch queue.
+The GUI is still a lightweight desktop shell. It now has a denser `Views`
+workspace, but it still focuses on one active transcription/review workflow
+rather than a full project database or batch queue.
 
 The `Start Transcription` button runs the collected job in a background Qt
 thread, so the GUI should remain responsive while transcription is running.
@@ -110,7 +99,7 @@ Media sync is intentionally transcript-bound. The GUI first tries to resolve the
 original local media from the transcript metadata; if it cannot, the user binds
 one local media file to that transcript explicitly.
 
-The review surface is now more stateful:
+The review surface is now more stateful and more consolidated:
 
 - current playback position can advance transcript selection automatically
 - search-hit jumps, segment clicks, and playback updates converge on the same
@@ -118,6 +107,10 @@ The review surface is now more stateful:
 - the GUI shows whether media is unbound, auto-bound, or manually bound
 - suspicious transcript/media mismatches are called out with a warning instead
   of staying silent
+- transcript playback, segment review, editing, and artifact inspection now sit
+  inside the same `Views` workspace
+- transcript library reopening and cleanup can be done inside `Views` instead of
+  a separate competing window
 
 Preference persistence currently remains intentionally narrow:
 
@@ -139,6 +132,19 @@ Recent-work support also remains intentionally lightweight:
 - recent jobs are for reopening context quickly, not for full queue management
 - recent transcript/media bindings help restore review sessions without creating
   a persistent asset database
+- recent transcript labels now reuse library metadata where possible so recent
+  work and the library feel like related surfaces instead of separate systems
+
+Transcript-library support is now stronger but still intentionally local:
+
+- library entries can be filtered by source kind, missing state, and opened
+  state
+- library entries can be sorted by label, created time, updated time, or last
+  opened time
+- missing transcript cleanup is visible from both `Views` library actions and
+  the `Recent Work` window
+- media rebind and transcript reopen actions stay centered on the current
+  workspace rather than opening a separate management flow
 
 System-audio capture currently remains intentionally conservative:
 

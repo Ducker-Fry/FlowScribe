@@ -6,6 +6,10 @@ from .models import (
     TranscriptLibraryEntry,
     derive_library_entry_id,
 )
+from .query import (
+    filter_transcript_library_entries,
+    sort_transcript_library_entries,
+)
 from .store import TranscriptLibraryStore
 
 __all__ = [
@@ -14,4 +18,6 @@ __all__ = [
     "TranscriptLibraryEntry",
     "TranscriptLibraryStore",
     "derive_library_entry_id",
+    "filter_transcript_library_entries",
+    "sort_transcript_library_entries",
 ]

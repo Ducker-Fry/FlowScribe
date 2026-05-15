@@ -13,11 +13,14 @@ from flowscribe.gui.qt_app import (
     _infer_library_source_media_path_from_result,
     _library_entry_list_label,
     _library_entry_missing_summary,
+    _library_results_summary,
     _normalize_gui_preferences_payload,
     _normalize_recent_work_entry_paths,
     _recent_work_payload,
+    _recent_transcript_list_label,
     _read_viewable_artifact_text,
     _sort_library_entries,
+    _view_preferences_payload,
     _view_tab_key_for_artifact,
     _view_tab_title_for_artifact,
     _normalize_viewable_artifact_paths,
@@ -164,7 +167,7 @@ def test_gui_state_payload_uses_nested_preferences_and_local_sources(tmp_path: P
     )
 
     assert payload == {
-        "version": 4,
+        "version": 5,
         "preferences": {
             "output_dir": "saved-outputs",
             "output_name_base": "custom-name",
@@ -210,6 +213,14 @@ def test_gui_state_payload_uses_nested_preferences_and_local_sources(tmp_path: P
                 "word_timestamps": False,
             }
         ],
+        "view_preferences": {
+            "visible_tabs": {
+                "run_details": True,
+                "transcript": True,
+                "library": True,
+            },
+            "current_tab": "transcript",
+        },
     }
 
 
@@ -221,7 +232,7 @@ def test_normalize_gui_state_payload_supports_nested_and_legacy_formats(tmp_path
     outputs = tmp_path / "outputs"
     outputs.mkdir()
 
-    local_paths, checked, preferences, recent_work, export_profiles = _normalize_gui_state_payload(
+    local_paths, checked, preferences, recent_work, export_profiles, view_preferences = _normalize_gui_state_payload(
         {
             "preferences": {
                 "output_dir": "custom-out",
@@ -268,6 +279,14 @@ def test_normalize_gui_state_payload_supports_nested_and_legacy_formats(tmp_path
                     "word_timestamps": False,
                 }
             ],
+            "view_preferences": {
+                "visible_tabs": {
+                    "run_details": True,
+                    "transcript": False,
+                    "library": True,
+                },
+                "current_tab": "library",
+            },
         }
     )
 
@@ -281,8 +300,16 @@ def test_normalize_gui_state_payload_supports_nested_and_legacy_formats(tmp_path
     assert recent_work["recent_output_dirs"] == [str(outputs)]
     assert export_profiles[0].name == "Review"
     assert export_profiles[0].output_formats == ("txt", "md")
+    assert view_preferences == {
+        "visible_tabs": {
+            "run_details": True,
+            "transcript": False,
+            "library": True,
+        },
+        "current_tab": "library",
+    }
 
-    legacy_local_paths, legacy_checked, legacy_preferences, legacy_recent_work, legacy_profiles = _normalize_gui_state_payload(
+    legacy_local_paths, legacy_checked, legacy_preferences, legacy_recent_work, legacy_profiles, legacy_view_preferences = _normalize_gui_state_payload(
         {
             "local_paths": [str(media)],
             "selected_paths": [str(media)],
@@ -311,6 +338,14 @@ def test_normalize_gui_state_payload_supports_nested_and_legacy_formats(tmp_path
         "recent_media_bindings": [],
     }
     assert legacy_profiles == ()
+    assert legacy_view_preferences == {
+        "visible_tabs": {
+            "run_details": True,
+            "transcript": True,
+            "library": True,
+        },
+        "current_tab": "transcript",
+    }
 
 
 def test_normalize_recent_work_entry_paths_deduplicates_and_preserves_missing_paths(tmp_path: Path) -> None:
@@ -324,6 +359,26 @@ def test_normalize_recent_work_entry_paths_deduplicates_and_preserves_missing_pa
     )
 
     assert normalized == [str(transcript), str(missing)]
+
+
+def test_view_preferences_payload_keeps_valid_state_and_falls_back_safely() -> None:
+    assert _view_preferences_payload(
+        {
+            "visible_tabs": {
+                "run_details": False,
+                "transcript": False,
+                "library": False,
+            },
+            "current_tab": "library",
+        }
+    ) == {
+        "visible_tabs": {
+            "run_details": False,
+            "transcript": True,
+            "library": False,
+        },
+        "current_tab": "transcript",
+    }
 
 
 def test_recent_work_payload_filters_invalid_entries(tmp_path: Path) -> None:
@@ -476,6 +531,7 @@ def test_library_entry_helpers_format_missing_status_and_dates(tmp_path: Path) -
 
     assert _format_library_datetime(None) == "never"
     assert _library_entry_missing_summary(entry) == "ok"
+    assert "Showing 1 of 1 transcript entry" in _library_results_summary((entry,), total_count=1)
 
 
 def test_library_entry_list_label_includes_required_fields(tmp_path: Path) -> None:
@@ -497,6 +553,24 @@ def test_library_entry_list_label_includes_required_fields(tmp_path: Path) -> No
     assert "Last opened:" in label
     assert f"Output dir: {output_dir.resolve()}" in label
     assert "Missing: ok" in label
+
+
+def test_recent_transcript_list_label_includes_library_metadata_when_available(tmp_path: Path) -> None:
+    transcript = tmp_path / "lesson.json"
+    transcript.write_text("{}", encoding="utf-8")
+    output_dir = tmp_path / "outputs"
+    output_dir.mkdir()
+    entry = _build_library_entry(
+        transcript,
+        output_dir=output_dir,
+        source_kind="local",
+        opened_at=datetime(2026, 5, 16, 9, 0, 0),
+    )
+
+    label = _recent_transcript_list_label(transcript.resolve(), entry=entry)
+
+    assert "lesson.json | Source: local | Missing: ok" in label
+    assert "Last opened: 2026-05-16 09:00:00" in label
 
 
 def test_sort_library_entries_prefers_last_opened_then_recent_updates(tmp_path: Path) -> None:
