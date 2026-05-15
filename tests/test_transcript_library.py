@@ -117,6 +117,52 @@ def test_transcript_library_store_recovers_from_corrupt_json(tmp_path: Path) -> 
     assert len(backups) == 1
 
 
+def test_transcript_library_store_treats_unreadable_path_as_empty(monkeypatch, tmp_path: Path) -> None:
+    store = TranscriptLibraryStore(tmp_path / "library.json")
+
+    original_is_file = Path.is_file
+
+    def fake_is_file(self: Path) -> bool:
+        if self == store.path:
+            raise PermissionError("denied")
+        return original_is_file(self)
+
+    monkeypatch.setattr(Path, "is_file", fake_is_file)
+
+    assert store.list_entries() == ()
+
+
+def test_transcript_library_store_ignores_write_failures(monkeypatch, tmp_path: Path) -> None:
+    output_dir = tmp_path / "outputs"
+    output_dir.mkdir()
+    transcript = output_dir / "lesson.json"
+    transcript.write_text('{"segments": []}', encoding="utf-8")
+    store = TranscriptLibraryStore(tmp_path / "library.json")
+    entry = TranscriptLibraryEntry.create(
+        transcript_path=transcript,
+        output_dir=output_dir,
+        display_label="Lesson transcript",
+    )
+
+    original_mkdir = Path.mkdir
+    original_write_text = Path.write_text
+
+    def fake_mkdir(self: Path, *args, **kwargs):
+        if self == store.path.parent:
+            return None
+        return original_mkdir(self, *args, **kwargs)
+
+    def fake_write_text(self: Path, *args, **kwargs):
+        if self == store.path:
+            raise PermissionError("denied")
+        return original_write_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", fake_mkdir)
+    monkeypatch.setattr(Path, "write_text", fake_write_text)
+
+    store.save_entries((entry,))
+
+
 def test_transcript_library_store_marks_opened_timestamp(tmp_path: Path) -> None:
     output_dir = tmp_path / "outputs"
     output_dir.mkdir()

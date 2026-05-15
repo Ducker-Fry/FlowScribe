@@ -333,6 +333,11 @@ Phase 5 progress:
   whether the captured WAV file is still growing.
 - GUI messaging for missing helper binaries, unsupported devices, and startup
   failures is clearer and remains visible without enabling noisy packaged logs.
+- The GUI now exposes a unified `Views` window for run details, transcript
+  review, and generated transcript artifacts such as `.txt`, `.md`, `.json`,
+  `.srt`, and `.vtt`.
+- Transcript review now keeps media sync inside the same transcript-facing view
+  instead of splitting segment navigation and playback across separate windows.
 - Release installation and packaging documentation now describe transcript
   library, correction, re-export, export profiles, helper troubleshooting, and
   capture activity feedback.

@@ -47,11 +47,14 @@ class TranscriptLibraryStore:
             "version": LIBRARY_STORE_VERSION,
             "entries": [self._entry_to_payload(entry.refresh_missing_status()) for entry in entries],
         }
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+        except OSError:
+            return
 
     def upsert_entry(self, entry: TranscriptLibraryEntry) -> TranscriptLibraryEntry:
         entries = list(self.list_entries())
@@ -122,11 +125,17 @@ class TranscriptLibraryStore:
         return removed
 
     def _load_entries_from_disk(self) -> list[TranscriptLibraryEntry]:
-        if not self.path.is_file():
+        try:
+            is_file = self.path.is_file()
+        except OSError:
+            return []
+        if not is_file:
             return []
 
         try:
             payload = json.loads(self.path.read_text(encoding="utf-8"))
+        except OSError:
+            return []
         except json.JSONDecodeError:
             self._recover_corrupt_store_file()
             return []

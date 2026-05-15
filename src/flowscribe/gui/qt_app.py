@@ -84,6 +84,7 @@ MAX_RECENT_OUTPUT_DIRS = 8
 MAX_RECENT_JOBS = 10
 MAX_RECENT_MEDIA_BINDINGS = 8
 LIBRARY_OUTPUT_SUFFIXES = (".txt", ".md", ".json", ".srt", ".vtt")
+VIEW_ARTIFACT_SUFFIXES = (".json", ".txt", ".md", ".srt", ".vtt")
 
 
 def _default_recent_work() -> dict[str, list[dict[str, object]] | list[str]]:
@@ -368,6 +369,45 @@ def _discover_transcript_output_paths(transcript_path: Path) -> tuple[Path, ...]
         if candidate.is_file():
             discovered.append(candidate)
     return tuple(discovered)
+
+
+def _is_viewable_artifact_path(path: Path) -> bool:
+    return path.suffix.lower() in VIEW_ARTIFACT_SUFFIXES
+
+
+def _normalize_viewable_artifact_paths(paths: tuple[Path, ...]) -> tuple[Path, ...]:
+    normalized: list[Path] = []
+    seen: set[Path] = set()
+    for path in paths:
+        if not _is_viewable_artifact_path(path):
+            continue
+        try:
+            candidate = path.expanduser().resolve()
+        except OSError:
+            candidate = path
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        normalized.append(candidate)
+    return tuple(normalized)
+
+
+def _view_tab_key_for_artifact(path: Path) -> str:
+    return f"artifact:{str(path).lower()}"
+
+
+def _view_tab_title_for_artifact(path: Path) -> str:
+    suffix = path.suffix.lower().lstrip(".") or "file"
+    return f"{path.name} [{suffix}]"
+
+
+def _read_viewable_artifact_text(path: Path) -> str:
+    for encoding in ("utf-8", "utf-8-sig", "utf-16"):
+        try:
+            return path.read_text(encoding=encoding)
+        except UnicodeError:
+            continue
+    return path.read_text(encoding="utf-8", errors="replace")
 
 
 def _resolve_library_source_media_path(transcript_path: Path) -> Path | None:
@@ -690,6 +730,14 @@ class FlowScribeMainWindow:
                 self._active_segment_row = -1
                 self._settings_dialog: object | None = None
                 self._settings_viewer: object | None = None
+                self._views_dialog: object | None = None
+                self._views_tab_widget: object | None = None
+                self._view_menu_button: object | None = None
+                self._view_menu: object | None = None
+                self._view_tab_pages: dict[str, object] = {}
+                self._view_tab_titles: dict[str, str] = {}
+                self._view_tab_visibility: dict[str, bool] = {}
+                self._artifact_viewers: dict[Path, object] = {}
                 self._recent_work = _default_recent_work()
                 self._recent_work_dialog: object | None = None
                 self._recent_transcripts_list: object | None = None
@@ -732,8 +780,10 @@ class FlowScribeMainWindow:
                     QScrollArea,
                     QSlider,
                     QSizePolicy,
+                    QTabWidget,
                     QTextBrowser,
                     QTextEdit,
+                    QToolButton,
                     QVBoxLayout,
                     QWidget,
                 )
@@ -888,6 +938,13 @@ class FlowScribeMainWindow:
                 open_transcript_button = QPushButton("Open Transcript JSON")
                 open_transcript_button.clicked.connect(self._open_transcript_json)
                 self.open_transcript_button = open_transcript_button
+                self.open_artifact_button = QPushButton("Open Artifact View")
+                self.open_artifact_button.clicked.connect(self._open_view_artifact)
+                self.open_views_button = QPushButton("Views")
+                self.open_views_button.clicked.connect(self._show_views_window)
+                self.view_menu_button = QToolButton()
+                self.view_menu_button.setText("View Menu")
+                self.view_menu_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
                 self.view_settings_button = QPushButton("View Settings")
                 self.view_settings_button.clicked.connect(self._show_saved_settings)
                 self.export_profiles_button = QPushButton("Export Profiles")
@@ -911,6 +968,9 @@ class FlowScribeMainWindow:
                 self.open_output_button.setEnabled(False)
                 action_buttons = [
                     open_transcript_button,
+                    self.open_artifact_button,
+                    self.open_views_button,
+                    self.view_menu_button,
                     self.view_settings_button,
                     self.export_profiles_button,
                     self.view_library_button,
@@ -1057,21 +1117,18 @@ class FlowScribeMainWindow:
                 self.transcript_edit_status_label.setWordWrap(True)
                 transcript_edit_layout.addWidget(self.transcript_edit_status_label)
 
+                self.views_hint_label = QLabel(
+                    "Use Views to switch between run details, transcript review, and generated artifacts."
+                )
+                self.views_hint_label.setWordWrap(True)
+
+                self._create_views_window(media_box, search_row, transcript_edit_box)
+
                 right_layout.addWidget(settings_box)
-                right_layout.addWidget(media_box, 1)
                 right_layout.addLayout(action_layout)
                 right_layout.addWidget(self.status_label)
                 right_layout.addWidget(self.progress_bar)
-                right_layout.addWidget(QLabel("Run details"))
-                right_layout.addWidget(self.preview_output)
-                right_layout.addWidget(QLabel("Transcript viewer"))
-                right_layout.addWidget(self.transcript_summary)
-                right_layout.addLayout(search_row)
-                right_layout.addWidget(QLabel("Search results"))
-                right_layout.addWidget(self.search_results)
-                right_layout.addWidget(QLabel("Transcript segments"))
-                right_layout.addWidget(self.transcript_segments, 1)
-                right_layout.addWidget(transcript_edit_box)
+                right_layout.addWidget(self.views_hint_label)
 
                 left_scroll = QScrollArea()
                 left_scroll.setWidgetResizable(True)
@@ -1112,6 +1169,230 @@ class FlowScribeMainWindow:
                     self._persist_local_source_state()
                 else:
                     self.status_label.setText("No new supported local sources were added.")
+
+            def _create_views_window(self, media_box, search_row, transcript_edit_box) -> None:
+                from PySide6.QtWidgets import (
+                    QDialog,
+                    QFrame,
+                    QHBoxLayout,
+                    QLabel,
+                    QMenu,
+                    QPushButton,
+                    QScrollArea,
+                    QTabWidget,
+                    QToolButton,
+                    QVBoxLayout,
+                    QWidget,
+                )
+
+                dialog = QDialog(self)
+                dialog.setWindowTitle("Views")
+                dialog.resize(980, 760)
+
+                layout = QVBoxLayout(dialog)
+                toolbar_row = QHBoxLayout()
+                toolbar_row.addWidget(QLabel("Open and switch between run details, transcript review, and artifacts."))
+                toolbar_row.addStretch(1)
+
+                menu_button = QToolButton(dialog)
+                menu_button.setText("View Menu")
+                menu_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+                toolbar_row.addWidget(menu_button)
+
+                close_button = QPushButton("Close", dialog)
+                close_button.clicked.connect(dialog.accept)
+                toolbar_row.addWidget(close_button)
+                layout.addLayout(toolbar_row)
+
+                tabs = QTabWidget(dialog)
+                tabs.setTabPosition(QTabWidget.TabPosition.North)
+                layout.addWidget(tabs)
+
+                run_details_page = QWidget(dialog)
+                run_details_layout = QVBoxLayout(run_details_page)
+                run_details_layout.addWidget(self.preview_output)
+
+                transcript_page = QWidget(dialog)
+                transcript_page_layout = QVBoxLayout(transcript_page)
+                transcript_scroll = QScrollArea(transcript_page)
+                transcript_scroll.setWidgetResizable(True)
+                transcript_scroll.setFrameShape(QFrame.Shape.NoFrame)
+
+                transcript_content = QWidget(transcript_scroll)
+                transcript_layout = QVBoxLayout(transcript_content)
+                transcript_layout.addWidget(media_box)
+                transcript_layout.addWidget(self.transcript_summary)
+                transcript_layout.addLayout(search_row)
+                transcript_layout.addWidget(QLabel("Search results"))
+                transcript_layout.addWidget(self.search_results)
+                transcript_layout.addWidget(QLabel("Transcript segments"))
+                transcript_layout.addWidget(self.transcript_segments)
+                transcript_layout.addWidget(transcript_edit_box)
+                transcript_layout.addStretch(1)
+
+                transcript_scroll.setWidget(transcript_content)
+                transcript_page_layout.addWidget(transcript_scroll)
+
+                self._views_dialog = dialog
+                self._views_tab_widget = tabs
+                self._view_menu_button = menu_button
+                self._view_tab_pages = {
+                    "run_details": run_details_page,
+                    "transcript": transcript_page,
+                }
+                self._view_tab_titles = {
+                    "run_details": "Run Details",
+                    "transcript": "Transcript",
+                }
+                self._view_tab_visibility = {
+                    "run_details": True,
+                    "transcript": True,
+                }
+                self._artifact_viewers = {}
+
+                tabs.addTab(run_details_page, "Run Details")
+                tabs.addTab(transcript_page, "Transcript")
+
+                menu = QMenu(menu_button)
+                menu_button.setMenu(menu)
+                self._view_menu = menu
+                self.view_menu_button.setMenu(menu)
+                self.view_menu_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+                self._refresh_view_menu()
+
+            def _refresh_view_menu(self) -> None:
+                from PySide6.QtGui import QAction
+
+                if self._view_menu is None:
+                    return
+                self._view_menu.clear()
+                for key, title in self._view_tab_titles.items():
+                    action = QAction(title, self)
+                    action.setCheckable(True)
+                    action.setChecked(self._view_tab_visibility.get(key, False))
+                    action.toggled.connect(lambda checked, tab_key=key: self._set_view_tab_visible(tab_key, checked))
+                    self._view_menu.addAction(action)
+
+            def _find_view_tab_index(self, key: str) -> int:
+                if self._views_tab_widget is None:
+                    return -1
+                page = self._view_tab_pages.get(key)
+                if page is None:
+                    return -1
+                return self._views_tab_widget.indexOf(page)
+
+            def _set_view_tab_visible(self, key: str, visible: bool) -> None:
+                if self._views_tab_widget is None:
+                    return
+                page = self._view_tab_pages.get(key)
+                title = self._view_tab_titles.get(key, key)
+                if page is None:
+                    return
+                index = self._views_tab_widget.indexOf(page)
+                if visible:
+                    if index < 0:
+                        self._views_tab_widget.addTab(page, title)
+                    self._view_tab_visibility[key] = True
+                    return
+                if index >= 0 and self._views_tab_widget.count() > 1:
+                    self._views_tab_widget.removeTab(index)
+                self._view_tab_visibility[key] = self._views_tab_widget.indexOf(page) >= 0
+                self._refresh_view_menu()
+
+            def _show_views_window(self) -> None:
+                if self._views_dialog is None:
+                    return
+                self._views_dialog.show()
+                self._views_dialog.raise_()
+                self._views_dialog.activateWindow()
+
+            def _select_view_tab(self, key: str) -> None:
+                if self._views_tab_widget is None:
+                    return
+                self._set_view_tab_visible(key, True)
+                index = self._find_view_tab_index(key)
+                if index >= 0:
+                    self._views_tab_widget.setCurrentIndex(index)
+                self._show_views_window()
+
+            def _ensure_artifact_view_tab(self, path: Path) -> None:
+                from PySide6.QtWidgets import QPlainTextEdit, QWidget, QVBoxLayout
+
+                if not _is_viewable_artifact_path(path):
+                    return
+                normalized = path.expanduser().resolve()
+                key = _view_tab_key_for_artifact(normalized)
+                title = _view_tab_title_for_artifact(normalized)
+                viewer = self._artifact_viewers.get(normalized)
+                page = self._view_tab_pages.get(key)
+                if viewer is None or page is None:
+                    page = QWidget(self._views_dialog)
+                    page_layout = QVBoxLayout(page)
+                    viewer = QPlainTextEdit(page)
+                    viewer.setReadOnly(True)
+                    page_layout.addWidget(viewer)
+                    self._artifact_viewers[normalized] = viewer
+                    self._view_tab_pages[key] = page
+                viewer.setPlainText(_read_viewable_artifact_text(normalized))
+                self._view_tab_titles[key] = title
+                self._view_tab_visibility[key] = True
+                self._set_view_tab_visible(key, True)
+                index = self._find_view_tab_index(key)
+                if index >= 0:
+                    self._views_tab_widget.setTabText(index, title)
+                self._refresh_view_menu()
+
+            def _clear_artifact_view_tabs(self) -> None:
+                artifact_keys = [key for key in self._view_tab_pages if key.startswith("artifact:")]
+                for key in artifact_keys:
+                    page = self._view_tab_pages.get(key)
+                    if self._views_tab_widget is not None and page is not None:
+                        index = self._views_tab_widget.indexOf(page)
+                        if index >= 0:
+                            self._views_tab_widget.removeTab(index)
+                    self._view_tab_pages.pop(key, None)
+                    self._view_tab_titles.pop(key, None)
+                    self._view_tab_visibility.pop(key, None)
+                self._artifact_viewers = {}
+                self._refresh_view_menu()
+
+            def _load_artifact_views(self, paths: tuple[Path, ...], *, replace: bool = False) -> None:
+                if replace:
+                    self._clear_artifact_view_tabs()
+                for path in _normalize_viewable_artifact_paths(paths):
+                    if path.is_file():
+                        self._ensure_artifact_view_tab(path)
+
+            def _open_view_artifact(self) -> None:
+                from PySide6.QtWidgets import QFileDialog
+
+                path, _ = QFileDialog.getOpenFileName(
+                    self,
+                    "Open transcript artifact",
+                    self.output_dir_input.text().strip() or "outputs",
+                    "Viewable artifacts (*.json *.txt *.md *.srt *.vtt)",
+                )
+                if not path:
+                    return
+                self._open_transcript_or_artifact(Path(path))
+
+            def _open_transcript_or_artifact(self, path: Path) -> bool:
+                normalized = path.expanduser().resolve()
+                if normalized.suffix.lower() == ".json" and self._load_transcript_json(normalized):
+                    self._select_view_tab("transcript")
+                    return True
+                if not normalized.is_file():
+                    self.status_label.setText(f"Artifact file is missing: {normalized}")
+                    return False
+                if not _is_viewable_artifact_path(normalized):
+                    self.status_label.setText(
+                        f"Artifact format is not viewable yet: {normalized.suffix or normalized.name}"
+                    )
+                    return False
+                self._load_artifact_views((normalized,), replace=True)
+                self.status_label.setText(f"Opened artifact view: {normalized.name}")
+                self._select_view_tab(_view_tab_key_for_artifact(normalized))
+                return True
 
             def _choose_files(self) -> None:
                 from PySide6.QtWidgets import QFileDialog
@@ -1176,7 +1457,7 @@ class FlowScribeMainWindow:
                 )
                 if not path:
                     return
-                self._load_transcript_json(Path(path))
+                self._open_transcript_or_artifact(Path(path))
 
             def _bind_media_to_transcript(self) -> None:
                 from PySide6.QtWidgets import QFileDialog
@@ -1501,6 +1782,7 @@ class FlowScribeMainWindow:
                 preview = form.preview()
                 self.status_label.setText("State collected successfully.")
                 self.preview_output.setPlainText(json.dumps(preview, ensure_ascii=False, indent=2))
+                self._select_view_tab("run_details")
 
             def _start_transcription(self) -> None:
                 if self._thread is not None:
@@ -1529,6 +1811,7 @@ class FlowScribeMainWindow:
                     + json.dumps(form.preview(), ensure_ascii=False, indent=2)
                     + "\n"
                 )
+                self._select_view_tab("run_details")
                 self.status_label.setText("Running transcription in the background...")
                 self.progress_bar.setRange(0, 0)
                 self._cancel_requested = False
@@ -1613,6 +1896,11 @@ class FlowScribeMainWindow:
                         for artifacts in result.outputs:
                             for path in artifacts.paths:
                                 self.preview_output.append(str(path))
+                        self._load_artifact_views(
+                            tuple(path for artifacts in result.outputs for path in artifacts.paths),
+                            replace=True,
+                        )
+                        self._select_view_tab("run_details")
                     return
 
                 if result.errors:
@@ -1623,6 +1911,7 @@ class FlowScribeMainWindow:
                     self.preview_output.append("\nFailures:")
                     for error in result.errors:
                         self.preview_output.append(f"- {error.source}: {error.message}")
+                    self._select_view_tab("run_details")
                     self._cleanup_temporary_capture_files()
                     return
 
@@ -1630,11 +1919,14 @@ class FlowScribeMainWindow:
                 self.status_label.setText(f"Done. Succeeded: {result.succeeded}.")
                 self.preview_output.append("\nOutput files:")
                 transcript_loaded = False
+                output_paths: list[Path] = []
                 for artifacts in result.outputs:
                     for path in artifacts.paths:
+                        output_paths.append(path)
                         self.preview_output.append(str(path))
                         if not transcript_loaded and path.suffix.lower() == ".json":
                             transcript_loaded = self._load_transcript_json(path)
+                self._load_artifact_views(tuple(output_paths), replace=True)
                 if not transcript_loaded:
                     self._transcript_view = None
                     self._editable_transcript = None
@@ -1642,6 +1934,9 @@ class FlowScribeMainWindow:
                     self.transcript_summary.setPlainText("No transcript JSON output was generated for this run.")
                     self.transcript_segments.clear()
                     self._clear_transcript_editor(message="No transcript loaded for editing.")
+                    self._select_view_tab("run_details")
+                else:
+                    self._select_view_tab("transcript")
                 self._cleanup_temporary_capture_files()
 
             def _fail_transcription(self, message: str) -> None:
@@ -1652,6 +1947,7 @@ class FlowScribeMainWindow:
                 self.cancel_button.setEnabled(False)
                 self.status_label.setText("Transcription failed.")
                 self.preview_output.append(f"\nError: {message}")
+                self._select_view_tab("run_details")
                 self._remember_recent_failed_run(message)
                 self._cleanup_temporary_capture_files()
 
@@ -1708,6 +2004,8 @@ class FlowScribeMainWindow:
                 self._clear_transcript_editor(message="Select a transcript segment to edit its text.")
                 self._refresh_transcript_edit_state()
                 self._load_media_for_transcript(view)
+                self._load_artifact_views(_discover_transcript_output_paths(path), replace=True)
+                self._select_view_tab("transcript")
                 self.status_label.setText(f"Loaded transcript JSON: {path.name}")
                 return True
 
@@ -1766,6 +2064,7 @@ class FlowScribeMainWindow:
                     return
 
                 self._select_transcript_segment(hit.segment_index, follow=True, focus=True)
+                self._select_view_tab("transcript")
                 self._seek_media_seconds(transcript_search_hit_seek_seconds(hit), autoplay=True)
 
             def _activate_selected_segment(self, *_args) -> None:
@@ -1775,6 +2074,7 @@ class FlowScribeMainWindow:
                 if row < 0 or row >= len(self._transcript_view.segments):
                     return
                 self._select_transcript_segment(row, follow=True, focus=True)
+                self._select_view_tab("transcript")
                 segment = self._transcript_view.segments[row]
                 self._seek_media_seconds(transcript_segment_seek_seconds(segment), autoplay=True)
 
@@ -2556,6 +2856,7 @@ class FlowScribeMainWindow:
                 self.preview_output.append("\nRe-exported transcript outputs:")
                 for path in artifacts.paths:
                     self.preview_output.append(str(path))
+                self._load_artifact_views(tuple(artifacts.paths), replace=True)
 
                 transcript_paths = [
                     path
@@ -2588,6 +2889,10 @@ class FlowScribeMainWindow:
                 self.status_label.setText(
                     f"Re-exported {len(artifacts.paths)} transcript artifact(s) from JSON."
                 )
+                if transcript_paths:
+                    self._select_view_tab("transcript")
+                elif artifacts.paths:
+                    self._select_view_tab(_view_tab_key_for_artifact(artifacts.paths[0]))
                 return True
 
             def _confirm_unsaved_transcript_edits(self) -> bool:

@@ -16,7 +16,11 @@ from flowscribe.gui.qt_app import (
     _normalize_gui_preferences_payload,
     _normalize_recent_work_entry_paths,
     _recent_work_payload,
+    _read_viewable_artifact_text,
     _sort_library_entries,
+    _view_tab_key_for_artifact,
+    _view_tab_title_for_artifact,
+    _normalize_viewable_artifact_paths,
     _normalize_gui_state_payload,
     _local_source_state_payload,
     _normalize_local_source_state_payload,
@@ -391,6 +395,30 @@ def test_discover_transcript_output_paths_collects_known_sibling_formats(tmp_pat
     discovered = _discover_transcript_output_paths(transcript)
 
     assert discovered == (transcript.resolve(), txt_output.resolve(), srt_output.resolve())
+
+
+def test_normalize_viewable_artifact_paths_filters_duplicates_and_unsupported_files(tmp_path: Path) -> None:
+    transcript = tmp_path / "lesson.json"
+    transcript.write_text("{}", encoding="utf-8")
+    txt_output = tmp_path / "lesson.txt"
+    txt_output.write_text("hello", encoding="utf-8")
+    unsupported = tmp_path / "lesson.docx"
+    unsupported.write_text("ignore", encoding="utf-8")
+
+    normalized = _normalize_viewable_artifact_paths(
+        (transcript, txt_output, transcript, unsupported)
+    )
+
+    assert normalized == (transcript.resolve(), txt_output.resolve())
+
+
+def test_view_artifact_helpers_build_stable_keys_titles_and_text(tmp_path: Path) -> None:
+    artifact = tmp_path / "lesson.srt"
+    artifact.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n", encoding="utf-8")
+
+    assert _view_tab_key_for_artifact(artifact.resolve()).startswith("artifact:")
+    assert _view_tab_title_for_artifact(artifact.resolve()) == "lesson.srt [srt]"
+    assert "Hello" in _read_viewable_artifact_text(artifact)
 
 
 def test_build_library_entry_merges_existing_outputs_and_updates_binding(tmp_path: Path) -> None:

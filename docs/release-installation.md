@@ -109,14 +109,17 @@ Inside the GUI package you can:
 - add local files and folders with checkbox selection
 - paste a public URL
 - capture Windows system playback through the bundled WASAPI helper
-- open an existing transcript JSON
+- open an existing transcript JSON or another generated transcript artifact
 - browse a transcript library
+- use a unified `Views` window to switch between run details, transcript review,
+  and generated transcript artifacts
 - edit transcript segment text
 - save corrected transcript JSON by overwriting or writing a copy
 - re-export transcript JSON into TXT, Markdown, JSON, SRT, or VTT
 - save and apply named export profiles
 - search transcript keywords
-- bind local media to a transcript for playback sync
+- bind local media to a transcript for playback sync directly inside the
+  transcript review view
 
 During capture, the GUI stays quiet in packaged mode but now reports whether the
 capture file is actively growing or appears stalled. If capture starts but no
