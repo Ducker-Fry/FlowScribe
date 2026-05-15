@@ -341,6 +341,24 @@ Current Phase 4 progress:
 - Helper command output is machine-readable JSON.
 - `capture` writes WAV output through NAudio WASAPI loopback capture and stops
   cleanly when stdin receives `stop`.
+- WASAPI helper Phase 3 is implemented.
+- Python now has a helper integration boundary in
+  `src/flowscribe/media/system_audio_capture_helper.py`.
+- Python capture models now live in
+  `src/flowscribe/media/system_audio_capture_models.py`.
+- `WasapiHelperCaptureRecorder` can locate the helper in source and packaged
+  layouts, run `version`, `probe`, and `list-devices`, start capture, send
+  `stop`, and return the finalized WAV path.
+- `CaptureController` is available as the GUI-facing facade for the next GUI
+  hookup phase.
+- WASAPI helper Phase 4 is implemented.
+- The PySide6 GUI now owns `CaptureController` instead of directly owning the
+  legacy ffmpeg/dshow recorder.
+- GUI startup probes helper support and enables `Start Capture` only when the
+  helper reports a supported default output device.
+- GUI start/stop capture now runs through the helper-backed controller while
+  preserving the existing captured-WAV local-source workflow and keep/delete
+  behavior.
 - Current helper validation:
 
   ```powershell
@@ -348,4 +366,8 @@ Current Phase 4 progress:
   .\tools\wasapi-capture-helper\src\WasapiCaptureHelper\bin\x64\Release\net8.0-windows\win-x64\WasapiCaptureHelper.exe version
   .\tools\wasapi-capture-helper\src\WasapiCaptureHelper\bin\x64\Release\net8.0-windows\win-x64\WasapiCaptureHelper.exe probe
   .\tools\wasapi-capture-helper\src\WasapiCaptureHelper\bin\x64\Release\net8.0-windows\win-x64\WasapiCaptureHelper.exe list-devices
+  python -m pytest tests\test_system_audio_capture.py tests\test_system_audio_capture_helper.py
+  python -m ruff check src\flowscribe\media\system_audio_capture_helper.py src\flowscribe\media\system_audio_capture_models.py tests\test_system_audio_capture_helper.py
+  python -m pytest tests\test_gui_qt_app.py tests\test_gui_state.py tests\test_system_audio_capture_helper.py
+  python -m compileall src\flowscribe\gui src\flowscribe\media
   ```

@@ -30,8 +30,8 @@ Recommended implementation sequence:
 
 1. create the helper project scaffold - complete
 2. implement the first helper CLI contract - complete
-3. add Python-side helper process integration
-4. connect GUI capture flow to the helper
+3. add Python-side helper process integration - complete
+4. connect GUI capture flow to the helper - complete
 5. package the helper into the GUI release
 6. move `dshow` capture behind a compatibility boundary
 
@@ -455,9 +455,24 @@ Suggested methods:
 
 ### Acceptance Criteria
 
-- Python can run `probe` against the helper
-- Python can start/stop the helper and get a WAV path back
-- helper path resolution is stable for both source runs and packaged runs
+- Complete: Python can run `probe` against the helper.
+- Complete: Python can start/stop the helper and get a WAV path back.
+- Complete: helper path resolution is stable for both source runs and packaged
+  runs.
+
+### Implementation Status
+
+Completed in the current working flow:
+
+- Added `src/flowscribe/media/system_audio_capture_models.py`.
+- Added `src/flowscribe/media/system_audio_capture_helper.py`.
+- Added `CaptureDevice`, `CaptureSupportStatus`, `CaptureEvent`,
+  `CaptureStartResult`, and `CaptureCompletedResult`.
+- Added `WasapiHelperCaptureRecorder` for helper discovery, one-shot helper
+  commands, capture process ownership, stdout JSON event handling, stdin stop,
+  and abort cleanup.
+- Added `CaptureController` as the GUI-facing facade for Phase 4.
+- Added focused tests in `tests/test_system_audio_capture_helper.py`.
 
 ---
 
@@ -532,9 +547,26 @@ Instead:
 
 ### Acceptance Criteria
 
-- GUI startup reflects helper support status
-- capture button only enables when helper says the environment is supported
-- capture result still reuses the existing local transcription workflow
+- Complete: GUI startup reflects helper support status.
+- Complete: capture button only enables when helper says the environment is
+  supported.
+- Complete: capture result still reuses the existing local transcription
+  workflow.
+
+### Implementation Status
+
+Completed in the current working flow:
+
+- `src/flowscribe/gui/qt_app.py` now imports and owns `CaptureController`.
+- GUI support refresh now calls helper-backed `support_status()`.
+- `Start Capture` is enabled only when the helper reports support and no
+  transcription job is running.
+- Capture start uses `start_capture()` and displays the selected/default output
+  device name.
+- Capture stop uses `stop_capture()` and adds the finalized WAV back into the
+  local source list.
+- Existing keep/delete captured-file behavior is preserved.
+- Window close aborts the active helper-backed capture process if needed.
 
 ---
 
@@ -717,10 +749,10 @@ If starting implementation right now, do this in order:
 4. implement `probe` - complete
 5. implement `list-devices` - complete
 6. implement `capture` with stdin stop - complete
-7. add `system_audio_capture_helper.py`
-8. add `CaptureController`
-9. wire GUI to helper support detection
-10. wire GUI start/stop capture flow
+7. add `system_audio_capture_helper.py` - complete
+8. add `CaptureController` - complete
+9. wire GUI to helper support detection - complete
+10. wire GUI start/stop capture flow - complete
 11. create `scripts/build_wasapi_helper.ps1`
 12. update `scripts/build_gui_exe.ps1`
 13. update `release.yml`

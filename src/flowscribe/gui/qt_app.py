@@ -13,7 +13,7 @@ from flowscribe.app.service import TranscriptionService
 from flowscribe.core.errors import MediaPreparationError, SearchError
 from flowscribe.input.file_filter import is_supported_media
 from flowscribe.gui.gui_logging import configure_gui_logging, get_gui_logger
-from flowscribe.media.system_audio_capture import FfmpegSystemAudioRecorder
+from flowscribe.media.system_audio_capture_helper import CaptureController
 from flowscribe.output.time_format import format_timestamp
 from flowscribe.gui.state import (
     GuiTranscriptionForm,
@@ -469,8 +469,8 @@ class FlowScribeMainWindow:
                 self._recent_output_dirs_list: object | None = None
                 self._recent_jobs_list: object | None = None
                 self._recent_media_bindings_list: object | None = None
-                self._capture_recorder = FfmpegSystemAudioRecorder()
-                self._capture_backend: str | None = None
+                self._capture_controller = CaptureController()
+                self._capture_default_device_name: str | None = None
                 self._active_capture_path: Path | None = None
                 self._temporary_capture_paths: set[Path] = set()
                 self._capture_supported = False
@@ -1102,7 +1102,7 @@ class FlowScribeMainWindow:
                     self.status_label.setText(selection_error)
                     self.preview_output.clear()
                     return
-                if self._capture_recorder.is_recording:
+                if self._capture_controller.is_recording():
                     self.status_label.setText("Stop system capture before collecting or starting transcription.")
                     self.preview_output.clear()
                     return
@@ -1122,7 +1122,7 @@ class FlowScribeMainWindow:
                 if self._thread is not None:
                     self.status_label.setText("A transcription job is already running.")
                     return
-                if self._capture_recorder.is_recording:
+                if self._capture_controller.is_recording():
                     self.status_label.setText("Stop system capture before starting transcription.")
                     return
 
@@ -1455,8 +1455,8 @@ class FlowScribeMainWindow:
                 self._update_media_binding_feedback()
 
             def closeEvent(self, event) -> None:
-                if self._capture_recorder.is_recording:
-                    self._capture_recorder.abort()
+                if self._capture_controller.is_recording():
+                    self._capture_controller.abort_capture()
                 self._cleanup_temporary_capture_files()
                 super().closeEvent(event)
 
@@ -1525,7 +1525,7 @@ class FlowScribeMainWindow:
                 if not self._capture_supported:
                     self.status_label.setText("System audio capture is not available on this machine.")
                     return
-                if self._capture_recorder.is_recording:
+                if self._capture_controller.is_recording():
                     self.capture_status_label.setText("System audio capture is already running.")
                     return
                 if self._thread is not None:
@@ -1535,40 +1535,40 @@ class FlowScribeMainWindow:
                 timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
                 output_path = self._capture_output_dir() / f"capture-{timestamp}.wav"
                 try:
-                    started = self._capture_recorder.start(output_path)
+                    started = self._capture_controller.start_capture(output_path)
                 except MediaPreparationError as exc:
                     self.capture_status_label.setText(str(exc))
                     self.status_label.setText("Could not start system audio capture.")
                     return
 
                 self._active_capture_path = started.output_path
-                self._capture_backend = started.backend
                 self.start_capture_button.setEnabled(False)
                 self.stop_capture_button.setEnabled(True)
+                device_name = started.device.name if started.device is not None else self._capture_default_device_name
+                device_text = device_name or "default output device"
                 self.capture_status_label.setText(
-                    f"Capturing system audio with {started.backend}..."
+                    f"Capturing system audio from {device_text}..."
                 )
                 self.status_label.setText("System audio capture started.")
 
             def _stop_system_capture(self) -> None:
-                if not self._capture_recorder.is_recording:
+                if not self._capture_controller.is_recording():
                     self.capture_status_label.setText("System audio capture is not running.")
                     return
 
                 try:
-                    output_path = self._capture_recorder.stop()
+                    completed = self._capture_controller.stop_capture()
                 except MediaPreparationError as exc:
                     self.start_capture_button.setEnabled(True)
                     self.stop_capture_button.setEnabled(False)
                     self._active_capture_path = None
-                    self._capture_backend = None
                     self.capture_status_label.setText(str(exc))
                     self.status_label.setText("System audio capture failed.")
                     return
 
+                output_path = completed.output_path
                 self.start_capture_button.setEnabled(True)
                 self.stop_capture_button.setEnabled(False)
-                self._capture_backend = None
                 self._active_capture_path = None
                 self._add_local_file(output_path)
                 self._check_newly_added_sources([output_path])
@@ -1618,13 +1618,23 @@ class FlowScribeMainWindow:
 
             def _refresh_capture_support(self) -> None:
                 try:
-                    supported, message = self._capture_recorder.support_status()
+                    status = self._capture_controller.support_status()
+                    supported = status.supported
+                    self._capture_default_device_name = (
+                        status.default_device.name if status.default_device is not None else None
+                    )
+                    if supported:
+                        device_text = self._capture_default_device_name or "default output device"
+                        message = f"Ready to capture system playback from {device_text}."
+                    else:
+                        message = status.reason or "System audio capture is not available on this machine."
                 except MediaPreparationError as exc:
                     supported = False
+                    self._capture_default_device_name = None
                     message = str(exc)
 
                 self._capture_supported = supported
-                if self._capture_recorder.is_recording:
+                if self._capture_controller.is_recording():
                     self.start_capture_button.setEnabled(False)
                     self.stop_capture_button.setEnabled(True)
                     return
