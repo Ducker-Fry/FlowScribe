@@ -209,36 +209,59 @@ and run it through the existing transcription pipeline.
 
 ## Milestone 4.6: Release Hardening And Desktop Validation
 
+Chinese milestone name: **发布加固与桌面验证**
+
+Current implementation status: implemented in the current working flow through
+the `v0.2.4` release.
+
 ### Goal
 
-Keep CLI and GUI delivery stable as the desktop workflow grows more capable.
+Keep CLI and GUI release quality stable while desktop functionality continues
+to grow.
 
 ### Scope
 
-- Preserve dual release packaging:
+- Maintain dual release artifacts:
   - CLI portable package
   - GUI portable package
-- Maintain smoke verification for both packaged entry points.
+- Keep smoke checks for both packaging entry points.
 - Extend test coverage for:
   - GUI persistence
-  - cancel flow
-  - recent-work state
-  - capture-related logic where feasible
-- Continue improving end-user release notes and installation instructions.
-- Keep GUI packaged logging behavior quiet and predictable for normal users.
+  - cancel workflow
+  - recent history
+  - capture-related logic
+- Continue improving release documentation and installation instructions.
+- Keep packaged GUI logging quiet and predictable for normal users.
 
 ### Acceptance Criteria
 
 - CLI and GUI release packages continue to build in GitHub Actions.
-- Release workflows verify both packaged entry points successfully.
-- Desktop-specific regressions are covered by focused tests where practical.
-- Release docs reflect actual shipped behavior and artifacts.
+- The release workflow verifies both packaged artifacts.
+- New desktop features have corresponding focused test coverage.
+- Release documentation stays aligned with the actual shipped contents.
+
+### Implementation Notes
+
+- The `v0.2.4` GitHub Release successfully built both Windows x64 artifacts:
+  - `FlowScribe-v0.2.4-windows-x64.zip`
+  - `FlowScribeGUI-v0.2.4-windows-x64.zip`
+- The release workflow verifies:
+  - `FlowScribe.exe doctor`
+  - `FlowScribeGUI.exe --self-test`
+  - packaged `WasapiCaptureHelper.exe version`
+  - packaged `WasapiCaptureHelper.exe probe`
+- The GUI package includes `WasapiCaptureHelper.exe` and NAudio dependency
+  files for Windows system-playback capture.
+- Focused test coverage now includes GUI state persistence, recent work state,
+  GUI entry behavior, capture helper protocol handling, and legacy dshow
+  compatibility boundaries.
+- Packaged GUI logging continues to default to quiet `user` mode.
 
 ### Non-Goals
 
-- Do not redesign the entire CI/CD pipeline without a concrete need.
-- Do not try to solve every possible platform variation beyond the current
-  Windows-focused release path.
+- Do not rewrite the whole CI/CD pipeline.
+- Do not expand beyond the current Windows primary release path into broad
+  platform support.
 
 ## Recommended Implementation Order
 

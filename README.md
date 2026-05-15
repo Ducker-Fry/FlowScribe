@@ -297,10 +297,12 @@ The GUI output folder will be:
 ```text
 dist/FlowScribeGUI/
 |-- FlowScribeGUI.exe
+|-- WasapiCaptureHelper.exe
+|-- NAudio*.dll
 `-- _internal/
 ```
 
-Packaged GUI builds default to quiet `user` logging mode and use a windowed launch path, so normal end-user runs do not open a console window.
+Packaged GUI builds default to quiet `user` logging mode and use a windowed launch path, so normal end-user runs do not open a console window. The bundled WASAPI helper supports Windows system-playback capture from the GUI.
 
 See [Packaging](docs/packaging.md) and [Desktop GUI](docs/gui.md) for release details.
 

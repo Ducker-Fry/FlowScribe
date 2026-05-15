@@ -13,8 +13,8 @@ https://github.com/Ducker-Fry/FlowScribe/releases
 Download the Windows zip package:
 
 ```text
-FlowScribe-v0.2.3-windows-x64.zip
-FlowScribeGUI-v0.2.3-windows-x64.zip
+FlowScribe-v0.2.4-windows-x64.zip
+FlowScribeGUI-v0.2.4-windows-x64.zip
 ```
 
 ## Install
@@ -43,6 +43,8 @@ After extracting the GUI package, the folder should contain:
 ```text
 FlowScribeGUI/
 |-- FlowScribeGUI.exe
+|-- WasapiCaptureHelper.exe
+|-- NAudio*.dll
 `-- _internal/
 ```
 
@@ -106,6 +108,7 @@ Inside the GUI package you can:
 
 - add local files and folders with checkbox selection
 - paste a public URL
+- capture Windows system playback through the bundled WASAPI helper
 - open an existing transcript JSON
 - search transcript keywords
 - bind local media to a transcript for playback sync

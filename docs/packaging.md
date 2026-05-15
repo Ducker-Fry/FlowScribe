@@ -16,6 +16,8 @@ dist/
 |   `-- supporting runtime files
 `-- FlowScribeGUI/
     |-- FlowScribeGUI.exe
+    |-- WasapiCaptureHelper.exe
+    |-- NAudio*.dll
     `-- supporting runtime files
 ```
 
@@ -63,10 +65,13 @@ The CLI script will:
 The GUI script will:
 
 1. Reuse the active Python environment.
-2. Clean previous GUI build artifacts unless `-SkipClean` is used.
-3. Build a one-folder GUI executable with PyInstaller.
-4. Apply a runtime hook that defaults packaged GUI builds to `FLOWSCRIBE_GUI_LOG_MODE=user`.
-5. Launch the GUI with `--windowed`, so end-user runs do not open a console window.
+2. Build or verify the WASAPI capture helper staging output.
+3. Clean previous GUI build artifacts unless `-SkipClean` is used.
+4. Build a one-folder GUI executable with PyInstaller.
+5. Copy `WasapiCaptureHelper.exe` and NAudio dependency files into the GUI release folder.
+6. Smoke-test the packaged helper with `WasapiCaptureHelper.exe version`.
+7. Apply a runtime hook that defaults packaged GUI builds to `FLOWSCRIBE_GUI_LOG_MODE=user`.
+8. Launch the GUI with `--windowed`, so end-user runs do not open a console window.
 
 Optional parameters:
 
@@ -138,8 +143,8 @@ For a visual smoke test, start the GUI normally:
 For a GitHub Release, upload:
 
 ```text
-FlowScribe-v0.2.3-windows-x64.zip
-FlowScribeGUI-v0.2.3-windows-x64.zip
+FlowScribe-v0.2.4-windows-x64.zip
+FlowScribeGUI-v0.2.4-windows-x64.zip
 ```
 
 The CLI ZIP should contain the entire `dist/FlowScribe/` folder, including:
@@ -153,6 +158,8 @@ The CLI ZIP should contain the entire `dist/FlowScribe/` folder, including:
 The GUI ZIP should contain the entire `dist/FlowScribeGUI/` folder, including:
 
 - `FlowScribeGUI.exe`
+- `WasapiCaptureHelper.exe`
+- NAudio dependency DLLs
 - all PyInstaller runtime files
 
 Release notes should include:
@@ -161,6 +168,7 @@ Release notes should include:
 - First run may download Whisper model files.
 - Models are not bundled.
 - The GUI package launches without a console window and defaults to quiet `user` logging mode.
+- The GUI package includes `WasapiCaptureHelper.exe` for Windows system-playback capture.
 - Recommended model: `small`.
 - Quick test command: `FlowScribe.exe doctor`.
 - GUI smoke test command: `FlowScribeGUI.exe --self-test`.

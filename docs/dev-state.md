@@ -25,10 +25,10 @@ The long-term goal is an open-source, portfolio-quality project that can:
 
 ## Current Release
 
-- Latest successful GitHub Release: `v0.2.3`
+- Latest successful GitHub Release: `v0.2.4`
 - Release assets:
-  - `FlowScribe-v0.2.3-windows-x64.zip`
-  - `FlowScribeGUI-v0.2.3-windows-x64.zip`
+  - `FlowScribe-v0.2.4-windows-x64.zip`
+  - `FlowScribeGUI-v0.2.4-windows-x64.zip`
 - Current branch: `main`
 
 ## Completed Capabilities
@@ -378,6 +378,13 @@ Current Phase 4 progress:
   module for older callers only.
 - Normal GUI capture remains helper-first through `CaptureController`; dshow no
   longer defines the GUI capture UX.
+- Milestone 4.6 is implemented in the current working flow.
+- The `v0.2.4` GitHub Release successfully builds and publishes both CLI and
+  GUI Windows x64 portable packages.
+- Release automation verifies the CLI package, GUI package, and bundled
+  `WasapiCaptureHelper.exe` smoke checks.
+- Release and installation documentation now tracks the `v0.2.4` artifact names
+  and packaged GUI helper contents.
 - Current helper validation:
 
   ```powershell
