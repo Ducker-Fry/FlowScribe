@@ -194,12 +194,25 @@ jobs:
           $notes | Set-Content -LiteralPath $notesPath -Encoding UTF8
           "RELEASE_NOTES=$notesPath" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Create GitHub Release
+      - name: Create Or Update GitHub Release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$env:RELEASE_VERSION" "$env:RELEASE_CLI_ZIP" "$env:RELEASE_GUI_ZIP" `
-            --title "FlowScribe $env:RELEASE_VERSION" `
-            --notes-file "$env:RELEASE_NOTES" `
-            --verify-tag
+          $releaseTitle = "FlowScribe $env:RELEASE_VERSION"
+          gh release view "$env:RELEASE_VERSION" *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload "$env:RELEASE_VERSION" "$env:RELEASE_CLI_ZIP" "$env:RELEASE_GUI_ZIP" --clobber
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to upload release assets for $env:RELEASE_VERSION."
+            }
+            gh release edit "$env:RELEASE_VERSION" --title "$releaseTitle" --notes-file "$env:RELEASE_NOTES"
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to update release metadata for $env:RELEASE_VERSION."
+            }
+          } else {
+            gh release create "$env:RELEASE_VERSION" "$env:RELEASE_CLI_ZIP" "$env:RELEASE_GUI_ZIP" `
+              --title "$releaseTitle" `
+              --notes-file "$env:RELEASE_NOTES" `
+              --verify-tag
+          }
