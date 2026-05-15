@@ -158,8 +158,8 @@ In the packaged GUI, check these desktop workflows:
 For a GitHub Release, upload:
 
 ```text
-FlowScribe-v0.2.4-windows-x64.zip
-FlowScribeGUI-v0.2.4-windows-x64.zip
+FlowScribe-v0.2.5-windows-x64.zip
+FlowScribeGUI-v0.2.5-windows-x64.zip
 ```
 
 The CLI ZIP should contain the entire `dist/FlowScribe/` folder, including:

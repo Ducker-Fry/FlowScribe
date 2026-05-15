@@ -25,10 +25,10 @@ The long-term goal is an open-source, portfolio-quality project that can:
 
 ## Current Release
 
-- Latest successful GitHub Release: `v0.2.4`
+- Latest successful GitHub Release: `v0.2.5`
 - Release assets:
-  - `FlowScribe-v0.2.4-windows-x64.zip`
-  - `FlowScribeGUI-v0.2.4-windows-x64.zip`
+  - `FlowScribe-v0.2.5-windows-x64.zip`
+  - `FlowScribeGUI-v0.2.5-windows-x64.zip`
 - Current branch: `main`
 
 ## Completed Capabilities

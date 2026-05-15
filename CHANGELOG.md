@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.2.5 - 2026-05-15
+
+- Added a unified GUI `Views` window for switching between run details,
+  transcript review, and generated transcript artifacts.
+- Added direct artifact viewing for `.json`, `.txt`, `.md`, `.srt`, and `.vtt`
+  outputs from the desktop GUI.
+- Moved transcript media sync into the transcript-facing view so segment
+  navigation, playback sync, search, and editing stay in one workflow surface.
+- Made the transcript library store tolerate unreadable or unwritable state-file
+  paths instead of failing GUI startup.
+
 ## 0.2.4 - 2026-05-15
 
 - Added a dedicated C#/.NET `WasapiCaptureHelper.exe` for Windows system-playback capture.
