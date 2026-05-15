@@ -87,6 +87,7 @@ jobs:
           if ($probeExitCode -notin @(0, 2)) {
             throw "WASAPI helper probe smoke check failed with exit code $probeExitCode."
           }
+          exit 0
 
       - name: Verify packaged executable
         shell: pwsh
