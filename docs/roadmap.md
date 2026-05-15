@@ -60,16 +60,21 @@ for daily use.
 - Lightweight recent-job or recent-transcript history.
 - Stronger transcript/media synchronization feedback during playback.
 
-## v0.5 Transcript Library And External Providers
+Status: completed incrementally and wrapped up in `v0.2.4`.
 
-Goal: make repeated use more convenient and prepare optional higher-accuracy
-provider integrations.
+## v0.5 Transcript Library And Provider Readiness
+
+Goal: make repeated use more convenient and prepare a transcript workspace with
+a cleaner provider boundary.
 
 - Local transcript library.
-- Job history.
-- Saved user preferences.
-- Optional external speech-to-text provider interface.
-- Provider selection and cost/latency documentation.
+- Transcript correction and re-export workflow.
+- Reusable export profiles.
+- Provider-facing transcription interface around the local backend.
+- Provider capability and cost or latency documentation.
+
+Status: planned. See `docs/phase-4-summary-and-phase-5-plan.md` and
+`docs/phase-5-task-list.md`.
 
 ## v1.0 Open Source Release
 

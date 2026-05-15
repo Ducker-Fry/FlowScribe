@@ -385,6 +385,11 @@ Current Phase 4 progress:
   `WasapiCaptureHelper.exe` smoke checks.
 - Release and installation documentation now tracks the `v0.2.4` artifact names
   and packaged GUI helper contents.
+- Phase 4 is complete from a product-milestone perspective and wrapped in
+  `v0.2.4`.
+- Phase 5 planning is tracked in
+  `docs/phase-4-summary-and-phase-5-plan.md` and
+  `docs/phase-5-task-list.md`.
 - Current helper validation:
 
   ```powershell
