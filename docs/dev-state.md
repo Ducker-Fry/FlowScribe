@@ -330,3 +330,22 @@ Current Phase 4 progress:
   such as `Stereo Mix`, `What U Hear`, `Wave Out`, or `virtual-audio-capturer`.
 - On machines without a loopback-capable input path, the GUI now reports that
   limitation clearly instead of leaving behind misleading silent WAV files.
+- WASAPI helper Phase 1 is implemented.
+- A dedicated C#/.NET helper project now lives under
+  `tools/wasapi-capture-helper/`.
+- The helper targets `net8.0-windows` and `win-x64`, with `NAudio` pinned to
+  version `2.2.1`.
+- WASAPI helper Phase 2 is implemented.
+- `WasapiCaptureHelper.exe` now supports `version`, `probe`, `list-devices`,
+  and `capture`.
+- Helper command output is machine-readable JSON.
+- `capture` writes WAV output through NAudio WASAPI loopback capture and stops
+  cleanly when stdin receives `stop`.
+- Current helper validation:
+
+  ```powershell
+  dotnet build .\tools\wasapi-capture-helper\WasapiCaptureHelper.sln -c Release
+  .\tools\wasapi-capture-helper\src\WasapiCaptureHelper\bin\x64\Release\net8.0-windows\win-x64\WasapiCaptureHelper.exe version
+  .\tools\wasapi-capture-helper\src\WasapiCaptureHelper\bin\x64\Release\net8.0-windows\win-x64\WasapiCaptureHelper.exe probe
+  .\tools\wasapi-capture-helper\src\WasapiCaptureHelper\bin\x64\Release\net8.0-windows\win-x64\WasapiCaptureHelper.exe list-devices
+  ```
