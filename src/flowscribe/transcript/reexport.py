@@ -15,7 +15,6 @@ from flowscribe.core.models import (
     TranscriptionOptions,
 )
 from flowscribe.output.artifact_writer import TranscriptArtifactWriter
-from flowscribe.output.json_writer import JsonTranscriptWriter
 from flowscribe.output.md_writer import MarkdownTranscriptWriter
 from flowscribe.output.paths import OutputPathBuilder
 from flowscribe.output.srt_writer import SrtTranscriptWriter

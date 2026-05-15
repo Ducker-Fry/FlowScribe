@@ -49,7 +49,6 @@ from flowscribe.gui.transcript_viewer import (
     TranscriptSearchHitView,
     TranscriptView,
     load_transcript_view,
-    render_segment_line,
     render_transcript_summary,
     resolve_transcript_media_path,
     search_transcript_view,
@@ -780,7 +779,6 @@ class FlowScribeMainWindow:
                     QScrollArea,
                     QSlider,
                     QSizePolicy,
-                    QTabWidget,
                     QTextBrowser,
                     QTextEdit,
                     QToolButton,
@@ -2907,7 +2905,7 @@ class FlowScribeMainWindow:
                 prompt.setInformativeText("Save changes before continuing?")
                 save_button = prompt.addButton("Save", QMessageBox.ButtonRole.AcceptRole)
                 discard_button = prompt.addButton("Discard", QMessageBox.ButtonRole.DestructiveRole)
-                cancel_button = prompt.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+                prompt.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
                 prompt.exec()
                 clicked = prompt.clickedButton()
                 if clicked == save_button:
