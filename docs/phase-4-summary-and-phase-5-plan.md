@@ -150,6 +150,10 @@ Phase 4 intentionally left several larger product areas for the next milestone:
 
 Phase 5 name: Transcript Library, Editing Workflow, And Provider Readiness
 
+Status note: the Phase 5 plan in this document has now been substantially
+implemented in the current working flow through Milestone 5.8, with release
+wrap-up and next-phase planning still to follow.
+
 The next phase should convert FlowScribe from a job runner with useful history
 into a transcript workspace:
 

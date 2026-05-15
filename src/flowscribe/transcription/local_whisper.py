@@ -12,6 +12,8 @@ from flowscribe.core.models import (
 )
 from flowscribe.nlp.segmenter import align_chinese_words
 
+LOCAL_WHISPER_PROVIDER_NAME = "local-whisper"
+
 
 class LocalWhisperTranscriber:
     def __init__(
@@ -70,6 +72,7 @@ class LocalWhisperTranscriber:
             initial_prompt=self._initial_prompt,
             preset=self._preset,
             word_timestamps=self._word_timestamps,
+            provider_name=LOCAL_WHISPER_PROVIDER_NAME,
         )
         return Transcript(
             source=audio.source,

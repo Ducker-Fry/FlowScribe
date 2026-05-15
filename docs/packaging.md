@@ -52,6 +52,10 @@ cd E:\Draft\FlowScribe
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_gui_exe.ps1 -Python python
 ```
 
+Run the CLI and GUI packaging steps sequentially. Both PyInstaller entry points use the
+shared top-level `build/` workspace, so running them in parallel can cause one build to
+remove intermediate files that the other build still needs.
+
 The CLI script will:
 
 1. Create or reuse `.venv-build`.
@@ -72,6 +76,8 @@ The GUI script will:
 6. Smoke-test the packaged helper with `WasapiCaptureHelper.exe version`.
 7. Apply a runtime hook that defaults packaged GUI builds to `FLOWSCRIBE_GUI_LOG_MODE=user`.
 8. Launch the GUI with `--windowed`, so end-user runs do not open a console window.
+9. Preserve the packaged GUI's quiet logging mode while keeping user-facing
+   helper/capture status text inside the application.
 
 Optional parameters:
 
@@ -138,6 +144,15 @@ For a visual smoke test, start the GUI normally:
 .\dist\FlowScribeGUI\FlowScribeGUI.exe
 ```
 
+In the packaged GUI, check these desktop workflows:
+
+- system-playback capture starts without a console window
+- capture status reports either active growth or stalled/no-activity feedback
+- transcript library opens
+- transcript editing and save-as-copy work
+- transcript JSON re-export works
+- export profiles can be saved and reapplied
+
 ## GitHub Release Contents
 
 For a GitHub Release, upload:
@@ -169,6 +184,8 @@ Release notes should include:
 - Models are not bundled.
 - The GUI package launches without a console window and defaults to quiet `user` logging mode.
 - The GUI package includes `WasapiCaptureHelper.exe` for Windows system-playback capture.
+- The GUI includes transcript library, transcript editing, transcript JSON
+  re-export, and named export profiles.
 - Recommended model: `small`.
 - Quick test command: `FlowScribe.exe doctor`.
 - GUI smoke test command: `FlowScribeGUI.exe --self-test`.

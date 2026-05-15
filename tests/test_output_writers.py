@@ -89,6 +89,7 @@ def test_transcript_artifact_writer_writes_selected_formats(tmp_path: Path) -> N
     assert payload["generator"]["name"] == "FlowScribe"
     assert payload["source"] == str(tmp_path / "lesson.mp4")
     assert payload["source_info"]["name"] == "lesson.mp4"
+    assert payload["provider"] == "local-whisper"
     assert payload["duration_seconds"] == 3.25
     assert payload["segment_count"] == 2
     assert payload["word_count"] == 1
@@ -100,6 +101,7 @@ def test_transcript_artifact_writer_writes_selected_formats(tmp_path: Path) -> N
     assert payload["segments"][0]["duration_seconds"] == 1.5
     assert payload["segments"][0]["start_seconds"] == 0.0
     assert payload["options"]["word_timestamps"] is True
+    assert payload["options"]["provider_name"] == "local-whisper"
     assert payload["segments"][0]["raw_words"] == [
         {
             "index": 1,

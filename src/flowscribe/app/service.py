@@ -30,7 +30,10 @@ from flowscribe.output.paths import OutputPathBuilder
 from flowscribe.output.srt_writer import SrtTranscriptWriter
 from flowscribe.output.txt_writer import TxtTranscriptWriter
 from flowscribe.output.vtt_writer import VttTranscriptWriter
-from flowscribe.transcription.local_whisper import LocalWhisperTranscriber
+from flowscribe.transcription.providers import (
+    ProviderTranscriptionSettings,
+    resolve_transcription_provider,
+)
 
 
 class TranscriptionService:
@@ -321,18 +324,20 @@ def _build_pipeline(job: TranscriptionJob, settings: AppSettings) -> LocalTransc
         overwrite=settings.overwrite,
         base_name=job.output_name_base,
     )
+    provider = resolve_transcription_provider()
+    provider_settings = ProviderTranscriptionSettings(
+        model_name=settings.model_name,
+        language=settings.language,
+        task=settings.task,
+        beam_size=settings.beam_size,
+        vad_filter=settings.vad_filter,
+        initial_prompt=settings.initial_prompt,
+        preset=settings.preset,
+        word_timestamps=settings.word_timestamps,
+    )
     return LocalTranscriptionPipeline(
         media_preparer=FfmpegAudioExtractor(sample_rate=settings.sample_rate),
-        transcriber=LocalWhisperTranscriber(
-            model_name=settings.model_name,
-            language=settings.language,
-            task=settings.task,
-            beam_size=settings.beam_size,
-            vad_filter=settings.vad_filter,
-            initial_prompt=settings.initial_prompt,
-            preset=settings.preset,
-            word_timestamps=settings.word_timestamps,
-        ),
+        transcriber=provider.build_transcriber(provider_settings),
         artifact_writer=TranscriptArtifactWriter(
             formats=job.output_formats,
             txt_writer=TxtTranscriptWriter(path_builder),

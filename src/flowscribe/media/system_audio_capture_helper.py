@@ -7,11 +7,13 @@ import queue
 import subprocess
 import sys
 import threading
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from flowscribe.core.errors import MediaPreparationError
 from flowscribe.media.system_audio_capture_models import (
+    CaptureActivityStatus,
     CaptureCompletedResult,
     CaptureDevice,
     CaptureEvent,
@@ -37,6 +39,8 @@ class WasapiHelperCaptureRecorder:
         self._events: queue.Queue[CaptureEvent] = queue.Queue()
         self._reader_thread: threading.Thread | None = None
         self._active_output_path: Path | None = None
+        self._last_observed_capture_size_bytes = 0
+        self._last_capture_growth_at: datetime | None = None
 
     @property
     def is_recording(self) -> bool:
@@ -120,6 +124,8 @@ class WasapiHelperCaptureRecorder:
         )
         self._process = process
         self._active_output_path = output_path
+        self._last_observed_capture_size_bytes = 0
+        self._last_capture_growth_at = None
         self._events = queue.Queue()
         self._reader_thread = threading.Thread(
             target=self._read_stdout_events,
@@ -191,6 +197,53 @@ class WasapiHelperCaptureRecorder:
         if output_path is not None:
             output_path.unlink(missing_ok=True)
 
+    def activity_status(self) -> CaptureActivityStatus:
+        if not self.is_recording or self._active_output_path is None:
+            return CaptureActivityStatus(
+                state="idle",
+                message="System capture is idle.",
+            )
+
+        try:
+            bytes_captured = (
+                self._active_output_path.stat().st_size
+                if self._active_output_path.exists()
+                else 0
+            )
+        except OSError:
+            bytes_captured = 0
+
+        now = datetime.now()
+        recently_grew = False
+        if bytes_captured > self._last_observed_capture_size_bytes:
+            self._last_observed_capture_size_bytes = bytes_captured
+            self._last_capture_growth_at = now
+            recently_grew = True
+
+        if recently_grew or (
+            self._last_capture_growth_at is not None
+            and now - self._last_capture_growth_at <= timedelta(seconds=2)
+        ):
+            return CaptureActivityStatus(
+                state="active",
+                bytes_captured=bytes_captured,
+                recently_grew=recently_grew,
+                message=(
+                    f"Capture is receiving audio data. "
+                    f"Current file size: {_format_capture_size(bytes_captured)}."
+                ),
+            )
+
+        return CaptureActivityStatus(
+            state="stalled",
+            bytes_captured=bytes_captured,
+            recently_grew=False,
+            message=(
+                "Capture is running, but no new audio data arrived recently. "
+                "Check whether system playback is active and the default output device is correct."
+            ),
+        )
+
     def _read_stdout_events(self, process: subprocess.Popen[str]) -> None:
         if process.stdout is None:
             return
@@ -235,6 +288,8 @@ class WasapiHelperCaptureRecorder:
         self._process = None
         self._active_output_path = None
         self._reader_thread = None
+        self._last_observed_capture_size_bytes = 0
+        self._last_capture_growth_at = None
 
 
 class CaptureController:
@@ -257,6 +312,9 @@ class CaptureController:
 
     def abort_capture(self) -> None:
         self._recorder.abort()
+
+    def activity_status(self) -> CaptureActivityStatus:
+        return self._recorder.activity_status()
 
 
 def _helper_candidates() -> tuple[Path, ...]:
@@ -380,3 +438,11 @@ def _optional_str(value: Any) -> str | None:
         return None
     text = str(value)
     return text or None
+
+
+def _format_capture_size(value: int) -> str:
+    if value < 1024:
+        return f"{value} B"
+    if value < 1024 * 1024:
+        return f"{value / 1024:.1f} KB"
+    return f"{value / (1024 * 1024):.1f} MB"

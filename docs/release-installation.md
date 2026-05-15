@@ -110,8 +110,18 @@ Inside the GUI package you can:
 - paste a public URL
 - capture Windows system playback through the bundled WASAPI helper
 - open an existing transcript JSON
+- browse a transcript library
+- edit transcript segment text
+- save corrected transcript JSON by overwriting or writing a copy
+- re-export transcript JSON into TXT, Markdown, JSON, SRT, or VTT
+- save and apply named export profiles
 - search transcript keywords
 - bind local media to a transcript for playback sync
+
+During capture, the GUI stays quiet in packaged mode but now reports whether the
+capture file is actively growing or appears stalled. If capture starts but no
+new audio data arrives, verify that Windows playback is active and that the
+default output device is the one producing sound.
 
 ## Output
 
@@ -146,3 +156,11 @@ If `doctor` passes but `outputs` is empty, that is normal. `doctor` only checks 
 If a file reports `No audio stream found`, it likely contains video only. Some downloaded media stores video and audio separately.
 
 If model access fails, check network access to Hugging Face or use a local model path.
+
+If the GUI reports that `WasapiCaptureHelper.exe` is missing, the GUI package is
+incomplete. Re-extract the full `FlowScribeGUI` folder from the release ZIP and
+do not move only `FlowScribeGUI.exe` by itself.
+
+If the GUI says capture is running but no new audio data has arrived recently,
+start actual system playback and confirm the expected Windows output device is
+the current default playback device.

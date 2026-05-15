@@ -56,6 +56,7 @@ class TranscriptionOptions:
     initial_prompt: str | None = None
     preset: str | None = None
     word_timestamps: bool = False
+    provider_name: str = "local-whisper"
 
 
 @dataclass(frozen=True)

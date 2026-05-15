@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 
 @dataclass(frozen=True)
@@ -49,3 +49,16 @@ class CaptureCompletedResult:
     output_path: Path
     duration_seconds: float | None = None
     event: CaptureEvent | None = None
+
+
+CaptureActivityState = Literal["idle", "active", "stalled"]
+
+
+@dataclass(frozen=True)
+class CaptureActivityStatus:
+    """Lightweight capture activity feedback for the GUI."""
+
+    state: CaptureActivityState
+    bytes_captured: int = 0
+    recently_grew: bool = False
+    message: str = ""

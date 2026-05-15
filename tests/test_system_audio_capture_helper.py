@@ -13,6 +13,7 @@ from flowscribe.media.system_audio_capture_helper import (
     _parse_probe_result,
 )
 from flowscribe.media.system_audio_capture_models import (
+    CaptureActivityStatus,
     CaptureDevice,
     CaptureSupportStatus,
 )
@@ -237,6 +238,9 @@ def test_capture_controller_delegates_to_recorder(tmp_path: Path) -> None:
         def abort(self) -> None:
             self.aborted = True
 
+        def activity_status(self):
+            return CaptureActivityStatus(state="idle", message="idle")
+
     recorder = FakeRecorder()
     controller = CaptureController(recorder=recorder)  # type: ignore[arg-type]
 
@@ -244,5 +248,40 @@ def test_capture_controller_delegates_to_recorder(tmp_path: Path) -> None:
     assert controller.is_recording() is False
     assert controller.start_capture(output_path) == "started"
     assert controller.stop_capture() == "completed"
+    assert controller.activity_status() == CaptureActivityStatus(state="idle", message="idle")
     controller.abort_capture()
     assert recorder.aborted is True
+
+
+def test_activity_status_reports_active_when_capture_file_grows(tmp_path: Path) -> None:
+    helper = tmp_path / "WasapiCaptureHelper.exe"
+    helper.write_text("", encoding="utf-8")
+    output_path = tmp_path / "capture.wav"
+    output_path.write_bytes(b"\x00" * 1024)
+    recorder = WasapiHelperCaptureRecorder(helper_executable=helper)
+    recorder._process = type("FakeProcess", (), {"poll": lambda self: None})()  # type: ignore[assignment]
+    recorder._active_output_path = output_path
+    recorder._last_observed_capture_size_bytes = 0
+
+    status = recorder.activity_status()
+
+    assert status.state == "active"
+    assert status.recently_grew is True
+    assert status.bytes_captured == 1024
+
+
+def test_activity_status_reports_stalled_when_capture_file_stops_growing(tmp_path: Path) -> None:
+    helper = tmp_path / "WasapiCaptureHelper.exe"
+    helper.write_text("", encoding="utf-8")
+    output_path = tmp_path / "capture.wav"
+    output_path.write_bytes(b"\x00" * 1024)
+    recorder = WasapiHelperCaptureRecorder(helper_executable=helper)
+    recorder._process = type("FakeProcess", (), {"poll": lambda self: None})()  # type: ignore[assignment]
+    recorder._active_output_path = output_path
+    recorder._last_observed_capture_size_bytes = 1024
+    recorder._last_capture_growth_at = None
+
+    status = recorder.activity_status()
+
+    assert status.state == "stalled"
+    assert "no new audio data" in status.message.lower()

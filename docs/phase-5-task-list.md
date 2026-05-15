@@ -4,6 +4,9 @@ Phase 5 name: Transcript Library, Editing Workflow, And Provider Readiness
 
 Target release line: `v0.5.0`
 
+Current implementation status: Phase 5.1 through Phase 5.8 are implemented in
+the current working flow and are awaiting the next release wrap-up.
+
 ## Target Outcome
 
 Phase 5 should make FlowScribe feel like a transcript workspace instead of only
@@ -188,6 +191,21 @@ Acceptance:
 - Release packages remain dual-artifact Windows packages.
 - GitHub Actions still validates both package families.
 
+Implementation notes:
+
+- GUI capture now surfaces `idle`, `active`, and `stalled` activity feedback
+  based on whether the capture output file is still growing.
+- GUI messaging now distinguishes missing `WasapiCaptureHelper.exe`,
+  unsupported loopback environments, and startup/no-audio situations more
+  clearly.
+- Packaged GUI logging remains quiet by default while capture status remains
+  user-visible inside the application.
+- Release installation and packaging docs now describe transcript library,
+  transcript editing, transcript JSON re-export, export profiles, and helper
+  troubleshooting.
+- Packaging docs now explicitly require CLI and GUI build entry points to run
+  sequentially because both use the shared top-level `build/` workspace.
+
 ## Test Plan
 
 Suggested new or expanded tests:
@@ -225,22 +243,22 @@ Update these documents as Phase 5 lands:
 - `docs/architecture.md`
 - `docs/dev-state.md`
 
-## Immediate Execution Checklist
+## Execution Checklist
 
-1. Create `src/flowscribe/library` with models, store, and tests.
-2. Add library entry creation from completed transcription results.
-3. Add opened-transcript indexing.
-4. Connect media binding updates to the library store.
-5. Add a first GUI library view.
-6. Decide and document recent-history compatibility.
-7. Implement transcript segment text editing.
-8. Add corrected JSON save behavior.
-9. Implement re-export from transcript JSON.
-10. Add GUI re-export controls.
-11. Add named export profiles.
-12. Introduce the provider interface around local faster-whisper.
-13. Improve capture feedback and first-run diagnostics.
-14. Update docs, release notes, tests, and packaging smoke checks.
+1. [done] Create `src/flowscribe/library` with models, store, and tests.
+2. [done] Add library entry creation from completed transcription results.
+3. [done] Add opened-transcript indexing.
+4. [done] Connect media binding updates to the library store.
+5. [done] Add a first GUI library view.
+6. [done] Decide and document recent-history compatibility.
+7. [done] Implement transcript segment text editing.
+8. [done] Add corrected JSON save behavior.
+9. [done] Implement re-export from transcript JSON.
+10. [done] Add GUI re-export controls.
+11. [done] Add named export profiles.
+12. [done] Introduce the provider interface around local faster-whisper.
+13. [done] Improve capture feedback and first-run diagnostics.
+14. [done] Update docs, release notes, tests, and packaging smoke checks.
 
 ## Recommended Order
 

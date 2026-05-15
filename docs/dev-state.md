@@ -7,7 +7,7 @@ Use this file as the compact handoff context when starting a new conversation.
 - Name: FlowScribe
 - Path: `E:\Draft\FlowScribe`
 - Language: Python
-- Current phase: Phase 4, Capture, Workflow Persistence, And Desktop Productization
+- Current phase: Phase 5, Transcript Library, Editing Workflow, And Provider Readiness
 
 ## Product Goal
 
@@ -275,18 +275,72 @@ Do not modify code.
 Default preference: use Light Mode or Standard Mode unless the user explicitly
 asks for Wrap-Up Mode.
 
-## Likely Next Tasks
+## Current Phase Progress
 
-Phase 4 starting points:
+Phase 4 is complete and shipped in `v0.2.4`.
 
-- Non-sensitive GUI settings persistence.
-- GUI cancel task support.
-- GUI open output directory button.
-- Recent job / recent transcript history.
-- System audio capture prototype.
-- Stronger transcript/media synchronization feedback during playback.
+Phase 5 progress:
 
-Current Phase 4 progress:
+- Milestone 5.1 is implemented in the current working flow.
+- A local transcript library now lives under `src/flowscribe/library/`.
+- Transcript library entries persist transcript path, media path, output
+  directory, created/updated timestamps, display label, source kind, last-opened
+  timestamp, missing-file state, media binding metadata, and generated output
+  records.
+- The library store uses a project-friendly JSON persistence model with
+  corrupted-store recovery instead of introducing a database dependency.
+- Milestone 5.2 is implemented in the current working flow.
+- Completed transcription runs are now indexed into the transcript library.
+- Opening transcript JSON files updates or creates library entries and refreshes
+  `last_opened_at`.
+- Media bind and rebind actions now update transcript library metadata.
+- Library cleanup and remove-from-library behavior are available without
+  deleting user files by default.
+- Existing recent-work behavior remains available as a lightweight compatibility
+  layer.
+- Milestone 5.3 is implemented in the current working flow.
+- The GUI now exposes a dedicated `Transcript Library` window.
+- Users can reopen transcripts, open output folders, bind or rebind media,
+  remove entries, and clean missing items from the library view.
+- Recent Work remains as a separate quick-access surface instead of being folded
+  away.
+- Milestone 5.4 is implemented in the current working flow.
+- The transcript viewer now supports segment text editing in the GUI.
+- Edited transcript JSON preserves timing and ordering while recording
+  correction metadata.
+- Users are prompted before overwriting the original transcript and warned about
+  unsaved edits when switching or closing.
+- Milestone 5.5 is implemented in the current working flow.
+- Transcript JSON can now be re-exported to `.txt`, `.md`, `.json`, `.srt`, and
+  `.vtt` without rerunning transcription.
+- The GUI exposes a re-export action for the current transcript and reuses
+  output configuration from the desktop form.
+- Milestone 5.6 is implemented in the current working flow.
+- Named export profiles now persist output-format and timestamp preferences as
+  non-sensitive GUI settings.
+- The same profiles can be applied to both new transcription jobs and transcript
+  JSON re-export.
+- Milestone 5.7 is implemented in the current working flow.
+- The local faster-whisper path now sits behind an explicit provider boundary in
+  `src/flowscribe/transcription/providers.py`.
+- Provider capability metadata now describes model support, language behavior,
+  word timestamps, cost expectations, latency expectations, and credential
+  requirements.
+- Local whisper remains the default provider and no credential management was
+  introduced in this phase.
+- Milestone 5.8 is implemented in the current working flow.
+- System capture now reports `idle`, `active`, or `stalled` feedback based on
+  whether the captured WAV file is still growing.
+- GUI messaging for missing helper binaries, unsupported devices, and startup
+  failures is clearer and remains visible without enabling noisy packaged logs.
+- Release installation and packaging documentation now describe transcript
+  library, correction, re-export, export profiles, helper troubleshooting, and
+  capture activity feedback.
+- CLI and GUI package smoke checks remain intact, and packaging docs now note
+  that CLI and GUI build scripts should run sequentially because they share the
+  top-level `build/` workspace.
+
+Phase 4 completion details:
 
 - Milestone 4.1 is implemented in the current working flow.
 - Non-sensitive GUI preferences can now be saved and restored.
