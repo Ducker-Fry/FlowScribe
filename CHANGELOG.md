@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.2.4 - 2026-05-15
+
+- Added a dedicated C#/.NET `WasapiCaptureHelper.exe` for Windows system-playback capture.
+- Added helper commands for `version`, `probe`, `list-devices`, and stdin-controlled WAV capture.
+- Added Python-side WASAPI helper integration and GUI capture controller support.
+- Connected GUI system-audio capture to the helper-first path while preserving captured-WAV transcription workflow.
+- Added helper build and GUI packaging integration so `WasapiCaptureHelper.exe` and NAudio dependencies ship with the GUI package.
+- Added release workflow smoke checks for the packaged WASAPI helper.
+- Moved the old ffmpeg/DirectShow capture implementation behind a legacy compatibility boundary.
+
 - Added the Phase 3.1 PySide6 desktop GUI skeleton for collecting transcription form state.
 - Connected the desktop GUI to background local-file transcription with progress and output display.
 

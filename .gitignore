@@ -11,6 +11,7 @@ venv/
 # Build artifacts
 build/
 dist/
+/dist-*/
 *.spec
 *.egg-info/
 /tools/wasapi-capture-helper/src/**/bin/
