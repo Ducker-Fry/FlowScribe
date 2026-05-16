@@ -87,9 +87,22 @@ to operate or release.
 - Stronger onboarding and user-facing diagnostics.
 - More repeatable and idempotent release operations.
 
-Status: in progress. Workspace consolidation and transcript-library review
-ergonomics have started landing in the desktop GUI. See
-`docs/phase-5-summary-and-phase-6-plan.md` and `docs/phase-6-task-list.md`.
+Status: completed incrementally and wrapped up in `v0.2.6`. See
+`docs/phase-6-summary-and-phase-7-plan.md` and `docs/phase-7-task-list.md`.
+
+## v0.7 Guided Recovery, Comparison, And Session Flow
+
+Goal: turn the denser Phase 6 workspace into a faster review surface, a more
+helpful recovery surface, and a steadier day-to-day product.
+
+- Guided recovery actions from help and diagnostics.
+- Stronger artifact comparison workflows for corrected transcript review.
+- Better library search and session recovery.
+- More polished first-run and in-product onboarding.
+- Final release and packaging closure around rerun and maintainer paths.
+
+Status: planned. See `docs/phase-6-summary-and-phase-7-plan.md` and
+`docs/phase-7-task-list.md`.
 
 ## v1.0 Open Source Release
 

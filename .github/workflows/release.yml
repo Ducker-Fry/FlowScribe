@@ -22,14 +22,43 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref }}
 
       - name: Resolve version
         shell: pwsh
         run: |
           if ("${{ github.event_name }}" -eq "workflow_dispatch") {
             "RELEASE_VERSION=${{ inputs.version }}" | Out-File -FilePath $env:GITHUB_ENV -Append
+            "RELEASE_REF=refs/tags/${{ inputs.version }}" | Out-File -FilePath $env:GITHUB_ENV -Append
           } else {
             "RELEASE_VERSION=${env:GITHUB_REF_NAME}" | Out-File -FilePath $env:GITHUB_ENV -Append
+            "RELEASE_REF=${env:GITHUB_REF}" | Out-File -FilePath $env:GITHUB_ENV -Append
+          }
+
+      - name: Show release workflow context
+        shell: pwsh
+        run: |
+          Write-Host "Release workflow context"
+          Write-Host "  Event: ${{ github.event_name }}"
+          Write-Host "  Release version: $env:RELEASE_VERSION"
+          Write-Host "  Requested ref: $env:RELEASE_REF"
+          Write-Host "  Checked out SHA: $env:GITHUB_SHA"
+
+      - name: Verify release tag checkout
+        shell: pwsh
+        run: |
+          git fetch --tags --force
+          $tagCommit = git rev-list -n 1 "$env:RELEASE_VERSION"
+          if (-not $tagCommit) {
+            throw "Release tag $env:RELEASE_VERSION was not found in the repository."
+          }
+          $headCommit = git rev-parse HEAD
+          Write-Host "Resolved release tag $env:RELEASE_VERSION -> $tagCommit"
+          Write-Host "Current HEAD -> $headCommit"
+          if ($tagCommit -ne $headCommit) {
+            throw "Workflow is not building the expected tag contents for $env:RELEASE_VERSION."
           }
 
       - name: Set up Python
@@ -194,25 +223,84 @@ jobs:
           $notes | Set-Content -LiteralPath $notesPath -Encoding UTF8
           "RELEASE_NOTES=$notesPath" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Create Or Update GitHub Release
+      - name: Inspect GitHub release state
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          Write-Host "Inspecting release state for $env:RELEASE_VERSION"
+          $releaseJson = gh release view "$env:RELEASE_VERSION" --json url,assets,tagName 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            $release = $releaseJson | ConvertFrom-Json
+            $assetNames = @($release.assets | ForEach-Object { $_.name })
+            Write-Host "Existing release found for tag $($release.tagName)"
+            if ($assetNames.Count -gt 0) {
+              Write-Host "Existing assets:"
+              $assetNames | ForEach-Object { Write-Host "  - $_" }
+            } else {
+              Write-Host "Existing release has no uploaded assets yet."
+            }
+            "RELEASE_EXISTS=true" | Out-File -FilePath $env:GITHUB_ENV -Append
+            "RELEASE_URL=$($release.url)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          } else {
+            Write-Host "No existing GitHub release found for $env:RELEASE_VERSION. Workflow will create it."
+            "RELEASE_EXISTS=false" | Out-File -FilePath $env:GITHUB_ENV -Append
+          }
+
+      - name: Create GitHub release record
+        if: env.RELEASE_EXISTS == 'false'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $releaseTitle = "FlowScribe $env:RELEASE_VERSION"
-          gh release view "$env:RELEASE_VERSION" *> $null
-          if ($LASTEXITCODE -eq 0) {
-            gh release upload "$env:RELEASE_VERSION" "$env:RELEASE_CLI_ZIP" "$env:RELEASE_GUI_ZIP" --clobber
-            if ($LASTEXITCODE -ne 0) {
-              throw "Failed to upload release assets for $env:RELEASE_VERSION."
-            }
-            gh release edit "$env:RELEASE_VERSION" --title "$releaseTitle" --notes-file "$env:RELEASE_NOTES"
-            if ($LASTEXITCODE -ne 0) {
-              throw "Failed to update release metadata for $env:RELEASE_VERSION."
-            }
-          } else {
-            gh release create "$env:RELEASE_VERSION" "$env:RELEASE_CLI_ZIP" "$env:RELEASE_GUI_ZIP" `
-              --title "$releaseTitle" `
-              --notes-file "$env:RELEASE_NOTES" `
-              --verify-tag
+          Write-Host "Creating GitHub release record for $env:RELEASE_VERSION"
+          gh release create "$env:RELEASE_VERSION" `
+            --title "$releaseTitle" `
+            --notes-file "$env:RELEASE_NOTES" `
+            --verify-tag
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to create release record for $env:RELEASE_VERSION."
           }
+
+      - name: Update GitHub release metadata
+        if: env.RELEASE_EXISTS == 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $releaseTitle = "FlowScribe $env:RELEASE_VERSION"
+          Write-Host "Updating existing GitHub release metadata for $env:RELEASE_VERSION"
+          gh release edit "$env:RELEASE_VERSION" --title "$releaseTitle" --notes-file "$env:RELEASE_NOTES"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to update release metadata for $env:RELEASE_VERSION."
+          }
+
+      - name: Upload or overwrite release assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $assets = @(
+            @{ Path = $env:RELEASE_CLI_ZIP; Name = $env:RELEASE_CLI_ZIP_NAME },
+            @{ Path = $env:RELEASE_GUI_ZIP; Name = $env:RELEASE_GUI_ZIP_NAME }
+          )
+          foreach ($asset in $assets) {
+            Write-Host "Uploading asset with overwrite enabled: $($asset.Name)"
+            gh release upload "$env:RELEASE_VERSION" "$($asset.Path)" --clobber
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to upload release asset $($asset.Name) for $env:RELEASE_VERSION."
+            }
+          }
+
+      - name: Summarize release result
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $release = gh release view "$env:RELEASE_VERSION" --json url,assets,tagName | ConvertFrom-Json
+          Write-Host "Release result"
+          Write-Host "  Tag: $($release.tagName)"
+          Write-Host "  URL: $($release.url)"
+          Write-Host "  Assets:"
+          $release.assets | ForEach-Object { Write-Host "    - $($_.name)" }

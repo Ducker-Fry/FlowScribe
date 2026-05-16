@@ -229,4 +229,4 @@ Phase 6 is ready to close when:
 - first-run desktop users can recover from common setup failures more easily
 - release workflow reruns and updates are less error-prone and better documented
 
-Target release line: `v0.6.0`.
+Target release line: `v0.2.6`.

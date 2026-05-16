@@ -5,6 +5,8 @@ from flowscribe.app.models import SourceSpec, TranscriptionJob, TranscriptionRes
 from flowscribe.core.models import OutputArtifacts
 from flowscribe.gui.export_profiles import ExportProfile
 from flowscribe.gui.qt_app import (
+    _artifact_format_label,
+    _artifact_summary,
     _build_library_entry,
     _discover_transcript_output_paths,
     _format_library_datetime,
@@ -14,12 +16,20 @@ from flowscribe.gui.qt_app import (
     _library_entry_list_label,
     _library_entry_missing_summary,
     _library_results_summary,
+    _model_access_guidance_text,
     _normalize_gui_preferences_payload,
     _normalize_recent_work_entry_paths,
+    _onboarding_state_payload,
+    _onboarding_summary_text,
     _recent_work_payload,
     _recent_transcript_list_label,
     _read_viewable_artifact_text,
+    _render_json_artifact_html,
     _sort_library_entries,
+    _sort_workspace_artifact_paths,
+    _user_facing_doctor_message,
+    _user_facing_folder_label,
+    _user_facing_state_file_label,
     _view_preferences_payload,
     _view_tab_key_for_artifact,
     _view_tab_title_for_artifact,
@@ -112,6 +122,39 @@ def test_normalize_gui_preferences_payload_filters_invalid_values() -> None:
     }
 
 
+def test_onboarding_state_payload_defaults_and_reads_help_seen_flag() -> None:
+    assert _onboarding_state_payload(None) == {"help_seen": False}
+    assert _onboarding_state_payload({"help_seen": True}) == {"help_seen": True}
+
+
+def test_model_access_guidance_and_onboarding_summary_include_next_steps(tmp_path: Path) -> None:
+    output_dir = tmp_path / "outputs"
+    guidance = _model_access_guidance_text("small")
+    summary = _onboarding_summary_text(
+        output_dir=output_dir,
+        model_name="small",
+        capture_message="System audio capture is unavailable on this machine.",
+    )
+
+    assert "Hugging Face" in guidance
+    assert "Output folder:" in summary
+    assert str(output_dir) not in summary
+    assert '"outputs"' in summary
+    assert "Capture:" in summary
+
+
+def test_user_facing_helpers_hide_local_paths_in_help_text(tmp_path: Path) -> None:
+    folder = tmp_path / "my-secret-output"
+
+    assert _user_facing_folder_label(folder) == '"my-secret-output"'
+    assert "user profile" in _user_facing_state_file_label()
+    assert _user_facing_doctor_message(
+        "ffmpeg",
+        True,
+        r"ffmpeg version test (C:\secret\ffmpeg.exe)",
+    ) == "ffmpeg is available."
+
+
 def test_gui_state_payload_uses_nested_preferences_and_local_sources(tmp_path: Path) -> None:
     media = tmp_path / "sample.mp4"
     media.write_bytes(b"media")
@@ -167,7 +210,7 @@ def test_gui_state_payload_uses_nested_preferences_and_local_sources(tmp_path: P
     )
 
     assert payload == {
-        "version": 5,
+        "version": 6,
         "preferences": {
             "output_dir": "saved-outputs",
             "output_name_base": "custom-name",
@@ -221,6 +264,9 @@ def test_gui_state_payload_uses_nested_preferences_and_local_sources(tmp_path: P
             },
             "current_tab": "transcript",
         },
+        "onboarding_state": {
+            "help_seen": False,
+        },
     }
 
 
@@ -232,7 +278,7 @@ def test_normalize_gui_state_payload_supports_nested_and_legacy_formats(tmp_path
     outputs = tmp_path / "outputs"
     outputs.mkdir()
 
-    local_paths, checked, preferences, recent_work, export_profiles, view_preferences = _normalize_gui_state_payload(
+    local_paths, checked, preferences, recent_work, export_profiles, view_preferences, onboarding_state = _normalize_gui_state_payload(
         {
             "preferences": {
                 "output_dir": "custom-out",
@@ -287,6 +333,9 @@ def test_normalize_gui_state_payload_supports_nested_and_legacy_formats(tmp_path
                 },
                 "current_tab": "library",
             },
+            "onboarding_state": {
+                "help_seen": True,
+            },
         }
     )
 
@@ -308,8 +357,11 @@ def test_normalize_gui_state_payload_supports_nested_and_legacy_formats(tmp_path
         },
         "current_tab": "library",
     }
+    assert onboarding_state == {
+        "help_seen": True,
+    }
 
-    legacy_local_paths, legacy_checked, legacy_preferences, legacy_recent_work, legacy_profiles, legacy_view_preferences = _normalize_gui_state_payload(
+    legacy_local_paths, legacy_checked, legacy_preferences, legacy_recent_work, legacy_profiles, legacy_view_preferences, legacy_onboarding_state = _normalize_gui_state_payload(
         {
             "local_paths": [str(media)],
             "selected_paths": [str(media)],
@@ -345,6 +397,9 @@ def test_normalize_gui_state_payload_supports_nested_and_legacy_formats(tmp_path
             "library": True,
         },
         "current_tab": "transcript",
+    }
+    assert legacy_onboarding_state == {
+        "help_seen": False,
     }
 
 
@@ -472,8 +527,41 @@ def test_view_artifact_helpers_build_stable_keys_titles_and_text(tmp_path: Path)
     artifact.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n", encoding="utf-8")
 
     assert _view_tab_key_for_artifact(artifact.resolve()).startswith("artifact:")
-    assert _view_tab_title_for_artifact(artifact.resolve()) == "lesson.srt [srt]"
+    assert _artifact_format_label(artifact.resolve()) == "SRT Subtitles"
+    assert _view_tab_title_for_artifact(artifact.resolve()) == "SRT Subtitles - lesson.srt"
     assert "Hello" in _read_viewable_artifact_text(artifact)
+    assert "cues: 1" in _artifact_summary(artifact.resolve(), _read_viewable_artifact_text(artifact))
+
+
+def test_view_artifact_helpers_pretty_print_json_and_sort_compare_targets(tmp_path: Path) -> None:
+    transcript = tmp_path / "lesson.json"
+    transcript.write_text('{"segments":[{"index":1,"text":"Hello"}]}', encoding="utf-8")
+    corrected = tmp_path / "lesson.corrected.json"
+    corrected.write_text(
+        '{"segments":[{"index":1,"text":"Hello","correction":{"edited":true}}]}',
+        encoding="utf-8",
+    )
+    srt_output = tmp_path / "lesson.srt"
+    srt_output.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n", encoding="utf-8")
+    txt_output = tmp_path / "lesson.txt"
+    txt_output.write_text("Hello\n", encoding="utf-8")
+
+    rendered_json = _read_viewable_artifact_text(transcript)
+    rendered_corrected = _read_viewable_artifact_text(corrected)
+    rendered_html = _render_json_artifact_html(transcript.resolve(), rendered_json)
+
+    assert '"segments": [' in rendered_json
+    assert "Full transcript" in rendered_html
+    assert "Segment 1" in rendered_html
+    assert "edited: 1" in _artifact_summary(corrected.resolve(), rendered_corrected)
+    assert _sort_workspace_artifact_paths(
+        (txt_output.resolve(), corrected.resolve(), srt_output.resolve(), transcript.resolve())
+    ) == (
+        transcript.resolve(),
+        corrected.resolve(),
+        srt_output.resolve(),
+        txt_output.resolve(),
+    )
 
 
 def test_build_library_entry_merges_existing_outputs_and_updates_binding(tmp_path: Path) -> None:

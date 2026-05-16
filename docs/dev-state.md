@@ -7,7 +7,7 @@ Use this file as the compact handoff context when starting a new conversation.
 - Name: FlowScribe
 - Path: `E:\Draft\FlowScribe`
 - Language: Python
-- Current phase: Phase 6, Workspace Consolidation, Onboarding, And Release Reliability
+- Current phase: Phase 7, Guided Recovery, Comparison, And Session Flow
 
 ## Product Goal
 
@@ -25,10 +25,10 @@ The long-term goal is an open-source, portfolio-quality project that can:
 
 ## Current Release
 
-- Latest successful GitHub Release: `v0.2.5`
+- Latest successful GitHub Release: `v0.2.6`
 - Release assets:
-  - `FlowScribe-v0.2.5-windows-x64.zip`
-  - `FlowScribeGUI-v0.2.5-windows-x64.zip`
+  - `FlowScribe-v0.2.6-windows-x64.zip`
+  - `FlowScribeGUI-v0.2.6-windows-x64.zip`
 - Current branch: `main`
 
 ## Completed Capabilities
@@ -252,11 +252,12 @@ Do not commit unless asked.
 Run only focused tests/checks.
 ```
 
-## Phase 6 Progress
+## Phase 6 Outcome
 
-Phase 6 is in progress.
+Phase 6 is complete from a product-milestone perspective and wrapped in
+`v0.2.6`.
 
-Implemented so far:
+Implemented in the phase:
 
 - Phase 6.1 workspace consolidation:
   - `Views` is now the main review workspace instead of a loose collection of
@@ -275,6 +276,35 @@ Implemented so far:
     missing.
   - Recent transcript display is closer to library display so reopening work
     feels more consistent.
+- Phase 6.3 artifact review and comparison ergonomics:
+  - Artifact viewing is more format-aware across `.json`, `.txt`, `.md`,
+    `.srt`, and `.vtt`.
+  - Workspace artifact switching is faster for transcript JSON, corrected JSON,
+    subtitles, Markdown, and text exports.
+  - Transcript JSON is presented in a more readable summary-oriented form for
+    non-technical review.
+- Phase 6.4 onboarding and diagnostics:
+  - The GUI now includes a `Help` entry point for first-run guidance and common
+    diagnostics.
+  - Help and diagnostics now use more user-facing language and avoid exposing
+    unnecessary absolute environment paths.
+  - Desktop-visible diagnostics are clearer about output folder readiness,
+    capture prerequisites, and common next steps.
+- Phase 6.5 release workflow reliability:
+  - Release automation now checks out and verifies the requested tag ref.
+  - Release publication follows a create-or-update path instead of assuming
+    create-only behavior.
+  - Asset upload supports overwrite on rerun, and workflow logs are clearer
+    about create, update, and upload phases.
+- Phase 6.6 docs and verification:
+  - GUI, packaging, release, roadmap, and phase planning docs were refreshed.
+  - Focused regression checks were expanded around GUI behavior and release
+    workflow expectations.
+
+Phase 6 summary and Phase 7 planning are tracked in:
+
+- `docs/phase-6-summary-and-phase-7-plan.md`
+- `docs/phase-7-task-list.md`
 
 ### Standard Mode
 

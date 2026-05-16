@@ -2,7 +2,7 @@
 
 Phase 6 name: Workspace Consolidation, Onboarding, And Release Reliability
 
-Target release line: `v0.6.0`
+Target release line: `v0.2.6`
 
 ## Target Outcome
 

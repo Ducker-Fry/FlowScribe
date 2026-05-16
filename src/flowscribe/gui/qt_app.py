@@ -5,11 +5,18 @@ from __future__ import annotations
 import json
 import sys
 from datetime import datetime
+from html import escape
 from pathlib import Path
 
 from flowscribe import __version__
 from flowscribe.app.models import ProgressEvent
 from flowscribe.app.service import TranscriptionService
+from flowscribe.cli.doctor import (
+    check_command,
+    check_faster_whisper_import,
+    check_output_dir,
+    resolve_faster_whisper_repo,
+)
 from flowscribe.core.errors import MediaPreparationError, OutputError, SearchError
 from flowscribe.input.file_filter import is_supported_media
 from flowscribe.gui.export_profiles import (
@@ -87,6 +94,9 @@ DEFAULT_VIEW_PREFERENCES = {
         "library": True,
     },
     "current_tab": "transcript",
+}
+DEFAULT_ONBOARDING_STATE = {
+    "help_seen": False,
 }
 MAX_RECENT_TRANSCRIPTS = 8
 MAX_RECENT_OUTPUT_DIRS = 8
@@ -186,14 +196,16 @@ def _gui_state_payload(
     recent_work: dict[str, list[dict[str, object]] | list[str]] | None = None,
     export_profiles: tuple[ExportProfile, ...] = (),
     view_preferences: dict[str, object] | None = None,
+    onboarding_state: dict[str, object] | None = None,
 ) -> dict[str, object]:
     return {
-        "version": 5,
+        "version": 6,
         "preferences": _gui_preferences_payload(preferences),
         "local_sources": _local_source_state_payload(paths, checked_paths),
         "recent_work": _recent_work_payload(recent_work),
         "export_profiles": export_profiles_payload(export_profiles),
         "view_preferences": _view_preferences_payload(view_preferences),
+        "onboarding_state": _onboarding_state_payload(onboarding_state),
     }
 
 
@@ -230,6 +242,13 @@ def _view_preferences_payload(preferences: object) -> dict[str, object]:
     return {
         "visible_tabs": normalized_visible_tabs,
         "current_tab": normalized_current_tab,
+    }
+
+
+def _onboarding_state_payload(payload: object) -> dict[str, object]:
+    source = payload if isinstance(payload, dict) else {}
+    return {
+        "help_seen": bool(source.get("help_seen", False)),
     }
 
 
@@ -375,6 +394,7 @@ def _normalize_gui_state_payload(
     dict[str, list[dict[str, object]] | list[str]],
     tuple[ExportProfile, ...],
     dict[str, object],
+    dict[str, object],
 ]:
     if not isinstance(payload, dict):
         return (
@@ -384,6 +404,7 @@ def _normalize_gui_state_payload(
             _default_recent_work(),
             (),
             _view_preferences_payload(DEFAULT_VIEW_PREFERENCES),
+            _onboarding_state_payload(DEFAULT_ONBOARDING_STATE),
         )
 
     local_payload = payload.get("local_sources") if isinstance(payload.get("local_sources"), dict) else payload
@@ -392,7 +413,16 @@ def _normalize_gui_state_payload(
     recent_work = _recent_work_payload(payload.get("recent_work"))
     profiles = normalize_export_profiles_payload(payload.get("export_profiles"))
     view_preferences = _view_preferences_payload(payload.get("view_preferences"))
-    return local_paths, checked, preferences, recent_work, profiles, view_preferences
+    onboarding_state = _onboarding_state_payload(payload.get("onboarding_state"))
+    return (
+        local_paths,
+        checked,
+        preferences,
+        recent_work,
+        profiles,
+        view_preferences,
+        onboarding_state,
+    )
 
 
 def _transcript_output_records_from_paths(paths: tuple[Path, ...]) -> tuple[LibraryOutputRecord, ...]:
@@ -452,18 +482,233 @@ def _view_tab_key_for_artifact(path: Path) -> str:
     return f"artifact:{str(path).lower()}"
 
 
+def _artifact_format_label(path: Path) -> str:
+    suffix = path.suffix.lower()
+    stem = path.stem.lower()
+    if suffix == ".json":
+        if ".corrected" in stem:
+            return "Corrected JSON"
+        return "Transcript JSON"
+    if suffix == ".txt":
+        return "Text Export"
+    if suffix == ".md":
+        return "Markdown Export"
+    if suffix == ".srt":
+        return "SRT Subtitles"
+    if suffix == ".vtt":
+        return "VTT Subtitles"
+    return f"{suffix.lstrip('.').upper() or 'File'} Artifact"
+
+
+def _artifact_compare_group(path: Path) -> str:
+    suffix = path.suffix.lower()
+    stem = path.stem.lower()
+    if suffix == ".json":
+        if ".corrected" in stem:
+            return "corrected_json"
+        return "transcript_json"
+    if suffix == ".srt":
+        return "srt"
+    if suffix == ".vtt":
+        return "vtt"
+    if suffix == ".md":
+        return "md"
+    if suffix == ".txt":
+        return "txt"
+    return "other"
+
+
+def _sort_workspace_artifact_paths(paths: tuple[Path, ...]) -> tuple[Path, ...]:
+    priorities = {
+        "transcript_json": 0,
+        "corrected_json": 1,
+        "srt": 2,
+        "vtt": 3,
+        "md": 4,
+        "txt": 5,
+        "other": 6,
+    }
+    return tuple(
+        sorted(
+            paths,
+            key=lambda path: (
+                priorities.get(_artifact_compare_group(path), 99),
+                path.name.lower(),
+            ),
+        )
+    )
+
+
 def _view_tab_title_for_artifact(path: Path) -> str:
-    suffix = path.suffix.lower().lstrip(".") or "file"
-    return f"{path.name} [{suffix}]"
+    return f"{_artifact_format_label(path)} - {path.name}"
+
+
+def _artifact_selector_label(path: Path) -> str:
+    return f"{_artifact_format_label(path)} | {path.name}"
+
+
+def _normalize_subtitle_artifact_text(path: Path, text: str) -> str:
+    lines = [line.rstrip() for line in text.replace("\r\n", "\n").split("\n")]
+    normalized_lines: list[str] = []
+    blank_pending = False
+    for line in lines:
+        if not line.strip():
+            if normalized_lines and not blank_pending:
+                normalized_lines.append("")
+            blank_pending = True
+            continue
+        blank_pending = False
+        normalized_lines.append(line)
+    normalized = "\n".join(normalized_lines).strip()
+    if path.suffix.lower() == ".vtt" and normalized and not normalized.startswith("WEBVTT"):
+        normalized = "WEBVTT\n\n" + normalized
+    return normalized + ("\n" if normalized else "")
+
+
+def _subtitle_cue_count(text: str) -> int:
+    blocks = [block for block in text.strip().split("\n\n") if block.strip()]
+    count = 0
+    for block in blocks:
+        if "-->" in block:
+            count += 1
+    return count
+
+
+def _artifact_summary(path: Path, text: str) -> str:
+    format_label = _artifact_format_label(path)
+    if path.suffix.lower() == ".json":
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            return f"{format_label} | raw JSON view"
+        segments = payload.get("segments")
+        segment_count = len(segments) if isinstance(segments, list) else 0
+        edited_count = 0
+        if isinstance(segments, list):
+            edited_count = sum(
+                1
+                for segment in segments
+                if isinstance(segment, dict)
+                and isinstance(segment.get("correction"), dict)
+                and segment["correction"].get("edited") is True
+            )
+        if edited_count:
+            return f"{format_label} | segments: {segment_count} | edited: {edited_count}"
+        return f"{format_label} | segments: {segment_count}"
+    if path.suffix.lower() in {".srt", ".vtt"}:
+        return f"{format_label} | cues: {_subtitle_cue_count(text)}"
+    line_count = len(text.splitlines())
+    return f"{format_label} | lines: {line_count}"
+
+
+def _render_json_artifact_html(path: Path, text: str) -> str:
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return (
+            "<h3>JSON preview</h3>"
+            "<p>FlowScribe could not turn this file into a friendly summary, so it is shown as raw JSON.</p>"
+            f"<pre>{escape(text)}</pre>"
+        )
+
+    source = escape(str(payload.get("source") or "Unknown source"))
+    language = escape(str(payload.get("language") or "Unknown"))
+    model = escape(str(payload.get("model") or "Unknown"))
+    transcript_text = escape(str(payload.get("text") or ""))
+    segments = payload.get("segments")
+    segment_list = segments if isinstance(segments, list) else []
+    edited_count = sum(
+        1
+        for segment in segment_list
+        if isinstance(segment, dict)
+        and isinstance(segment.get("correction"), dict)
+        and segment["correction"].get("edited") is True
+    )
+
+    segment_items: list[str] = []
+    for raw_segment in segment_list:
+        if not isinstance(raw_segment, dict):
+            continue
+        index = raw_segment.get("index")
+        start_seconds = raw_segment.get("start_seconds")
+        end_seconds = raw_segment.get("end_seconds")
+        segment_text = escape(str(raw_segment.get("text") or ""))
+        original_text = ""
+        correction = raw_segment.get("correction")
+        if isinstance(correction, dict) and correction.get("edited") is True:
+            original_text = escape(str(correction.get("original_text") or ""))
+        start_label = (
+            format_timestamp(float(start_seconds))
+            if isinstance(start_seconds, (int, float))
+            else "unknown"
+        )
+        end_label = (
+            format_timestamp(float(end_seconds))
+            if isinstance(end_seconds, (int, float))
+            else "unknown"
+        )
+        segment_block = (
+            f"<div style='margin:0 0 12px 0; padding:10px; border:1px solid #555; border-radius:6px;'>"
+            f"<div><strong>Segment {escape(str(index or '?'))}</strong> | {start_label} - {end_label}</div>"
+            f"<div style='margin-top:6px;'>{segment_text or '<em>No text</em>'}</div>"
+        )
+        if original_text:
+            segment_block += (
+                f"<div style='margin-top:6px; color:#c9b27c;'><strong>Original:</strong> {original_text}</div>"
+            )
+        segment_block += "</div>"
+        segment_items.append(segment_block)
+
+    transcript_section = (
+        f"<div style='margin:12px 0; padding:10px; border:1px solid #555; border-radius:6px;'>"
+        f"<div><strong>Full transcript</strong></div>"
+        f"<div style='margin-top:6px; white-space:pre-wrap;'>{transcript_text or '<em>No transcript text</em>'}</div>"
+        f"</div>"
+    )
+
+    segment_section = "".join(segment_items) or "<p>No segment list is available in this JSON file.</p>"
+    edited_note = f"<li>Edited segments: {edited_count}</li>" if edited_count else ""
+
+    return (
+        "<html><body>"
+        f"<h3 style='margin-bottom:8px;'>{escape(_artifact_format_label(path))}</h3>"
+        "<ul>"
+        f"<li>Source: {source}</li>"
+        f"<li>Language: {language}</li>"
+        f"<li>Model: {model}</li>"
+        f"<li>Segments: {len(segment_list)}</li>"
+        f"{edited_note}"
+        "</ul>"
+        f"{transcript_section}"
+        "<h4>Segments</h4>"
+        f"{segment_section}"
+        "</body></html>"
+    )
+
+
+def _render_viewable_artifact_text(path: Path, text: str) -> str:
+    suffix = path.suffix.lower()
+    if suffix == ".json":
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            return text
+        return json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+    if suffix in {".srt", ".vtt"}:
+        return _normalize_subtitle_artifact_text(path, text)
+    return text
 
 
 def _read_viewable_artifact_text(path: Path) -> str:
     for encoding in ("utf-8", "utf-8-sig", "utf-16"):
         try:
-            return path.read_text(encoding=encoding)
+            return _render_viewable_artifact_text(path, path.read_text(encoding=encoding))
         except UnicodeError:
             continue
-    return path.read_text(encoding="utf-8", errors="replace")
+    return _render_viewable_artifact_text(
+        path,
+        path.read_text(encoding="utf-8", errors="replace"),
+    )
 
 
 def _resolve_library_source_media_path(transcript_path: Path) -> Path | None:
@@ -611,6 +856,62 @@ def _recent_transcript_list_label(
     )
 
 
+def _model_access_guidance_text(model_name: str) -> str:
+    repo_id = resolve_faster_whisper_repo(model_name)
+    if repo_id is not None:
+        return (
+            f"Model `{model_name}` will use `{repo_id}`. "
+            "The first real transcription may download model files from Hugging Face."
+        )
+    model_path = Path(model_name).expanduser()
+    if model_path.exists():
+        return f"Model path is local: {model_path.resolve()}"
+    return (
+        f"Model `{model_name}` is custom. Make sure it is a valid local path or a known "
+        "faster-whisper model name before you start."
+    )
+
+
+def _user_facing_folder_label(path: Path) -> str:
+    name = path.expanduser().name.strip()
+    if name:
+        return f'"{name}"'
+    return "your selected folder"
+
+
+def _user_facing_state_file_label() -> str:
+    return "your FlowScribe app settings file in the user profile"
+
+
+def _user_facing_doctor_message(check_name: str, ok: bool, message: str) -> str:
+    if check_name == "Output directory":
+        if ok:
+            return "Current output folder is writable."
+        return "Current output folder is not writable. Choose another folder or check permissions."
+    if check_name == "faster-whisper":
+        if ok:
+            return "faster-whisper is installed and ready."
+        return "faster-whisper is unavailable. Install the required package before running transcription."
+    if check_name == "ffmpeg":
+        if ok:
+            return "ffmpeg is available."
+        return "ffmpeg is unavailable. Install ffmpeg or use a packaged release build."
+    return message
+
+
+def _onboarding_summary_text(
+    *,
+    output_dir: Path,
+    model_name: str,
+    capture_message: str,
+) -> str:
+    return (
+        f"Output folder: {_user_facing_folder_label(output_dir)} | "
+        f"{_model_access_guidance_text(model_name)} | "
+        f"Capture: {capture_message}"
+    )
+
+
 def _library_entry_list_label(entry: TranscriptLibraryEntry) -> str:
     return "\n".join(
         [
@@ -749,11 +1050,13 @@ class FlowScribeMainWindow:
             dict[str, list[dict[str, object]] | list[str]],
             tuple[ExportProfile, ...],
             dict[str, object],
+            dict[str, object],
+            str | None,
         ]:
             path = _gui_state_path()
             try:
                 payload = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
+            except OSError as exc:
                 return (
                     [],
                     set(),
@@ -761,8 +1064,31 @@ class FlowScribeMainWindow:
                     _default_recent_work(),
                     (),
                     _view_preferences_payload(DEFAULT_VIEW_PREFERENCES),
+                    _onboarding_state_payload(DEFAULT_ONBOARDING_STATE),
+                    f"Could not read GUI state file. FlowScribe started with default settings. Details: {exc}",
                 )
-            return _normalize_gui_state_payload(payload)
+            except json.JSONDecodeError:
+                return (
+                    [],
+                    set(),
+                    _gui_preferences_payload(DEFAULT_GUI_PREFERENCES),
+                    _default_recent_work(),
+                    (),
+                    _view_preferences_payload(DEFAULT_VIEW_PREFERENCES),
+                    _onboarding_state_payload(DEFAULT_ONBOARDING_STATE),
+                    "GUI state file was unreadable. FlowScribe started with default settings.",
+                )
+            local_paths, checked, preferences, recent_work, profiles, view_preferences, onboarding_state = _normalize_gui_state_payload(payload)
+            return (
+                local_paths,
+                checked,
+                preferences,
+                recent_work,
+                profiles,
+                view_preferences,
+                onboarding_state,
+                None,
+            )
 
         def _save_gui_state(
             paths: list[Path],
@@ -771,6 +1097,7 @@ class FlowScribeMainWindow:
             recent_work: dict[str, list[dict[str, object]] | list[str]],
             export_profiles: tuple[ExportProfile, ...],
             view_preferences: dict[str, object],
+            onboarding_state: dict[str, object],
         ) -> None:
             path = _gui_state_path()
             try:
@@ -784,6 +1111,7 @@ class FlowScribeMainWindow:
                             recent_work,
                             export_profiles,
                             view_preferences,
+                            onboarding_state,
                         ),
                         ensure_ascii=False,
                         indent=2,
@@ -823,11 +1151,17 @@ class FlowScribeMainWindow:
                 self._view_tab_titles: dict[str, str] = {}
                 self._view_tab_visibility: dict[str, bool] = {}
                 self._view_preferences = _view_preferences_payload(DEFAULT_VIEW_PREFERENCES)
+                self._onboarding_state = _onboarding_state_payload(DEFAULT_ONBOARDING_STATE)
+                self._state_load_warning: str | None = None
                 self._artifact_viewers: dict[Path, object] = {}
                 self._workspace_artifact_paths: tuple[Path, ...] = ()
                 self._workspace_artifact_selector: object | None = None
+                self._workspace_artifact_viewer_stack: object | None = None
                 self._workspace_artifact_viewer: object | None = None
+                self._workspace_artifact_markdown_viewer: object | None = None
                 self._workspace_artifact_status_label: object | None = None
+                self._workspace_artifact_format_label: object | None = None
+                self._workspace_artifact_quick_buttons: dict[str, object] = {}
                 self._library_source_filter_combo: object | None = None
                 self._library_missing_filter_combo: object | None = None
                 self._library_opened_filter_combo: object | None = None
@@ -835,6 +1169,8 @@ class FlowScribeMainWindow:
                 self._library_sort_direction_combo: object | None = None
                 self._library_summary_label: object | None = None
                 self._recent_work = _default_recent_work()
+                self._help_dialog: object | None = None
+                self._help_viewer: object | None = None
                 self._recent_work_dialog: object | None = None
                 self._recent_transcripts_list: object | None = None
                 self._recent_output_dirs_list: object | None = None
@@ -1042,6 +1378,8 @@ class FlowScribeMainWindow:
                 self.view_menu_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
                 self.view_settings_button = QPushButton("View Settings")
                 self.view_settings_button.clicked.connect(self._show_saved_settings)
+                self.help_button = QPushButton("Help")
+                self.help_button.clicked.connect(self._show_help)
                 self.export_profiles_button = QPushButton("Export Profiles")
                 self.export_profiles_button.clicked.connect(self._show_export_profiles)
                 self.view_library_button = QPushButton("Transcript Library")
@@ -1067,6 +1405,7 @@ class FlowScribeMainWindow:
                     self.open_views_button,
                     self.view_menu_button,
                     self.view_settings_button,
+                    self.help_button,
                     self.export_profiles_button,
                     self.view_library_button,
                     self.view_recent_work_button,
@@ -1085,12 +1424,14 @@ class FlowScribeMainWindow:
 
                 self.status_label = QLabel("Ready. Add a local media file, choose outputs, then start transcription.")
                 self.status_label.setWordWrap(True)
+                self.diagnostics_label = QLabel("")
+                self.diagnostics_label.setWordWrap(True)
 
                 media_box = QGroupBox("Media Sync")
                 media_layout = QVBoxLayout(media_box)
                 media_layout.setSpacing(10)
                 self.video_widget = QVideoWidget()
-                self.video_widget.setMinimumHeight(220)
+                self.video_widget.setMinimumHeight(180)
                 self.video_widget.setSizePolicy(
                     QSizePolicy.Policy.Preferred,
                     QSizePolicy.Policy.Expanding,
@@ -1147,7 +1488,7 @@ class FlowScribeMainWindow:
 
                 self.transcript_summary = QTextBrowser()
                 self.transcript_summary.setReadOnly(True)
-                self.transcript_summary.setMaximumHeight(110)
+                self.transcript_summary.setMaximumHeight(96)
                 self.transcript_summary.setOpenExternalLinks(False)
                 self.transcript_summary.setPlaceholderText(
                     "Transcript summary will appear here."
@@ -1167,13 +1508,13 @@ class FlowScribeMainWindow:
                 search_row.addWidget(self.search_button)
 
                 self.search_results = QListWidget()
-                self.search_results.setMinimumHeight(110)
-                self.search_results.setMaximumHeight(180)
+                self.search_results.setMinimumHeight(72)
+                self.search_results.setMaximumHeight(140)
                 self.search_results.itemActivated.connect(self._jump_to_selected_hit)
                 self.search_results.itemClicked.connect(self._jump_to_selected_hit)
 
                 self.transcript_segments = QListWidget()
-                self.transcript_segments.setMinimumHeight(220)
+                self.transcript_segments.setMinimumHeight(140)
                 self.transcript_segments.itemActivated.connect(self._activate_selected_segment)
                 self.transcript_segments.itemClicked.connect(self._activate_selected_segment)
 
@@ -1185,6 +1526,7 @@ class FlowScribeMainWindow:
                 )
                 self.segment_editor.textChanged.connect(self._on_segment_editor_text_changed)
                 self.segment_editor.setEnabled(False)
+                self.segment_editor.setMinimumHeight(120)
                 transcript_edit_layout.addWidget(self.segment_editor)
 
                 transcript_edit_actions = QHBoxLayout()
@@ -1222,6 +1564,7 @@ class FlowScribeMainWindow:
                 right_layout.addWidget(settings_box)
                 right_layout.addLayout(action_layout)
                 right_layout.addWidget(self.status_label)
+                right_layout.addWidget(self.diagnostics_label)
                 right_layout.addWidget(self.progress_bar)
                 right_layout.addWidget(self.views_hint_label)
 
@@ -1276,8 +1619,10 @@ class FlowScribeMainWindow:
                     QPlainTextEdit,
                     QPushButton,
                     QSplitter,
+                    QStackedWidget,
                     QGroupBox,
                     QTabWidget,
+                    QTextBrowser,
                     QToolButton,
                     QVBoxLayout,
                     QWidget,
@@ -1286,6 +1631,10 @@ class FlowScribeMainWindow:
                 dialog = QDialog(self)
                 dialog.setWindowTitle("Views")
                 dialog.resize(980, 760)
+                dialog.setWindowFlag(Qt.WindowType.Window, True)
+                dialog.setWindowFlag(Qt.WindowType.WindowMinimizeButtonHint, True)
+                dialog.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint, True)
+                dialog.setWindowFlag(Qt.WindowType.WindowContextHelpButtonHint, False)
 
                 layout = QVBoxLayout(dialog)
                 toolbar_row = QHBoxLayout()
@@ -1323,9 +1672,11 @@ class FlowScribeMainWindow:
                 transcript_page_layout.addWidget(workspace_summary_label)
 
                 workspace_splitter = QSplitter(Qt.Orientation.Vertical, transcript_page)
+                workspace_splitter.setChildrenCollapsible(False)
                 transcript_page_layout.addWidget(workspace_splitter, 1)
 
                 review_splitter = QSplitter(Qt.Orientation.Horizontal, workspace_splitter)
+                review_splitter.setChildrenCollapsible(False)
 
                 review_left = QWidget(review_splitter)
                 review_left_layout = QVBoxLayout(review_left)
@@ -1335,6 +1686,7 @@ class FlowScribeMainWindow:
                 review_left_layout.addWidget(self.transcript_summary, 1)
 
                 review_right = QSplitter(Qt.Orientation.Vertical, review_splitter)
+                review_right.setChildrenCollapsible(False)
 
                 search_box = QGroupBox("Transcript search")
                 search_layout = QVBoxLayout(search_box)
@@ -1359,28 +1711,58 @@ class FlowScribeMainWindow:
                 artifact_selector = QComboBox(artifact_box)
                 artifact_selector.currentIndexChanged.connect(self._show_selected_workspace_artifact)
                 artifact_toolbar.addWidget(artifact_selector, 1)
+                artifact_format_label = QLabel("No artifact selected")
+                artifact_toolbar.addWidget(artifact_format_label)
                 open_artifact_tab_button = QPushButton("Open Tab", artifact_box)
                 open_artifact_tab_button.clicked.connect(self._open_selected_workspace_artifact_tab)
                 artifact_toolbar.addWidget(open_artifact_tab_button)
                 artifact_layout.addLayout(artifact_toolbar)
 
+                artifact_compare_row = QHBoxLayout()
+                artifact_compare_row.addWidget(QLabel("Quick switch"))
+                quick_buttons: dict[str, object] = {}
+                for group, label in (
+                    ("transcript_json", "Transcript JSON"),
+                    ("corrected_json", "Corrected JSON"),
+                    ("srt", "SRT"),
+                    ("vtt", "VTT"),
+                    ("md", "Markdown"),
+                    ("txt", "Text"),
+                ):
+                    button = QPushButton(label, artifact_box)
+                    button.clicked.connect(
+                        lambda _checked=False, target_group=group: self._show_workspace_artifact_group(target_group)
+                    )
+                    artifact_compare_row.addWidget(button)
+                    quick_buttons[group] = button
+                artifact_compare_row.addStretch(1)
+                artifact_layout.addLayout(artifact_compare_row)
+
                 artifact_status_label = QLabel("Open a transcript or artifact to inspect generated files here.")
                 artifact_status_label.setWordWrap(True)
                 artifact_layout.addWidget(artifact_status_label)
 
+                artifact_viewer_stack = QStackedWidget(artifact_box)
                 artifact_viewer = QPlainTextEdit(artifact_box)
                 artifact_viewer.setReadOnly(True)
-                artifact_layout.addWidget(artifact_viewer, 1)
+                artifact_markdown_viewer = QTextBrowser(artifact_box)
+                artifact_markdown_viewer.setOpenExternalLinks(False)
+                artifact_viewer_stack.addWidget(artifact_viewer)
+                artifact_viewer_stack.addWidget(artifact_markdown_viewer)
+                artifact_layout.addWidget(artifact_viewer_stack, 1)
 
                 workspace_splitter.addWidget(review_splitter)
                 workspace_splitter.addWidget(artifact_box)
                 workspace_splitter.setStretchFactor(0, 4)
-                workspace_splitter.setStretchFactor(1, 2)
+                workspace_splitter.setStretchFactor(1, 3)
                 review_splitter.setStretchFactor(0, 3)
                 review_splitter.setStretchFactor(1, 4)
                 review_right.setStretchFactor(0, 1)
                 review_right.setStretchFactor(1, 3)
                 review_right.setStretchFactor(2, 3)
+                workspace_splitter.setSizes([520, 320])
+                review_splitter.setSizes([360, 640])
+                review_right.setSizes([150, 240, 240])
 
                 library_page = QWidget(dialog)
                 library_layout = QVBoxLayout(library_page)
@@ -1485,8 +1867,12 @@ class FlowScribeMainWindow:
                 self._view_tab_visibility = dict(self._view_preferences["visible_tabs"])
                 self._artifact_viewers = {}
                 self._workspace_artifact_selector = artifact_selector
+                self._workspace_artifact_viewer_stack = artifact_viewer_stack
                 self._workspace_artifact_viewer = artifact_viewer
+                self._workspace_artifact_markdown_viewer = artifact_markdown_viewer
                 self._workspace_artifact_status_label = artifact_status_label
+                self._workspace_artifact_format_label = artifact_format_label
+                self._workspace_artifact_quick_buttons = quick_buttons
                 self._library_source_filter_combo = library_source_filter_combo
                 self._library_missing_filter_combo = library_missing_filter_combo
                 self._library_opened_filter_combo = library_opened_filter_combo
@@ -1608,12 +1994,16 @@ class FlowScribeMainWindow:
                 replace: bool,
                 preferred_path: Path | None = None,
             ) -> None:
-                normalized = _normalize_viewable_artifact_paths(paths)
+                normalized = _sort_workspace_artifact_paths(
+                    _normalize_viewable_artifact_paths(paths)
+                )
                 if replace:
                     merged = normalized
                 else:
-                    merged = _normalize_viewable_artifact_paths(
-                        self._workspace_artifact_paths + normalized
+                    merged = _sort_workspace_artifact_paths(
+                        _normalize_viewable_artifact_paths(
+                            self._workspace_artifact_paths + normalized
+                        )
                     )
                 self._workspace_artifact_paths = merged
                 selector = self._workspace_artifact_selector
@@ -1623,17 +2013,22 @@ class FlowScribeMainWindow:
                 try:
                     selector.clear()
                     for path in merged:
-                        selector.addItem(_view_tab_title_for_artifact(path), str(path))
+                        selector.addItem(_artifact_selector_label(path), str(path))
                 finally:
                     selector.blockSignals(False)
 
                 if not merged:
                     if self._workspace_artifact_viewer is not None:
                         self._workspace_artifact_viewer.clear()
+                    if self._workspace_artifact_markdown_viewer is not None:
+                        self._workspace_artifact_markdown_viewer.clear()
+                    if self._workspace_artifact_format_label is not None:
+                        self._workspace_artifact_format_label.setText("No artifact selected")
                     if self._workspace_artifact_status_label is not None:
                         self._workspace_artifact_status_label.setText(
                             "Open a transcript or artifact to inspect generated files here."
                         )
+                    self._refresh_workspace_artifact_buttons()
                     return
 
                 selected_path = preferred_path if preferred_path in merged else merged[0]
@@ -1645,19 +2040,62 @@ class FlowScribeMainWindow:
                     return
                 self._show_workspace_artifact(self._workspace_artifact_paths[index])
 
+            def _refresh_workspace_artifact_buttons(self) -> None:
+                for group, button in self._workspace_artifact_quick_buttons.items():
+                    if button is None:
+                        continue
+                    button.setEnabled(
+                        any(
+                            _artifact_compare_group(path) == group
+                            for path in self._workspace_artifact_paths
+                        )
+                    )
+
+            def _show_workspace_artifact_group(self, group: str) -> None:
+                for index, path in enumerate(self._workspace_artifact_paths):
+                    if _artifact_compare_group(path) != group:
+                        continue
+                    if self._workspace_artifact_selector is not None:
+                        self._workspace_artifact_selector.setCurrentIndex(index)
+                    self._show_workspace_artifact(path)
+                    return
+                self.status_label.setText(f"No {group.replace('_', ' ')} artifact is available yet.")
+
             def _show_workspace_artifact(self, path: Path) -> None:
                 viewer = self._workspace_artifact_viewer
+                markdown_viewer = self._workspace_artifact_markdown_viewer
+                viewer_stack = self._workspace_artifact_viewer_stack
                 status_label = self._workspace_artifact_status_label
-                if viewer is None or status_label is None:
+                format_label = self._workspace_artifact_format_label
+                if viewer is None or markdown_viewer is None or status_label is None:
                     return
                 if not path.is_file():
                     viewer.clear()
+                    markdown_viewer.clear()
+                    if format_label is not None:
+                        format_label.setText("Missing artifact")
                     status_label.setText(f"Artifact is missing: {path}")
+                    self._refresh_workspace_artifact_buttons()
                     return
-                viewer.setPlainText(_read_viewable_artifact_text(path))
+                rendered = _read_viewable_artifact_text(path)
+                if path.suffix.lower() == ".json":
+                    markdown_viewer.setHtml(_render_json_artifact_html(path, rendered))
+                    if viewer_stack is not None:
+                        viewer_stack.setCurrentWidget(markdown_viewer)
+                elif path.suffix.lower() == ".md":
+                    markdown_viewer.setMarkdown(rendered)
+                    if viewer_stack is not None:
+                        viewer_stack.setCurrentWidget(markdown_viewer)
+                else:
+                    viewer.setPlainText(rendered)
+                    if viewer_stack is not None:
+                        viewer_stack.setCurrentWidget(viewer)
+                if format_label is not None:
+                    format_label.setText(_artifact_format_label(path))
                 status_label.setText(
-                    f"Inspecting {path.name} in the current transcript workspace."
+                    f"{_artifact_summary(path, rendered)} | Inspecting {path.name} in the current transcript workspace."
                 )
+                self._refresh_workspace_artifact_buttons()
 
             def _open_selected_workspace_artifact_tab(self) -> None:
                 selector = self._workspace_artifact_selector
@@ -1911,11 +2349,13 @@ class FlowScribeMainWindow:
                 self._apply_export_preferences(preferences)
                 self.overwrite_check.setChecked(bool(preferences["overwrite"]))
                 self.keep_media_check.setChecked(bool(preferences["keep_media"]))
+                self._refresh_diagnostics_summary()
 
             def _save_settings(self) -> None:
                 self._saved_preferences = _gui_preferences_payload(self._current_gui_preferences())
                 self._persist_gui_state()
-                self.status_label.setText("GUI settings saved.")
+                self._refresh_diagnostics_summary()
+                self.status_label.setText("GUI settings saved. Output, model, and export defaults are ready for the next run.")
 
             def _show_saved_settings(self) -> None:
                 from PySide6.QtWidgets import QDialog, QHBoxLayout, QPlainTextEdit, QPushButton, QVBoxLayout
@@ -1954,6 +2394,97 @@ class FlowScribeMainWindow:
                 self._settings_dialog.show()
                 self._settings_dialog.raise_()
                 self._settings_dialog.activateWindow()
+
+            def _help_html(self) -> str:
+                output_dir = Path(self.output_dir_input.text().strip() or "outputs")
+                output_check = check_output_dir(output_dir)
+                whisper_check = check_faster_whisper_import()
+                ffmpeg_check = check_command("ffmpeg")
+                capture_text = self.capture_status_label.text().strip()
+                state_note = (
+                    f"<p><strong>State file:</strong> FlowScribe can read {_user_facing_state_file_label()}.</p>"
+                    if self._state_load_warning is None
+                    else (
+                        f"<p><strong>State file warning:</strong> {escape(self._state_load_warning)}</p>"
+                    )
+                )
+                return (
+                    "<html><body>"
+                    "<h2>FlowScribe Help And Diagnostics</h2>"
+                    "<p>FlowScribe turns local media, captured system playback, or public URL audio into transcript files that you can review, search, edit, and export.</p>"
+                    "<h3>First Run</h3>"
+                    "<ul>"
+                    "<li>Choose one or more local audio/video files, or paste a public URL.</li>"
+                    f"<li>Pick an output folder. Current folder: {_user_facing_folder_label(output_dir)}</li>"
+                    f"<li>{escape(_model_access_guidance_text(self.model_combo.currentText()))}</li>"
+                    "<li>Default outputs are TXT, Markdown, and JSON. Use <strong>Open Output Folder</strong> after a run to inspect them.</li>"
+                    "<li>System audio capture needs the bundled WASAPI helper and a Windows playback device that the helper can record.</li>"
+                    "</ul>"
+                    "<h3>Current Diagnostics</h3>"
+                    "<ul>"
+                    f"<li><strong>Output folder:</strong> {escape(_user_facing_doctor_message(output_check.name, output_check.ok, output_check.message))}</li>"
+                    f"<li><strong>faster-whisper:</strong> {escape(_user_facing_doctor_message(whisper_check.name, whisper_check.ok, whisper_check.message))}</li>"
+                    f"<li><strong>ffmpeg:</strong> {escape(_user_facing_doctor_message(ffmpeg_check.name, ffmpeg_check.ok, ffmpeg_check.message))}</li>"
+                    f"<li><strong>Capture:</strong> {escape(capture_text)}</li>"
+                    "</ul>"
+                    f"{state_note}"
+                    "<h3>Common Problems And Next Steps</h3>"
+                    "<ul>"
+                    "<li><strong>Model download feels stuck:</strong> try the `small` model first, check internet access, and keep the first run open long enough to download model files.</li>"
+                    "<li><strong>Capture helper missing:</strong> use a release bundle that includes <code>WasapiCaptureHelper.exe</code> or rebuild the GUI package.</li>"
+                    "<li><strong>System capture unsupported:</strong> use local files or URL transcription first, or switch to a machine/device path that supports Windows playback capture.</li>"
+                    "<li><strong>Transcript JSON opens but media is missing:</strong> bind a local media file again from the transcript workspace or rebind it from Library / Recent Work.</li>"
+                    "<li><strong>Library entry is stale:</strong> clean missing entries from Library or Recent Work so broken transcript records stop getting in the way.</li>"
+                    "<li><strong>Output folder problems:</strong> pick a writable folder, save settings, then retry the run.</li>"
+                    "</ul>"
+                    "<h3>Where To Look Next</h3>"
+                    "<ul>"
+                    "<li><strong>Workspace:</strong> review transcript text, playback, and artifacts together.</li>"
+                    "<li><strong>Library:</strong> reopen old transcripts, clean missing entries, and repair bindings.</li>"
+                    "<li><strong>Recent Work:</strong> jump back to the last transcript JSON or output folder quickly.</li>"
+                    "</ul>"
+                    "</body></html>"
+                )
+
+            def _refresh_diagnostics_summary(self) -> None:
+                output_dir = Path(self.output_dir_input.text().strip() or "outputs")
+                summary = _onboarding_summary_text(
+                    output_dir=output_dir,
+                    model_name=self.model_combo.currentText(),
+                    capture_message=self.capture_status_label.text().strip() or "No capture status yet.",
+                )
+                if self._state_load_warning:
+                    summary += " | State: FlowScribe started with default settings because the saved GUI state could not be reused."
+                self.diagnostics_label.setText(summary)
+
+            def _show_help(self, *_args) -> None:
+                from PySide6.QtWidgets import QDialog, QHBoxLayout, QPushButton, QTextBrowser, QVBoxLayout
+
+                self.status_label.setText("Showing help and diagnostics.")
+                if self._help_dialog is None:
+                    dialog = QDialog(self)
+                    dialog.setWindowTitle("Help And Diagnostics")
+                    dialog.resize(860, 700)
+                    layout = QVBoxLayout(dialog)
+                    viewer = QTextBrowser(dialog)
+                    viewer.setOpenExternalLinks(False)
+                    layout.addWidget(viewer)
+                    close_button = QPushButton("Close", dialog)
+                    close_button.clicked.connect(dialog.accept)
+                    button_row = QHBoxLayout()
+                    button_row.addStretch(1)
+                    button_row.addWidget(close_button)
+                    layout.addLayout(button_row)
+                    self._help_dialog = dialog
+                    self._help_viewer = viewer
+
+                if self._help_viewer is not None:
+                    self._help_viewer.setHtml(self._help_html())
+                self._onboarding_state["help_seen"] = True
+                self._persist_gui_state()
+                self._help_dialog.show()
+                self._help_dialog.raise_()
+                self._help_dialog.activateWindow()
 
             def _show_export_profiles(self) -> None:
                 from PySide6.QtWidgets import QDialog, QHBoxLayout, QListWidget, QPushButton, QVBoxLayout
@@ -2184,15 +2715,15 @@ class FlowScribeMainWindow:
                 try:
                     resolved = target.resolve()
                 except OSError:
-                    self.status_label.setText("Output directory is not available.")
+                    self.status_label.setText("Output directory is not available. Choose a writable folder in Settings or open Help for setup guidance.")
                     return
 
                 if not resolved.exists():
-                    self.status_label.setText(f"Output directory does not exist yet: {resolved}")
+                    self.status_label.setText(f"Output directory does not exist yet: {resolved}. Start a run first or choose another folder.")
                     return
 
                 if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(resolved))):
-                    self.status_label.setText(f"Could not open output directory: {resolved}")
+                    self.status_label.setText(f"Could not open output directory: {resolved}. Check permissions or choose another output path.")
                     return
                 self.status_label.setText(f"Opened output directory: {resolved}")
 
@@ -2301,7 +2832,9 @@ class FlowScribeMainWindow:
                     view = load_transcript_view(path)
                     editable = load_editable_transcript(path)
                 except ValueError as exc:
-                    self.status_label.setText("Could not open transcript JSON.")
+                    self.status_label.setText(
+                        "Could not open transcript JSON. Make sure the file still exists and contains valid transcript JSON."
+                    )
                     self.transcript_summary.setPlainText(str(exc))
                     self.transcript_segments.clear()
                     self.search_results.clear()
@@ -2422,7 +2955,9 @@ class FlowScribeMainWindow:
                 auto_bound: bool = False,
             ) -> bool:
                 if not path.is_file() or not is_supported_media(path):
-                    self.media_status_label.setText(f"Unsupported media file: {path}")
+                    self.media_status_label.setText(
+                        f"Unsupported media file: {path}. Choose a local audio or video file that matches this transcript."
+                    )
                     return False
 
                 self._media_path = path
@@ -2606,7 +3141,7 @@ class FlowScribeMainWindow:
             def _start_system_capture(self) -> None:
                 self._refresh_capture_support()
                 if not self._capture_supported:
-                    self.status_label.setText("System audio capture is not available.")
+                    self.status_label.setText("System audio capture is not available. Open Help for capture requirements and fallback options.")
                     return
                 if self._capture_controller.is_recording():
                     self.capture_status_label.setText("System audio capture is already running.")
@@ -2621,7 +3156,8 @@ class FlowScribeMainWindow:
                     started = self._capture_controller.start_capture(output_path)
                 except MediaPreparationError as exc:
                     self.capture_status_label.setText(str(exc))
-                    self.status_label.setText("Could not start system audio capture.")
+                    self.status_label.setText("Could not start system audio capture. Open Help for helper and environment checks.")
+                    self._refresh_diagnostics_summary()
                     return
 
                 self._active_capture_path = started.output_path
@@ -2634,6 +3170,7 @@ class FlowScribeMainWindow:
                 )
                 self.status_label.setText("System audio capture started.")
                 self._capture_activity_timer.start()
+                self._refresh_diagnostics_summary()
 
             def _stop_system_capture(self) -> None:
                 if not self._capture_controller.is_recording():
@@ -2648,7 +3185,8 @@ class FlowScribeMainWindow:
                     self._active_capture_path = None
                     self._capture_activity_timer.stop()
                     self.capture_status_label.setText(str(exc))
-                    self.status_label.setText("System audio capture failed.")
+                    self.status_label.setText("System audio capture failed. Open Help for next-step diagnostics.")
+                    self._refresh_diagnostics_summary()
                     return
 
                 output_path = completed.output_path
@@ -2669,6 +3207,7 @@ class FlowScribeMainWindow:
                     )
                 self.status_label.setText(f"Captured system audio: {output_path.name}")
                 self._persist_local_source_state()
+                self._refresh_diagnostics_summary()
 
             def _cleanup_temporary_capture_files(self) -> None:
                 if not self._temporary_capture_paths:
@@ -2731,16 +3270,28 @@ class FlowScribeMainWindow:
                     self.capture_status_label.setText(message)
                 elif self.capture_status_label.text() == "System capture is idle.":
                     self.capture_status_label.setText(message)
+                self._refresh_diagnostics_summary()
 
             def _restore_gui_state(self) -> None:
                 from PySide6.QtCore import QSignalBlocker
 
-                local_paths, checked, preferences, recent_work, export_profiles, view_preferences = _load_gui_state()
+                (
+                    local_paths,
+                    checked,
+                    preferences,
+                    recent_work,
+                    export_profiles,
+                    view_preferences,
+                    onboarding_state,
+                    state_load_warning,
+                ) = _load_gui_state()
                 self._saved_checked_local_paths = checked
                 self._saved_preferences = preferences
                 self._recent_work = _recent_work_payload(recent_work)
                 self._export_profiles = export_profiles
                 self._view_preferences = view_preferences
+                self._onboarding_state = onboarding_state
+                self._state_load_warning = state_load_warning
                 blocker = QSignalBlocker(self.file_list)
                 try:
                     self._apply_gui_preferences(preferences)
@@ -2758,7 +3309,10 @@ class FlowScribeMainWindow:
                 for key, visible in self._view_preferences.get("visible_tabs", {}).items():
                     self._set_view_tab_visible(key, visible)
                 self._set_current_view_tab(self._view_preferences.get("current_tab", "transcript"))
+                self._refresh_diagnostics_summary()
                 self._persist_gui_state()
+                if not self._onboarding_state.get("help_seen", False):
+                    self._show_help()
 
             def _persist_gui_state(self) -> None:
                 self._view_preferences = self._capture_view_preferences()
@@ -2769,6 +3323,7 @@ class FlowScribeMainWindow:
                     self._recent_work,
                     self._export_profiles,
                     self._view_preferences,
+                    self._onboarding_state,
                 )
 
             def _persist_local_source_state(self) -> None:
@@ -2976,7 +3531,9 @@ class FlowScribeMainWindow:
                     return
                 transcript_path = entry.transcript_path
                 if not transcript_path.is_file():
-                    self.status_label.setText(f"Transcript is missing: {transcript_path}")
+                    self.status_label.setText(
+                        f"Transcript is missing: {transcript_path}. Clean missing entries or restore the file before reopening it."
+                    )
                     self._refresh_transcript_library_list()
                     return
                 self._load_transcript_json(transcript_path)
@@ -2994,7 +3551,9 @@ class FlowScribeMainWindow:
                     self.status_label.setText("Select a transcript library entry first.")
                     return
                 if not entry.transcript_path.is_file():
-                    self.status_label.setText(f"Transcript is missing: {entry.transcript_path}")
+                    self.status_label.setText(
+                        f"Transcript is missing: {entry.transcript_path}. Clean missing entries or restore the file before rebinding media."
+                    )
                     self._refresh_transcript_library_list()
                     return
                 if not self._load_transcript_json(entry.transcript_path):
@@ -3264,10 +3823,8 @@ class FlowScribeMainWindow:
                 self.status_label.setText(
                     f"Re-exported {len(artifacts.paths)} transcript artifact(s) from JSON."
                 )
-                if transcript_paths:
+                if artifacts.paths or transcript_paths:
                     self._select_view_tab("transcript")
-                elif artifacts.paths:
-                    self._select_view_tab(_view_tab_key_for_artifact(artifacts.paths[0]))
                 return True
 
             def _confirm_unsaved_transcript_edits(self) -> bool:
@@ -3500,10 +4057,14 @@ class FlowScribeMainWindow:
 
                 if not path.is_dir():
                     self._drop_missing_recent_path("recent_output_dirs", path)
-                    self.status_label.setText(f"Recent output directory is missing and was removed: {path}")
+                    self.status_label.setText(
+                        f"Recent output directory is missing and was removed: {path}. Choose another output folder or run a new transcription."
+                    )
                     return
                 if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(path))):
-                    self.status_label.setText(f"Could not open output directory: {path}")
+                    self.status_label.setText(
+                        f"Could not open output directory: {path}. Check folder permissions or choose another output path."
+                    )
                     return
                 self.status_label.setText(f"Opened output directory: {path}")
 

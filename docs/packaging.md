@@ -158,8 +158,8 @@ In the packaged GUI, check these desktop workflows:
 For a GitHub Release, upload:
 
 ```text
-FlowScribe-v0.2.5-windows-x64.zip
-FlowScribeGUI-v0.2.5-windows-x64.zip
+FlowScribe-v0.2.6-windows-x64.zip
+FlowScribeGUI-v0.2.6-windows-x64.zip
 ```
 
 The CLI ZIP should contain the entire `dist/FlowScribe/` folder, including:
@@ -190,6 +190,22 @@ Release notes should include:
 - Quick test command: `FlowScribe.exe doctor`.
 - GUI smoke test command: `FlowScribeGUI.exe --self-test`.
 - Legal and ethical use boundary.
+
+## Release Workflow Reruns
+
+The GitHub Actions release workflow is designed to support create-or-update
+behavior for the same tag.
+
+- The workflow checks out the requested tag ref and verifies that it is building
+  the expected tagged contents.
+- If the GitHub Release does not exist yet, the workflow creates the release
+  record first.
+- If the GitHub Release already exists, the workflow updates the existing
+  release metadata instead of trying to create a duplicate release.
+- CLI and GUI ZIP uploads use overwrite-enabled asset upload so reruns can
+  replace stale assets after a failed or partial release attempt.
+- The workflow logs whether it is in create mode, update mode, or asset upload
+  mode so Actions failures are easier to diagnose quickly.
 
 ## Why Not One-File Yet?
 
