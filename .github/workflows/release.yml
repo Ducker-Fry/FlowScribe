@@ -229,8 +229,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           Write-Host "Inspecting release state for $env:RELEASE_VERSION"
+          $PSNativeCommandUseErrorActionPreference = $false
           $releaseJson = gh release view "$env:RELEASE_VERSION" --json url,assets,tagName 2>$null
-          if ($LASTEXITCODE -eq 0) {
+          $releaseExitCode = $LASTEXITCODE
+          $PSNativeCommandUseErrorActionPreference = $true
+          if ($releaseExitCode -eq 0) {
             $release = $releaseJson | ConvertFrom-Json
             $assetNames = @($release.assets | ForEach-Object { $_.name })
             Write-Host "Existing release found for tag $($release.tagName)"
