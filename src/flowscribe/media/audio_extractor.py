@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import wave
 from pathlib import Path
 
 from flowscribe.core.errors import MediaPreparationError
@@ -51,4 +52,21 @@ class FfmpegAudioExtractor:
             message = exc.stderr.strip() or exc.stdout.strip() or str(exc)
             raise MediaPreparationError(f"ffmpeg failed for {item.path}: {message}") from exc
 
-        return PreparedAudio(source=item, path=audio_path, sample_rate=self._sample_rate)
+        return PreparedAudio(
+            source=item,
+            path=audio_path,
+            sample_rate=self._sample_rate,
+            duration_seconds=self._probe_duration_seconds(audio_path),
+        )
+
+    @staticmethod
+    def _probe_duration_seconds(audio_path: Path) -> float | None:
+        try:
+            with wave.open(str(audio_path), "rb") as wav_file:
+                frame_rate = wav_file.getframerate()
+                frame_count = wav_file.getnframes()
+        except (wave.Error, OSError):
+            return None
+        if frame_rate <= 0:
+            return None
+        return frame_count / float(frame_rate)

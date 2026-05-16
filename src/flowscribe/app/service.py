@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+import time
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -17,7 +18,13 @@ from flowscribe.app.models import (
 )
 from flowscribe.config.settings import AppSettings
 from flowscribe.core.errors import CancellationError, FlowScribeError
-from flowscribe.core.models import MediaItem, OutputArtifacts
+from flowscribe.core.models import (
+    MediaDurationInfo,
+    MediaItem,
+    OutputArtifacts,
+    ProgressiveTranscriptionUpdate,
+    TranscriptionChunkPlan,
+)
 from flowscribe.core.pipeline import LocalTranscriptionPipeline
 from flowscribe.input.local_source import LocalFileSource
 from flowscribe.input.url_downloader import UrlAudioDownloader
@@ -182,7 +189,32 @@ class TranscriptionService:
                 )
             )
             try:
-                artifacts = pipeline.process(item)
+                if job.progressive_enabled and hasattr(pipeline, "process_progressive"):
+                    run_started_at = time.perf_counter()
+                    artifacts, _ = pipeline.process_progressive(
+                        item,
+                        chunk_duration_seconds=job.progressive_chunk_seconds,
+                        chunk_overlap_seconds=job.progressive_chunk_overlap_seconds,
+                        resume=True,
+                        keep_progressive_cache=True,
+                        max_workers=job.progressive_max_workers,
+                        plan_callback=lambda duration_info, chunk_plan: self._emit_progressive_plan(
+                            progress,
+                            should_cancel,
+                            item=item,
+                            duration_info=duration_info,
+                            chunk_plan=chunk_plan,
+                        ),
+                        update_callback=lambda update: self._emit_progressive_update(
+                            progress,
+                            should_cancel,
+                            item=item,
+                            update=update,
+                            run_started_at=run_started_at,
+                        ),
+                    )
+                else:
+                    artifacts = pipeline.process(item)
             except FlowScribeError as exc:
                 errors.append(_error_from_exception(exc, source=str(item.path)))
                 self._emit_progress(
@@ -257,7 +289,33 @@ class TranscriptionService:
             )
             pipeline = _build_pipeline(job, settings)
             self._ensure_not_canceled(should_cancel)
-            artifacts = pipeline.process(MediaItem(path=download.path))
+            item = MediaItem(path=download.path)
+            if job.progressive_enabled and hasattr(pipeline, "process_progressive"):
+                run_started_at = time.perf_counter()
+                artifacts, _ = pipeline.process_progressive(
+                    item,
+                    chunk_duration_seconds=job.progressive_chunk_seconds,
+                    chunk_overlap_seconds=job.progressive_chunk_overlap_seconds,
+                    resume=True,
+                    keep_progressive_cache=True,
+                    max_workers=job.progressive_max_workers,
+                    plan_callback=lambda duration_info, chunk_plan: self._emit_progressive_plan(
+                        progress,
+                        should_cancel,
+                        item=item,
+                        duration_info=duration_info,
+                        chunk_plan=chunk_plan,
+                    ),
+                    update_callback=lambda update: self._emit_progressive_update(
+                        progress,
+                        should_cancel,
+                        item=item,
+                        update=update,
+                        run_started_at=run_started_at,
+                    ),
+                )
+            else:
+                artifacts = pipeline.process(item)
             for path in artifacts.paths:
                 self._emit_progress(
                     progress,
@@ -289,6 +347,82 @@ class TranscriptionService:
         progress(event)
         if event.stage != "canceled":
             self._ensure_not_canceled(should_cancel)
+
+    def _emit_progressive_plan(
+        self,
+        progress: ProgressCallback,
+        should_cancel: Callable[[], bool],
+        *,
+        item: MediaItem,
+        duration_info: MediaDurationInfo,
+        chunk_plan: TranscriptionChunkPlan,
+    ) -> None:
+        duration_seconds = duration_info.duration_seconds
+        if duration_seconds is None:
+            message = f"Progressive transcription prepared for {item.path.name}."
+        else:
+            message = (
+                f"Progressive transcription ready for {item.path.name}: "
+                f"{_format_duration_label(duration_seconds)} across {len(chunk_plan.chunks)} chunk(s)."
+            )
+        self._emit_progress(
+            progress,
+            should_cancel,
+            ProgressEvent(
+                stage="prepare",
+                message=message,
+                source=str(item.path),
+                total_duration_seconds=duration_seconds,
+                chunk_count=len(chunk_plan.chunks),
+            ),
+        )
+
+    def _emit_progressive_update(
+        self,
+        progress: ProgressCallback,
+        should_cancel: Callable[[], bool],
+        *,
+        item: MediaItem,
+        update: ProgressiveTranscriptionUpdate,
+        run_started_at: float,
+    ) -> None:
+        processed_seconds = update.state.processed_duration_seconds
+        total_seconds = update.state.duration_info.duration_seconds
+        elapsed_wall_seconds = max(0.001, time.perf_counter() - run_started_at)
+        realtime_factor = None
+        eta_seconds = None
+        if processed_seconds > 0:
+            realtime_factor = processed_seconds / elapsed_wall_seconds
+            if total_seconds is not None and realtime_factor > 0:
+                remaining_seconds = max(0.0, total_seconds - processed_seconds)
+                eta_seconds = remaining_seconds / realtime_factor
+        self._emit_progress(
+            progress,
+            should_cancel,
+            ProgressEvent(
+                stage="resume" if update.resumed else "transcribe",
+                message=_progressive_status_message(
+                    source_name=item.path.name,
+                    processed_seconds=processed_seconds,
+                    total_seconds=total_seconds,
+                    chunk_index=update.chunk_result.chunk.index,
+                    chunk_count=len(update.state.chunk_plan.chunks),
+                    realtime_factor=realtime_factor,
+                    eta_seconds=eta_seconds,
+                    resumed=update.resumed,
+                ),
+                source=str(item.path),
+                processed_duration_seconds=processed_seconds,
+                total_duration_seconds=total_seconds,
+                eta_seconds=eta_seconds,
+                realtime_factor=realtime_factor,
+                chunk_index=update.chunk_result.chunk.index,
+                chunk_count=len(update.state.chunk_plan.chunks),
+                completed_chunks=update.state.completed_chunks,
+                segments=update.appended_segments,
+                resumed=update.resumed,
+            ),
+        )
 
 
 def _settings_from_job(job: TranscriptionJob, *, recursive: bool) -> AppSettings:
@@ -358,3 +492,41 @@ def _build_pipeline(job: TranscriptionJob, settings: AppSettings) -> LocalTransc
             else None
         ),
     )
+
+
+def _format_duration_label(value: float) -> str:
+    total_seconds = max(0, int(round(value)))
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours:
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes:02d}:{seconds:02d}"
+
+
+def _progressive_status_message(
+    *,
+    source_name: str,
+    processed_seconds: float,
+    total_seconds: float | None,
+    chunk_index: int,
+    chunk_count: int,
+    realtime_factor: float | None,
+    eta_seconds: float | None,
+    resumed: bool,
+) -> str:
+    prefix = "Resumed" if resumed else "Processed"
+    if total_seconds is None:
+        base = f"{prefix} chunk {chunk_index}/{chunk_count} for {source_name}."
+    else:
+        base = (
+            f"{prefix} chunk {chunk_index}/{chunk_count} for {source_name}: "
+            f"{_format_duration_label(processed_seconds)} / {_format_duration_label(total_seconds)}."
+        )
+    extras: list[str] = []
+    if realtime_factor is not None:
+        extras.append(f"{realtime_factor:.1f}x realtime")
+    if eta_seconds is not None:
+        extras.append(f"ETA {_format_duration_label(eta_seconds)}")
+    if extras:
+        return base + " " + " | ".join(extras)
+    return base

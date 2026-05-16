@@ -601,6 +601,45 @@ def _artifact_summary(path: Path, text: str) -> str:
     return f"{format_label} | lines: {line_count}"
 
 
+def _compact_duration_label(value: float | None) -> str:
+    if value is None:
+        return "?"
+    total_seconds = max(0, int(round(value)))
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours:
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes:02d}:{seconds:02d}"
+
+
+def _render_progress_segment_line(segment) -> str:
+    start_label = _compact_duration_label(segment.start_seconds)
+    end_label = _compact_duration_label(segment.end_seconds)
+    text = segment.text.strip() or "(no text)"
+    return f"[{start_label} - {end_label}] {text}"
+
+
+def _progress_event_status_line(event: ProgressEvent) -> str:
+    parts: list[str] = []
+    if (
+        event.processed_duration_seconds is not None
+        and event.total_duration_seconds is not None
+        and event.total_duration_seconds > 0
+    ):
+        parts.append(
+            "Progress: "
+            f"{_compact_duration_label(event.processed_duration_seconds)} / "
+            f"{_compact_duration_label(event.total_duration_seconds)}"
+        )
+    if event.chunk_index is not None and event.chunk_count is not None:
+        parts.append(f"Chunk: {event.chunk_index}/{event.chunk_count}")
+    if event.realtime_factor is not None:
+        parts.append(f"Speed: {event.realtime_factor:.1f}x")
+    if event.eta_seconds is not None:
+        parts.append(f"ETA: {_compact_duration_label(event.eta_seconds)}")
+    return " | ".join(parts)
+
+
 def _render_json_artifact_html(path: Path, text: str) -> str:
     try:
         payload = json.loads(text)
@@ -999,7 +1038,7 @@ class FlowScribeMainWindow:
             return [path for path in paths if is_acceptable_local_source(path)]
 
         class _TranscriptionWorker(QObject):
-            progress = Signal(str)
+            progress = Signal(object)
             finished = Signal(object)
             failed = Signal(str)
 
@@ -1026,11 +1065,7 @@ class FlowScribeMainWindow:
                 self.finished.emit(result)
 
             def _handle_progress(self, event: ProgressEvent) -> None:
-                if event.stage == "complete":
-                    self.progress.emit(event.message)
-                    return
-                if event.message:
-                    self.progress.emit(event.message)
+                self.progress.emit(event)
 
         def _gui_state_path() -> Path:
             app_data = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)
@@ -1162,6 +1197,7 @@ class FlowScribeMainWindow:
                 self._workspace_artifact_status_label: object | None = None
                 self._workspace_artifact_format_label: object | None = None
                 self._workspace_artifact_quick_buttons: dict[str, object] = {}
+                self._progressive_transcription_active = False
                 self._library_source_filter_combo: object | None = None
                 self._library_missing_filter_combo: object | None = None
                 self._library_opened_filter_combo: object | None = None
@@ -2672,6 +2708,18 @@ class FlowScribeMainWindow:
                 self.status_label.setText("Running transcription in the background...")
                 self.progress_bar.setRange(0, 0)
                 self._cancel_requested = False
+                self._progressive_transcription_active = True
+                self._transcript_view = None
+                self._editable_transcript = None
+                self._transcript_edit_dirty = False
+                self.transcript_segments.clear()
+                self.search_results.clear()
+                self.transcript_summary.setPlainText(
+                    "Progressive transcript output will appear here while the job is running."
+                )
+                self._clear_transcript_editor(
+                    message="Transcript editing becomes available after a transcript JSON is written."
+                )
                 self._remember_recent_output_dir(job.output_dir)
                 self.start_button.setEnabled(False)
                 self.collect_button.setEnabled(False)
@@ -2727,10 +2775,37 @@ class FlowScribeMainWindow:
                     return
                 self.status_label.setText(f"Opened output directory: {resolved}")
 
-            def _append_progress(self, message: str) -> None:
-                self.preview_output.append(message)
+            def _append_progress(self, event: ProgressEvent) -> None:
+                if event.message:
+                    self.preview_output.append(event.message)
+                if event.total_duration_seconds is not None:
+                    self.progress_bar.setRange(0, 1000)
+                if (
+                    event.processed_duration_seconds is not None
+                    and event.total_duration_seconds is not None
+                    and event.total_duration_seconds > 0
+                ):
+                    value = int(
+                        min(1.0, event.processed_duration_seconds / event.total_duration_seconds) * 1000
+                    )
+                    self.progress_bar.setValue(value)
+                if event.segments:
+                    for segment in event.segments:
+                        self.transcript_segments.addItem(_render_progress_segment_line(segment))
+                    self._select_view_tab("transcript")
+                status_line = _progress_event_status_line(event)
+                if status_line:
+                    self.transcript_summary.setPlainText(
+                        event.message + "\n\n" + status_line if event.message else status_line
+                    )
+                    self.transcript_edit_status_label.setText(status_line)
+                if event.stage == "resume" and event.segments:
+                    self.status_label.setText("Resuming progressive transcription...")
+                elif event.stage == "transcribe" and event.message:
+                    self.status_label.setText(event.message)
 
             def _finish_transcription(self, result) -> None:
+                self._progressive_transcription_active = False
                 self.progress_bar.setRange(0, 1)
                 self.progress_bar.setValue(0 if result.canceled else 1)
                 self.start_button.setEnabled(True)
@@ -2797,6 +2872,7 @@ class FlowScribeMainWindow:
                 self._cleanup_temporary_capture_files()
 
             def _fail_transcription(self, message: str) -> None:
+                self._progressive_transcription_active = False
                 self.progress_bar.setRange(0, 1)
                 self.progress_bar.setValue(0)
                 self.start_button.setEnabled(True)

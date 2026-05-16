@@ -7,7 +7,7 @@ Use this file as the compact handoff context when starting a new conversation.
 - Name: FlowScribe
 - Path: `E:\Draft\FlowScribe`
 - Language: Python
-- Current phase: Phase 7, Guided Recovery, Comparison, And Session Flow
+- Current phase: Long Media Progressive Transcription
 
 ## Product Goal
 
@@ -153,6 +153,13 @@ output classes.
 - Recent transcript labels aligned more closely with library metadata.
 - Checkbox-based remembered local source selection.
 - Quiet packaged GUI logging defaults.
+- Progressive transcription foundation for long media:
+  - prepared-audio duration probing
+  - fixed-duration chunk planning with overlap
+  - chunk-level cache and resume support
+  - structured progressive progress events
+  - GUI transcript preview updates while a run is still active
+  - limited parallel progressive scheduling groundwork
 - GUI executable smoke build:
 
   ```text
@@ -305,6 +312,37 @@ Phase 6 summary and Phase 7 planning are tracked in:
 
 - `docs/phase-6-summary-and-phase-7-plan.md`
 - `docs/phase-7-task-list.md`
+
+## Current Long-Media Work
+
+The next major implementation line has shifted from additional workspace polish
+to progressive long-media transcription.
+
+Implemented so far:
+
+- Phase A progressive transcription foundation:
+  - shared duration, chunk-plan, chunk-result, and progressive-state models
+  - fixed-duration chunk planning with overlap
+  - serial chunk transcription and conservative overlap trimming
+  - `LocalWhisperTranscriber.transcribe_clip(...)` for chunk-specific
+    transcription
+- Phase B chunk cache and recovery:
+  - per-run progressive cache directories
+  - chunk result persistence
+  - partial transcript snapshots
+  - resume support that skips completed chunks and reruns unfinished work
+- Phase C GUI-facing progress and ETA:
+  - structured progressive `ProgressEvent` payloads
+  - processed-duration, total-duration, ETA, speed, and chunk counters
+  - transcript segment append events while the run is still active
+- Phase D scheduling groundwork:
+  - staged progressive executor flow
+  - limited parallel worker support
+  - ordered merge behavior even when chunk work completes out of order
+
+Planning and remaining work are tracked in:
+
+- `docs/long-media-progressive-transcription-task-list.md`
 
 ### Standard Mode
 

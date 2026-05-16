@@ -1,8 +1,8 @@
 from datetime import datetime
 from pathlib import Path
 
-from flowscribe.app.models import SourceSpec, TranscriptionJob, TranscriptionResult
-from flowscribe.core.models import OutputArtifacts
+from flowscribe.app.models import ProgressEvent, SourceSpec, TranscriptionJob, TranscriptionResult
+from flowscribe.core.models import OutputArtifacts, TranscriptSegment
 from flowscribe.gui.export_profiles import ExportProfile
 from flowscribe.gui.qt_app import (
     _artifact_format_label,
@@ -21,9 +21,11 @@ from flowscribe.gui.qt_app import (
     _normalize_recent_work_entry_paths,
     _onboarding_state_payload,
     _onboarding_summary_text,
+    _progress_event_status_line,
     _recent_work_payload,
     _recent_transcript_list_label,
     _read_viewable_artifact_text,
+    _render_progress_segment_line,
     _render_json_artifact_html,
     _sort_library_entries,
     _sort_workspace_artifact_paths,
@@ -153,6 +155,31 @@ def test_user_facing_helpers_hide_local_paths_in_help_text(tmp_path: Path) -> No
         True,
         r"ffmpeg version test (C:\secret\ffmpeg.exe)",
     ) == "ffmpeg is available."
+
+
+def test_progress_event_status_line_and_segment_rendering_include_eta_and_speed() -> None:
+    segment = TranscriptSegment(
+        text="hello world",
+        start_seconds=0.0,
+        end_seconds=5.0,
+    )
+    event = ProgressEvent(
+        stage="transcribe",
+        message="Processed chunk 1/4.",
+        processed_duration_seconds=30.0,
+        total_duration_seconds=120.0,
+        eta_seconds=90.0,
+        realtime_factor=3.2,
+        chunk_index=1,
+        chunk_count=4,
+        segments=(segment,),
+    )
+
+    assert "Progress: 00:30 / 02:00" in _progress_event_status_line(event)
+    assert "Chunk: 1/4" in _progress_event_status_line(event)
+    assert "Speed: 3.2x" in _progress_event_status_line(event)
+    assert "ETA: 01:30" in _progress_event_status_line(event)
+    assert _render_progress_segment_line(segment) == "[00:00 - 00:05] hello world"
 
 
 def test_gui_state_payload_uses_nested_preferences_and_local_sources(tmp_path: Path) -> None:

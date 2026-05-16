@@ -8,10 +8,20 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
-from flowscribe.core.models import OutputArtifacts
+from flowscribe.core.models import OutputArtifacts, TranscriptSegment
 
 SourceKind = Literal["local", "url", "capture"]
-ProgressStage = Literal["discover", "download", "prepare", "transcribe", "write", "complete", "error", "canceled"]
+ProgressStage = Literal[
+    "discover",
+    "download",
+    "prepare",
+    "transcribe",
+    "write",
+    "complete",
+    "error",
+    "canceled",
+    "resume",
+]
 
 
 @dataclass(frozen=True)
@@ -51,6 +61,10 @@ class TranscriptionJob:
     network_family: str = "auto"
     cookies_path: Path | None = None
     proxy: str | None = None
+    progressive_enabled: bool = True
+    progressive_chunk_seconds: float = 30.0
+    progressive_chunk_overlap_seconds: float = 3.0
+    progressive_max_workers: int = 1
     created_at: datetime = field(default_factory=datetime.now)
 
 
@@ -64,6 +78,15 @@ class ProgressEvent:
     current: int | None = None
     total: int | None = None
     path: Path | None = None
+    processed_duration_seconds: float | None = None
+    total_duration_seconds: float | None = None
+    eta_seconds: float | None = None
+    realtime_factor: float | None = None
+    chunk_index: int | None = None
+    chunk_count: int | None = None
+    completed_chunks: int | None = None
+    segments: tuple[TranscriptSegment, ...] = ()
+    resumed: bool = False
 
 
 @dataclass(frozen=True)

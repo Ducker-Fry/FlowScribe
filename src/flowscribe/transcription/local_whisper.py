@@ -40,28 +40,61 @@ class LocalWhisperTranscriber:
 
     def transcribe(self, audio: PreparedAudio) -> Transcript:
         try:
-            model = self._load_model()
-            segments, info = model.transcribe(
-                str(audio.path),
-                language=self._language,
-                task=self._task,
-                beam_size=self._beam_size,
-                vad_filter=self._vad_filter,
-                initial_prompt=self._initial_prompt,
-                word_timestamps=self._word_timestamps,
-            )
-            language = getattr(info, "language", None) or self._language
-            transcript_segments = tuple(
-                self._build_segment(segment, language=language)
-                for segment in segments
-                if segment.text.strip()
-            )
+            return self._transcribe_internal(audio)
         except ImportError as exc:
             raise TranscriptionError(
                 "faster-whisper is not installed. Run: python -m pip install faster-whisper"
             ) from exc
         except Exception as exc:
             raise TranscriptionError(f"Local transcription failed for {audio.path}: {exc}") from exc
+
+    def transcribe_clip(
+        self,
+        audio: PreparedAudio,
+        *,
+        start_seconds: float,
+        end_seconds: float,
+    ) -> Transcript:
+        try:
+            return self._transcribe_internal(
+                audio,
+                clip_start_seconds=start_seconds,
+                clip_end_seconds=end_seconds,
+            )
+        except ImportError as exc:
+            raise TranscriptionError(
+                "faster-whisper is not installed. Run: python -m pip install faster-whisper"
+            ) from exc
+        except Exception as exc:
+            raise TranscriptionError(
+                f"Local clip transcription failed for {audio.path} [{start_seconds}, {end_seconds}]: {exc}"
+            ) from exc
+
+    def _transcribe_internal(
+        self,
+        audio: PreparedAudio,
+        *,
+        clip_start_seconds: float | None = None,
+        clip_end_seconds: float | None = None,
+    ) -> Transcript:
+        model = self._load_model()
+        kwargs = {
+            "language": self._language,
+            "task": self._task,
+            "beam_size": self._beam_size,
+            "vad_filter": self._vad_filter,
+            "initial_prompt": self._initial_prompt,
+            "word_timestamps": self._word_timestamps,
+        }
+        if clip_start_seconds is not None and clip_end_seconds is not None:
+            kwargs["clip_timestamps"] = [clip_start_seconds, clip_end_seconds]
+        segments, info = model.transcribe(str(audio.path), **kwargs)
+        language = getattr(info, "language", None) or self._language
+        transcript_segments = tuple(
+            self._build_segment(segment, language=language)
+            for segment in segments
+            if segment.text.strip()
+        )
 
         options = TranscriptionOptions(
             model_name=self._model_name,
@@ -88,6 +121,20 @@ class LocalWhisperTranscriber:
 
             self._model = WhisperModel(self._model_name, device="auto", compute_type="auto")
         return self._model
+
+    def fork_for_worker(self) -> "LocalWhisperTranscriber":
+        """Create a new worker-compatible transcriber with the same settings."""
+
+        return LocalWhisperTranscriber(
+            model_name=self._model_name,
+            language=self._language,
+            task=self._task,
+            beam_size=self._beam_size,
+            vad_filter=self._vad_filter,
+            initial_prompt=self._initial_prompt,
+            preset=self._preset,
+            word_timestamps=self._word_timestamps,
+        )
 
     def _build_segment(self, segment, *, language: str | None) -> TranscriptSegment:
         text = segment.text.strip()

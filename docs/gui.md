@@ -19,6 +19,7 @@ consolidated transcript workspace:
 - Collect and preview form state as a `TranscriptionJob`-compatible payload.
 - Start a transcription job for checked local sources or a URL.
 - Display progress messages, output file paths, and structured failures.
+- Surface progressive long-run transcription updates while a job is still running.
 - Open an existing transcript JSON file inside the GUI.
 - Render segment text and timestamps in a transcript viewer.
 - Search transcript keywords and jump to hits.
@@ -125,6 +126,15 @@ Task control also remains intentionally lightweight:
 - one active GUI transcription job at a time
 - cooperative cancellation rather than hard process termination
 - no full multi-job queue yet
+
+Progress feedback is now stronger for long runs:
+
+- progressive transcription can report chunk-level completion instead of waiting
+  for the whole media item to finish
+- the GUI can show processed duration against total duration
+- the GUI can show a rough speed multiplier and ETA during long runs
+- transcript segments can appear in the workspace while transcription is still
+  in progress
 
 Recent-work support also remains intentionally lightweight:
 

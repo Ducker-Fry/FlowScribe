@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import Literal
 
 
 @dataclass(frozen=True)
@@ -21,6 +22,7 @@ class PreparedAudio:
     source: MediaItem
     path: Path
     sample_rate: int
+    duration_seconds: float | None = None
 
 
 @dataclass(frozen=True)
@@ -118,3 +120,89 @@ class JobResult:
     @property
     def failed(self) -> int:
         return len(self.failures)
+
+
+ChunkStatus = Literal["pending", "running", "done", "failed", "skipped"]
+
+
+@dataclass(frozen=True)
+class MediaDurationInfo:
+    """Stable duration metadata for one prepared audio item."""
+
+    source: MediaItem
+    prepared_audio_path: Path
+    sample_rate: int
+    duration_seconds: float | None
+
+
+@dataclass(frozen=True)
+class TranscriptionChunk:
+    """One planned progressive transcription time slice."""
+
+    index: int
+    start_seconds: float
+    end_seconds: float
+    overlap_seconds: float = 0.0
+
+    @property
+    def duration_seconds(self) -> float:
+        return max(0.0, self.end_seconds - self.start_seconds)
+
+    @property
+    def content_start_seconds(self) -> float:
+        if self.index <= 1:
+            return self.start_seconds
+        return min(self.end_seconds, self.start_seconds + self.overlap_seconds)
+
+    @property
+    def content_duration_seconds(self) -> float:
+        return max(0.0, self.end_seconds - self.content_start_seconds)
+
+
+@dataclass(frozen=True)
+class TranscriptionChunkPlan:
+    """Chunk planning metadata for one progressive transcription run."""
+
+    duration_info: MediaDurationInfo
+    chunks: tuple[TranscriptionChunk, ...]
+    chunk_duration_seconds: float
+    chunk_overlap_seconds: float
+
+
+@dataclass(frozen=True)
+class ChunkTranscriptionResult:
+    """Transcript result captured for one chunk execution."""
+
+    chunk: TranscriptionChunk
+    status: ChunkStatus
+    transcript: Transcript | None = None
+    elapsed_seconds: float | None = None
+    error_message: str | None = None
+    merged_segment_count: int = 0
+
+
+@dataclass(frozen=True)
+class ProgressiveTranscriptionState:
+    """Serializable summary of a progressive transcription pass."""
+
+    source: MediaItem
+    duration_info: MediaDurationInfo
+    chunk_plan: TranscriptionChunkPlan
+    chunk_results: tuple[ChunkTranscriptionResult, ...]
+    transcript: Transcript
+    processed_duration_seconds: float
+    cache_dir: Path | None = None
+
+    @property
+    def completed_chunks(self) -> int:
+        return sum(1 for result in self.chunk_results if result.status == "done")
+
+
+@dataclass(frozen=True)
+class ProgressiveTranscriptionUpdate:
+    """One progressive execution update emitted after a flushable chunk merge."""
+
+    state: ProgressiveTranscriptionState
+    chunk_result: ChunkTranscriptionResult
+    appended_segments: tuple[TranscriptSegment, ...]
+    resumed: bool = False

@@ -125,3 +125,19 @@ def test_local_whisper_aligns_chinese_raw_words(monkeypatch, tmp_path: Path) -> 
     assert [word.text for word in segment.words] == [ME, LIKE, MILK]
     assert segment.words[2].start_seconds == 0.4
     assert segment.words[2].end_seconds == 0.8
+
+
+def test_local_whisper_transcribe_clip_passes_clip_timestamps(monkeypatch, tmp_path: Path) -> None:
+    model = FakeWhisperModel()
+    transcriber = LocalWhisperTranscriber(model_name="tiny", language="en")
+    monkeypatch.setattr(transcriber, "_load_model", lambda: model)
+    audio = PreparedAudio(
+        source=MediaItem(path=tmp_path / "video.mp4"),
+        path=tmp_path / "prepared.wav",
+        sample_rate=16000,
+    )
+
+    transcript = transcriber.transcribe_clip(audio, start_seconds=12.0, end_seconds=24.5)
+
+    assert model.kwargs["clip_timestamps"] == [12.0, 24.5]
+    assert transcript.segments[0].text == "Hello world."

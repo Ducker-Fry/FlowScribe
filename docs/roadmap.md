@@ -90,19 +90,21 @@ to operate or release.
 Status: completed incrementally and wrapped up in `v0.2.6`. See
 `docs/phase-6-summary-and-phase-7-plan.md` and `docs/phase-7-task-list.md`.
 
-## v0.7 Guided Recovery, Comparison, And Session Flow
+## v0.7 Long Media Progressive Transcription
 
-Goal: turn the denser Phase 6 workspace into a faster review surface, a more
-helpful recovery surface, and a steadier day-to-day product.
+Goal: make long local media and URL-derived media feel more alive and more
+recoverable by showing transcript progress before the full run completes.
 
-- Guided recovery actions from help and diagnostics.
-- Stronger artifact comparison workflows for corrected transcript review.
-- Better library search and session recovery.
-- More polished first-run and in-product onboarding.
-- Final release and packaging closure around rerun and maintainer paths.
+- Chunk-based progressive transcription for long runs.
+- Chunk cache and resume support.
+- GUI-visible duration progress, speed, and ETA.
+- Limited parallel scheduling groundwork for later throughput gains.
+- Compatibility with the current transcript library, editing, and re-export
+  flow.
 
-Status: planned. See `docs/phase-6-summary-and-phase-7-plan.md` and
-`docs/phase-7-task-list.md`.
+Status: in progress. Foundation, cache, resume support, GUI-facing progress
+events, and limited parallel scheduling groundwork have started landing. See
+`docs/long-media-progressive-transcription-task-list.md`.
 
 ## v1.0 Open Source Release
 

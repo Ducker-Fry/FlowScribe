@@ -30,6 +30,7 @@ FlowScribe is a local-first transcription toolkit that turns local media and pub
 - Build a portable Windows one-folder executable with PyInstaller.
 - Build a portable Windows GUI executable with quiet packaged startup defaults.
 - Use a consolidated `Views` workspace, transcript library, and help surface in the GUI.
+- Start long-media progressive transcription so transcript segments can appear before the full run finishes.
 
 ## Current Scope
 
@@ -262,6 +263,7 @@ The GUI currently supports:
 - A consolidated `Views` workspace for transcript review, artifacts, and library access.
 - Transcript segment editing, re-export, and quick artifact switching.
 - A help and diagnostics surface for first-run guidance and common recovery paths.
+- Progressive long-run transcription plumbing with chunk planning, resume-ready cache, and GUI-facing progress events.
 
 See [Desktop GUI](docs/gui.md) for the current workflow and packaging notes.
 
@@ -357,6 +359,7 @@ If the beginning of a video is missing or inaccurate, retry with `--no-vad-filte
 - [Development Guide](docs/development-guide.md)
 - [Packaging](docs/packaging.md)
 - [Release Automation](docs/release-automation.md)
+- [Long Media Progressive Transcription Task List](docs/long-media-progressive-transcription-task-list.md)
 - [Phase 6 Summary And Phase 7 Plan](docs/phase-6-summary-and-phase-7-plan.md)
 - [Phase 7 Task List](docs/phase-7-task-list.md)
 - [Phase 2 Summary And Phase 3 Plan](docs/phase-2-summary-and-phase-3-plan.md)
