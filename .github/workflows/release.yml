@@ -249,6 +249,8 @@ jobs:
             Write-Host "No existing GitHub release found for $env:RELEASE_VERSION. Workflow will create it."
             "RELEASE_EXISTS=false" | Out-File -FilePath $env:GITHUB_ENV -Append
           }
+          $global:LASTEXITCODE = 0
+          exit 0
 
       - name: Create GitHub release record
         if: env.RELEASE_EXISTS == 'false'
