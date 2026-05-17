@@ -17,6 +17,7 @@ from flowscribe.core.models import (
 from flowscribe.core.progressive import (
     FixedDurationChunkPlanner,
     ProgressiveChunkCache,
+    ProgressiveTranscriptConsistencyChecker,
     PreparedAudioDurationProbe,
     ProgressiveTranscriptionExecutor,
 )
@@ -94,6 +95,7 @@ class LocalTranscriptionPipeline:
             transcript = state.transcript
             if self._transcript_normalizer is not None:
                 transcript = self._transcript_normalizer(transcript)
+                transcript = ProgressiveTranscriptConsistencyChecker().validate(transcript)
                 state = ProgressiveTranscriptionState(
                     source=state.source,
                     duration_info=state.duration_info,

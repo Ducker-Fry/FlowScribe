@@ -11,6 +11,7 @@ from typing import Literal
 from flowscribe.core.models import OutputArtifacts, TranscriptSegment
 
 SourceKind = Literal["local", "url", "capture"]
+UrlMediaKind = Literal["audio", "video"]
 ProgressStage = Literal[
     "discover",
     "download",
@@ -32,6 +33,9 @@ class SourceSpec:
     value: str
     recursive: bool = False
     keep_media: bool = False
+    url_media_kind: UrlMediaKind = "audio"
+    media_output_dir: Path | None = None
+    auto_bind_media: bool = False
 
 
 @dataclass(frozen=True)
@@ -62,6 +66,7 @@ class TranscriptionJob:
     cookies_path: Path | None = None
     proxy: str | None = None
     progressive_enabled: bool = True
+    progressive_resume: bool = True
     progressive_chunk_seconds: float = 30.0
     progressive_chunk_overlap_seconds: float = 3.0
     progressive_max_workers: int = 1

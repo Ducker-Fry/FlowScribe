@@ -40,10 +40,14 @@ def test_gui_form_builds_local_job(tmp_path: Path) -> None:
 
 def test_gui_form_builds_url_job_with_network_options(tmp_path: Path) -> None:
     cookies = tmp_path / "cookies.txt"
+    media_dir = tmp_path / "saved-media"
     form = GuiTranscriptionForm(
         url="https://example.com/watch",
         output_dir=tmp_path / "out",
         keep_media=True,
+        url_media_kind="video",
+        url_media_output_dir=media_dir,
+        auto_bind_media=False,
         network_family="ipv4",
         proxy="http://127.0.0.1:7890",
         cookies_path=cookies,
@@ -54,6 +58,9 @@ def test_gui_form_builds_url_job_with_network_options(tmp_path: Path) -> None:
     assert job.sources[0].kind == "url"
     assert job.sources[0].value == "https://example.com/watch"
     assert job.sources[0].keep_media is True
+    assert job.sources[0].url_media_kind == "video"
+    assert job.sources[0].media_output_dir == media_dir
+    assert job.sources[0].auto_bind_media is False
     assert job.network_family == "ipv4"
     assert job.proxy == "http://127.0.0.1:7890"
     assert job.cookies_path == cookies
@@ -93,9 +100,13 @@ def test_gui_form_reuses_url_safety_validation(monkeypatch) -> None:
 
 
 def test_gui_form_preview_is_plain_data(tmp_path: Path) -> None:
+    media_dir = tmp_path / "saved-media"
     form = GuiTranscriptionForm(
         local_paths=(tmp_path / "a.mp4",),
         url="https://example.com/video",
+        keep_media=True,
+        url_media_kind="audio",
+        url_media_output_dir=media_dir,
         cookies_path=tmp_path / "cookies.txt",
     )
 
@@ -103,8 +114,23 @@ def test_gui_form_preview_is_plain_data(tmp_path: Path) -> None:
 
     assert preview["sources"][0]["kind"] == "local"
     assert preview["sources"][1]["kind"] == "url"
+    assert preview["sources"][1]["media_output_dir"] == str(media_dir)
+    assert preview["sources"][1]["auto_bind_media"] is True
     assert preview["cookies_path"].endswith("cookies.txt")
     assert preview["output_name_base"] is None
+
+
+def test_gui_form_rejects_file_path_for_url_media_output_dir(tmp_path: Path) -> None:
+    bad_target = tmp_path / "saved-media.txt"
+    bad_target.write_text("not a directory", encoding="utf-8")
+    form = GuiTranscriptionForm(
+        url="https://example.com/watch",
+        keep_media=True,
+        url_media_output_dir=bad_target,
+    )
+
+    with pytest.raises(ValueError, match="save path must be a folder"):
+        form.to_job()
 
 
 def test_gui_accepts_cli_supported_local_sources(tmp_path: Path) -> None:

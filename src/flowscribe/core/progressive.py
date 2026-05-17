@@ -29,6 +29,9 @@ from flowscribe.core.models import (
     TranscriptionOptions,
 )
 
+DEFAULT_PROGRESSIVE_CHUNK_OVERLAP_SECONDS = 3.0
+CHINESE_PROGRESSIVE_CHUNK_OVERLAP_SECONDS = 4.0
+
 
 class ClipTranscriber(Protocol):
     """Transcriber that can operate on one audio clip range at a time."""
@@ -69,6 +72,23 @@ class PreparedAudioDurationProbe:
         if frame_rate <= 0:
             raise MediaPreparationError(f"Could not determine audio duration for {path}: invalid frame rate.")
         return frame_count / float(frame_rate)
+
+
+def tuned_chunk_overlap_seconds(
+    *,
+    requested_overlap_seconds: float,
+    language: str | None = None,
+    preset: str | None = None,
+) -> float:
+    overlap = float(requested_overlap_seconds)
+    normalized_language = (language or "").strip().lower()
+    normalized_preset = (preset or "").strip().lower()
+    if (
+        abs(overlap - DEFAULT_PROGRESSIVE_CHUNK_OVERLAP_SECONDS) < 1e-9
+        and (normalized_language == "zh" or normalized_preset == "zh")
+    ):
+        return CHINESE_PROGRESSIVE_CHUNK_OVERLAP_SECONDS
+    return overlap
 
 
 class FixedDurationChunkPlanner:
@@ -127,11 +147,182 @@ class FixedDurationChunkPlanner:
         )
 
 
+class ChunkMergePolicy(Protocol):
+    def merge(
+        self,
+        *,
+        existing_segments: list[TranscriptSegment],
+        chunk_segments: tuple[TranscriptSegment, ...],
+        chunk: TranscriptionChunk,
+        transcript: Transcript,
+    ) -> list[TranscriptSegment]:
+        """Return segments to append from one chunk."""
+
+
+class ConservativeChunkMergePolicy:
+    """Keep chunk merges conservative, especially around Chinese boundaries."""
+
+    def __init__(self, *, duplicate_tolerance_seconds: float = 0.35) -> None:
+        self._duplicate_tolerance_seconds = duplicate_tolerance_seconds
+
+    def merge(
+        self,
+        *,
+        existing_segments: list[TranscriptSegment],
+        chunk_segments: tuple[TranscriptSegment, ...],
+        chunk: TranscriptionChunk,
+        transcript: Transcript,
+    ) -> list[TranscriptSegment]:
+        prepared = self._prepare_segments(chunk_segments, chunk=chunk)
+        if not prepared:
+            return []
+
+        appended: list[TranscriptSegment] = []
+        protect_chinese = _is_chinese_transcript(transcript)
+        prior = existing_segments[-1] if existing_segments else None
+        for segment in prepared:
+            if prior is not None and self._should_drop_duplicate(
+                prior,
+                segment,
+                protect_chinese=protect_chinese,
+            ):
+                continue
+            appended.append(segment)
+            prior = segment
+        return appended
+
+    def _prepare_segments(
+        self,
+        segments: tuple[TranscriptSegment, ...],
+        *,
+        chunk: TranscriptionChunk,
+    ) -> list[TranscriptSegment]:
+        if chunk.index <= 1:
+            return list(segments)
+
+        prepared: list[TranscriptSegment] = []
+        content_start_seconds = chunk.content_start_seconds
+        for segment in segments:
+            segment_end_seconds = segment.end_seconds
+            if segment_end_seconds is not None and segment_end_seconds <= content_start_seconds:
+                continue
+            if (
+                segment.start_seconds is not None
+                and segment.start_seconds < content_start_seconds
+                and (segment_end_seconds is None or segment_end_seconds > content_start_seconds)
+            ):
+                prepared.append(
+                    self._clip_segment_start(segment, content_start_seconds)
+                )
+                continue
+            prepared.append(segment)
+        return prepared
+
+    def _clip_segment_start(self, segment: TranscriptSegment, content_start_seconds: float) -> TranscriptSegment:
+        return replace(
+            segment,
+            start_seconds=content_start_seconds,
+            raw_words=self._clip_words(segment.raw_words, content_start_seconds),
+            words=self._clip_words(segment.words, content_start_seconds),
+        )
+
+    @staticmethod
+    def _clip_words(
+        words: tuple[TranscriptWord, ...],
+        content_start_seconds: float,
+    ) -> tuple[TranscriptWord, ...]:
+        clipped: list[TranscriptWord] = []
+        for word in words:
+            word_end = word.end_seconds
+            if word_end is not None and word_end <= content_start_seconds:
+                continue
+            if word.start_seconds is not None and word.start_seconds < content_start_seconds:
+                clipped.append(replace(word, start_seconds=content_start_seconds))
+            else:
+                clipped.append(word)
+        return tuple(clipped)
+
+    def _should_drop_duplicate(
+        self,
+        previous: TranscriptSegment,
+        current: TranscriptSegment,
+        *,
+        protect_chinese: bool,
+    ) -> bool:
+        if _normalized_segment_text(previous) != _normalized_segment_text(current):
+            return False
+        if protect_chinese:
+            return _matching_segment_span(
+                previous,
+                current,
+                tolerance_seconds=self._duplicate_tolerance_seconds,
+            )
+        return _segments_overlap(previous, current, tolerance_seconds=self._duplicate_tolerance_seconds)
+
+
+class ProgressiveTranscriptConsistencyChecker:
+    """Validate merged chunk output before it is written or resumed."""
+
+    def __init__(self, *, max_allowed_overlap_seconds: float = 0.35) -> None:
+        self._max_allowed_overlap_seconds = max_allowed_overlap_seconds
+
+    def validate(self, transcript: Transcript) -> Transcript:
+        previous: TranscriptSegment | None = None
+        for index, segment in enumerate(transcript.segments, start=1):
+            self._validate_segment(segment, index=index)
+            if previous is not None:
+                self._validate_segment_order(previous, segment, index=index)
+            previous = segment
+        return transcript
+
+    def _validate_segment(self, segment: TranscriptSegment, *, index: int) -> None:
+        if (
+            segment.start_seconds is not None
+            and segment.end_seconds is not None
+            and segment.end_seconds < segment.start_seconds
+        ):
+            raise TranscriptionError(
+                f"Progressive transcript segment {index} ends before it starts."
+            )
+
+    def _validate_segment_order(
+        self,
+        previous: TranscriptSegment,
+        current: TranscriptSegment,
+        *,
+        index: int,
+    ) -> None:
+        if (
+            previous.start_seconds is not None
+            and current.start_seconds is not None
+            and current.start_seconds < previous.start_seconds
+        ):
+            raise TranscriptionError(
+                f"Progressive transcript segment {index} starts before the previous segment."
+            )
+        if (
+            previous.end_seconds is not None
+            and current.start_seconds is not None
+            and current.start_seconds < previous.end_seconds - self._max_allowed_overlap_seconds
+        ):
+            raise TranscriptionError(
+                f"Progressive transcript segment {index} overlaps the previous segment too much."
+            )
+
+
 class ProgressiveTranscriptionExecutor:
     """Run serial chunk transcription and merge the results conservatively."""
 
-    def __init__(self, *, transcriber: ClipTranscriber) -> None:
+    def __init__(
+        self,
+        *,
+        transcriber: ClipTranscriber,
+        merge_policy: ChunkMergePolicy | None = None,
+        consistency_checker: ProgressiveTranscriptConsistencyChecker | None = None,
+    ) -> None:
         self._transcriber = transcriber
+        self._merge_policy = merge_policy or ConservativeChunkMergePolicy()
+        self._consistency_checker = consistency_checker or ProgressiveTranscriptConsistencyChecker()
 
     def execute(
         self,
@@ -191,7 +382,12 @@ class ProgressiveTranscriptionExecutor:
 
             chunk_results.append(result)
             first_transcript = first_transcript or result.transcript
-            appended_segments = self._trim_chunk_segments(result.transcript.segments, chunk=chunk)
+            appended_segments = self._merge_policy.merge(
+                existing_segments=merged_segments,
+                chunk_segments=result.transcript.segments,
+                chunk=chunk,
+                transcript=result.transcript,
+            )
             merged_segments.extend(appended_segments)
             processed_duration_seconds += chunk.content_duration_seconds
             partial_transcript = self._build_partial_transcript(
@@ -199,6 +395,7 @@ class ProgressiveTranscriptionExecutor:
                 first_transcript=first_transcript,
                 merged_segments=merged_segments,
             )
+            partial_transcript = self._consistency_checker.validate(partial_transcript)
             partial_state = ProgressiveTranscriptionState(
                 source=audio.source,
                 duration_info=chunk_plan.duration_info,
@@ -237,6 +434,7 @@ class ProgressiveTranscriptionExecutor:
             first_transcript=first_transcript,
             merged_segments=merged_segments,
         )
+        final_transcript = self._consistency_checker.validate(final_transcript)
         state = ProgressiveTranscriptionState(
             source=audio.source,
             duration_info=chunk_plan.duration_info,
@@ -256,7 +454,7 @@ class ProgressiveTranscriptionExecutor:
                 chunk_results=state.chunk_results,
                 processed_duration_seconds=state.processed_duration_seconds,
                 status="completed",
-        )
+            )
         return state
 
     def _yield_updates(
@@ -377,7 +575,12 @@ class ProgressiveTranscriptionExecutor:
 
         elapsed_seconds = time.perf_counter() - started_at
         normalized_transcript = self._normalize_chunk_transcript(transcript, chunk=chunk)
-        trimmed_segments = self._trim_chunk_segments(normalized_transcript.segments, chunk=chunk)
+        trimmed_segments = self._merge_policy.merge(
+            existing_segments=[],
+            chunk_segments=normalized_transcript.segments,
+            chunk=chunk,
+            transcript=normalized_transcript,
+        )
         return ChunkTranscriptionResult(
             chunk=chunk,
             status="done",
@@ -468,23 +671,6 @@ class ProgressiveTranscriptionExecutor:
                 for word in segment.words
             ),
         )
-
-    @staticmethod
-    def _trim_chunk_segments(
-        segments: tuple[TranscriptSegment, ...],
-        *,
-        chunk: TranscriptionChunk,
-    ) -> list[TranscriptSegment]:
-        if chunk.index <= 1:
-            return list(segments)
-
-        trimmed: list[TranscriptSegment] = []
-        content_start_seconds = chunk.content_start_seconds
-        for segment in segments:
-            segment_end_seconds = segment.end_seconds
-            if segment_end_seconds is None or segment_end_seconds > content_start_seconds:
-                trimmed.append(segment)
-        return trimmed
 
 
 class ProgressiveChunkCache:
@@ -732,3 +918,41 @@ class ProgressiveChunkCache:
             end_seconds=payload.get("end_seconds"),
             confidence=payload.get("confidence"),
         )
+
+
+def _is_chinese_transcript(transcript: Transcript) -> bool:
+    language = (transcript.language or "").strip().lower()
+    preset = (transcript.options.preset if transcript.options is not None else "") or ""
+    options_language = (transcript.options.language if transcript.options is not None else "") or ""
+    return language == "zh" or preset.strip().lower() == "zh" or options_language.strip().lower() == "zh"
+
+
+def _normalized_segment_text(segment: TranscriptSegment) -> str:
+    return " ".join(segment.text.strip().split())
+
+
+def _matching_segment_span(
+    left: TranscriptSegment,
+    right: TranscriptSegment,
+    *,
+    tolerance_seconds: float,
+) -> bool:
+    if left.start_seconds is None or left.end_seconds is None:
+        return False
+    if right.start_seconds is None or right.end_seconds is None:
+        return False
+    return (
+        abs(left.start_seconds - right.start_seconds) <= tolerance_seconds
+        and abs(left.end_seconds - right.end_seconds) <= tolerance_seconds
+    )
+
+
+def _segments_overlap(
+    left: TranscriptSegment,
+    right: TranscriptSegment,
+    *,
+    tolerance_seconds: float,
+) -> bool:
+    if left.end_seconds is None or right.start_seconds is None:
+        return False
+    return right.start_seconds < left.end_seconds + tolerance_seconds

@@ -29,6 +29,7 @@ from flowscribe.gui.qt_app import (
     _render_json_artifact_html,
     _sort_library_entries,
     _sort_workspace_artifact_paths,
+    _url_media_status_suffix,
     _user_facing_doctor_message,
     _user_facing_folder_label,
     _user_facing_state_file_label,
@@ -103,6 +104,9 @@ def test_normalize_gui_preferences_payload_filters_invalid_values() -> None:
             "word_timestamps": True,
             "overwrite": True,
             "keep_media": True,
+            "url_media_kind": "video",
+            "url_media_output_dir": "saved-url-media",
+            "url_auto_bind_media": False,
             "network_family": "bad-network",
             "proxy": 123,
         }
@@ -119,6 +123,9 @@ def test_normalize_gui_preferences_payload_filters_invalid_values() -> None:
         "word_timestamps": True,
         "overwrite": True,
         "keep_media": True,
+        "url_media_kind": "video",
+        "url_media_output_dir": "saved-url-media",
+        "url_auto_bind_media": False,
         "network_family": "auto",
         "proxy": "",
     }
@@ -182,6 +189,26 @@ def test_progress_event_status_line_and_segment_rendering_include_eta_and_speed(
     assert _render_progress_segment_line(segment) == "[00:00 - 00:05] hello world"
 
 
+def test_url_media_status_suffix_explains_saved_media_and_fallback() -> None:
+    assert _url_media_status_suffix(
+        OutputArtifacts(
+            paths=(),
+            media_path=Path("saved.mp4"),
+            media_kind="video",
+            requested_media_kind="video",
+        )
+    ) == "Saved video media."
+    assert _url_media_status_suffix(
+        OutputArtifacts(
+            paths=(),
+            media_path=Path("saved.m4a"),
+            media_kind="audio",
+            requested_media_kind="video",
+            media_fallback=True,
+        )
+    ) == "Requested video media, saved audio instead."
+
+
 def test_gui_state_payload_uses_nested_preferences_and_local_sources(tmp_path: Path) -> None:
     media = tmp_path / "sample.mp4"
     media.write_bytes(b"media")
@@ -204,6 +231,9 @@ def test_gui_state_payload_uses_nested_preferences_and_local_sources(tmp_path: P
             "word_timestamps": False,
             "overwrite": False,
             "keep_media": False,
+            "url_media_kind": "audio",
+            "url_media_output_dir": "saved-url-media",
+            "url_auto_bind_media": True,
             "network_family": "ipv4",
             "proxy": "http://127.0.0.1:7890",
         },
@@ -237,7 +267,7 @@ def test_gui_state_payload_uses_nested_preferences_and_local_sources(tmp_path: P
     )
 
     assert payload == {
-        "version": 6,
+        "version": 7,
         "preferences": {
             "output_dir": "saved-outputs",
             "output_name_base": "custom-name",
@@ -249,6 +279,9 @@ def test_gui_state_payload_uses_nested_preferences_and_local_sources(tmp_path: P
             "word_timestamps": False,
             "overwrite": False,
             "keep_media": False,
+            "url_media_kind": "audio",
+            "url_media_output_dir": "saved-url-media",
+            "url_auto_bind_media": True,
             "network_family": "ipv4",
             "proxy": "http://127.0.0.1:7890",
         },
@@ -318,6 +351,9 @@ def test_normalize_gui_state_payload_supports_nested_and_legacy_formats(tmp_path
                 "word_timestamps": True,
                 "overwrite": True,
                 "keep_media": True,
+                "url_media_kind": "video",
+                "url_media_output_dir": "saved-url-media",
+                "url_auto_bind_media": False,
                 "network_family": "ipv4",
                 "proxy": "http://127.0.0.1:7890",
             },
@@ -372,6 +408,9 @@ def test_normalize_gui_state_payload_supports_nested_and_legacy_formats(tmp_path
     assert preferences["output_name_base"] == "phase4-note"
     assert preferences["model_name"] == "medium"
     assert preferences["output_formats"] == ["txt", "vtt"]
+    assert preferences["url_media_kind"] == "video"
+    assert preferences["url_media_output_dir"] == "saved-url-media"
+    assert preferences["url_auto_bind_media"] is False
     assert recent_work["recent_transcripts"] == [str(transcript)]
     assert recent_work["recent_output_dirs"] == [str(outputs)]
     assert export_profiles[0].name == "Review"
@@ -410,6 +449,9 @@ def test_normalize_gui_state_payload_supports_nested_and_legacy_formats(tmp_path
     assert legacy_preferences["model_name"] == "tiny"
     assert legacy_preferences["language"] == "en"
     assert legacy_preferences["output_formats"] == ["json"]
+    assert legacy_preferences["url_media_kind"] == "audio"
+    assert legacy_preferences["url_media_output_dir"] == ""
+    assert legacy_preferences["url_auto_bind_media"] is True
     assert legacy_recent_work == {
         "recent_transcripts": [],
         "recent_output_dirs": [],

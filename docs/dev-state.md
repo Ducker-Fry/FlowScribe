@@ -1,6 +1,8 @@
 # FlowScribe Development State
 
 Use this file as the compact handoff context when starting a new conversation.
+For the shortest operational summary, start with `docs/developer-handoff.md`
+and then return here for more detail.
 
 ## Project
 
@@ -340,6 +342,40 @@ Implemented so far:
   - limited parallel worker support
   - ordered merge behavior even when chunk work completes out of order
 
+Also implemented around that line:
+
+- progressive accuracy protection:
+  - tuned overlap defaults, including a more conservative Chinese path
+  - conservative merge policy for chunk-boundary handling
+  - progressive transcript consistency checks before final output
+- CLI progressive mode:
+  - `--progressive`
+  - `--no-progressive`
+  - `--chunk-seconds`
+  - `--chunk-overlap-seconds`
+  - `--resume`
+  - `--max-workers`
+  - auto mode that prefers classic execution for batch-style inputs and
+    progressive execution for long single-item runs
+- GUI URL media preservation and binding:
+  - preserve no media, saved audio, or saved video
+  - custom URL media output directory
+  - auto-bind saved URL media to the active transcript
+  - visible fallback status when requested video preservation falls back to
+    saved audio
+
+Key files for the current line:
+
+- `src/flowscribe/core/progressive.py`
+- `src/flowscribe/core/pipeline.py`
+- `src/flowscribe/app/models.py`
+- `src/flowscribe/app/service.py`
+- `src/flowscribe/cli/args.py`
+- `src/flowscribe/cli/main.py`
+- `src/flowscribe/gui/qt_app.py`
+- `src/flowscribe/gui/state.py`
+- `src/flowscribe/input/url_downloader.py`
+
 Planning and remaining work are tracked in:
 
 - `docs/long-media-progressive-transcription-task-list.md`
@@ -373,6 +409,21 @@ Do not modify code.
 
 Default preference: use Light Mode or Standard Mode unless the user explicitly
 asks for Wrap-Up Mode.
+
+## Recommended Context Rebuild Order
+
+When starting a new conversation and trying to get productive quickly, open:
+
+1. `docs/developer-handoff.md`
+2. `docs/dev-state.md`
+3. `docs/roadmap.md`
+4. `docs/long-media-progressive-transcription-task-list.md`
+
+Add these when the work is packaging or release related:
+
+5. `docs/packaging.md`
+6. `docs/release-automation.md`
+7. `.github/workflows/release.yml`
 
 ## Current Phase Progress
 

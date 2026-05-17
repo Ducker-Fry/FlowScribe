@@ -99,12 +99,34 @@ recoverable by showing transcript progress before the full run completes.
 - Chunk cache and resume support.
 - GUI-visible duration progress, speed, and ETA.
 - Limited parallel scheduling groundwork for later throughput gains.
+- CLI progressive mode and compatibility rules.
+- Conservative overlap, merge, and consistency protection for progressive
+  output.
 - Compatibility with the current transcript library, editing, and re-export
   flow.
 
 Status: in progress. Foundation, cache, resume support, GUI-facing progress
-events, and limited parallel scheduling groundwork have started landing. See
+events, CLI progressive controls, compatibility rules, and limited parallel
+groundwork have landed. Remaining work is now more about tuning, real long-run
+validation, and experience refinement than first-time scaffolding. See
 `docs/long-media-progressive-transcription-task-list.md`.
+
+## v0.8 URL Workflow And Throughput Ergonomics
+
+Goal: make URL-driven transcription and long-run handling more practical for
+repeated daily use.
+
+- GUI URL media preservation choices, including saved audio or saved video
+  handling
+- custom URL media save paths
+- automatic transcript-to-media binding for preserved URL media
+- clearer fallback status when requested video preservation becomes audio-only
+- better long-run tuning informed by real media samples
+- follow-on batch and throughput improvements that build on progressive
+  execution
+
+Status: partially underway in the current working tree, but not yet wrapped as a
+release milestone.
 
 ## v1.0 Open Source Release
 

@@ -1,14 +1,25 @@
 from pathlib import Path
 import threading
 
+import pytest
+
 from flowscribe.core.models import MediaItem, OutputArtifacts, PreparedAudio, Transcript, TranscriptSegment
 from flowscribe.core.pipeline import LocalTranscriptionPipeline
 from flowscribe.core.progressive import (
+    CHINESE_PROGRESSIVE_CHUNK_OVERLAP_SECONDS,
     FixedDurationChunkPlanner,
     MediaDurationInfo,
+    ProgressiveTranscriptConsistencyChecker,
     ProgressiveChunkCache,
     ProgressiveTranscriptionExecutor,
+    tuned_chunk_overlap_seconds,
 )
+from flowscribe.output.artifact_writer import TranscriptArtifactWriter
+from flowscribe.output.json_writer import JsonTranscriptWriter
+from flowscribe.output.md_writer import MarkdownTranscriptWriter
+from flowscribe.output.paths import OutputPathBuilder
+from flowscribe.output.txt_writer import TxtTranscriptWriter
+from flowscribe.transcript.reexport import reexport_transcript_json
 
 
 class FakeClipTranscriber:
@@ -283,3 +294,119 @@ def test_progressive_executor_parallel_workers_keep_ordered_merge(tmp_path: Path
         "second core",
     ]
     assert SlowParallelTranscriber.call_count >= 2
+
+
+def test_tuned_chunk_overlap_seconds_uses_more_conservative_default_for_chinese() -> None:
+    assert tuned_chunk_overlap_seconds(
+        requested_overlap_seconds=3.0,
+        language="zh",
+        preset=None,
+    ) == CHINESE_PROGRESSIVE_CHUNK_OVERLAP_SECONDS
+    assert tuned_chunk_overlap_seconds(
+        requested_overlap_seconds=3.0,
+        language=None,
+        preset="zh",
+    ) == CHINESE_PROGRESSIVE_CHUNK_OVERLAP_SECONDS
+    assert tuned_chunk_overlap_seconds(
+        requested_overlap_seconds=5.0,
+        language="zh",
+        preset=None,
+    ) == 5.0
+
+
+def test_progressive_executor_clips_cross_boundary_chinese_segment_start(tmp_path: Path) -> None:
+    class FakeChineseTranscriber(FakeClipTranscriber):
+        def transcribe_clip(
+            self,
+            audio: PreparedAudio,
+            *,
+            start_seconds: float,
+            end_seconds: float,
+        ) -> Transcript:
+            if start_seconds == 0.0:
+                segments = (
+                    TranscriptSegment(text="第一句。", start_seconds=0.0, end_seconds=28.0),
+                    TranscriptSegment(text="第二句前半", start_seconds=28.0, end_seconds=30.0),
+                )
+            else:
+                segments = (
+                    TranscriptSegment(text="第二句前半后半。", start_seconds=29.0, end_seconds=32.0),
+                    TranscriptSegment(text="第三句。", start_seconds=32.0, end_seconds=40.0),
+                )
+            return Transcript(source=audio.source, segments=segments, language="zh", model_name="tiny")
+
+    audio = PreparedAudio(
+        source=MediaItem(path=tmp_path / "sample.mp4"),
+        path=tmp_path / "prepared.wav",
+        sample_rate=16000,
+        duration_seconds=40.0,
+    )
+    plan = FixedDurationChunkPlanner(
+        chunk_duration_seconds=30.0,
+        chunk_overlap_seconds=3.0,
+    ).plan(
+        MediaDurationInfo(
+            source=audio.source,
+            prepared_audio_path=audio.path,
+            sample_rate=audio.sample_rate,
+            duration_seconds=40.0,
+        )
+    )
+
+    state = ProgressiveTranscriptionExecutor(transcriber=FakeChineseTranscriber()).execute(audio, plan)
+
+    assert [segment.text for segment in state.transcript.segments] == [
+        "第一句。",
+        "第二句前半",
+        "第二句前半后半。",
+        "第三句。",
+    ]
+    assert state.transcript.segments[2].start_seconds == 30.0
+
+
+def test_progressive_consistency_checker_rejects_large_segment_overlap(tmp_path: Path) -> None:
+    transcript = Transcript(
+        source=MediaItem(path=tmp_path / "sample.mp4"),
+        segments=(
+            TranscriptSegment(text="one", start_seconds=0.0, end_seconds=5.0),
+            TranscriptSegment(text="two", start_seconds=4.0, end_seconds=8.0),
+        ),
+    )
+
+    with pytest.raises(Exception, match="overlaps the previous segment too much"):
+        ProgressiveTranscriptConsistencyChecker().validate(transcript)
+
+
+def test_pipeline_process_progressive_json_stays_reexportable(tmp_path: Path) -> None:
+    item = MediaItem(path=tmp_path / "sample.mp4")
+    pipeline = LocalTranscriptionPipeline(
+        media_preparer=FakePreparer(),
+        transcriber=FakeClipTranscriber(),
+        artifact_writer=TranscriptArtifactWriter(
+            formats=("txt", "json"),
+            txt_writer=TxtTranscriptWriter(OutputPathBuilder(overwrite=True)),
+            json_writer=JsonTranscriptWriter(OutputPathBuilder(overwrite=True)),
+            md_writer=MarkdownTranscriptWriter(OutputPathBuilder(overwrite=True)),
+        ),
+        work_dir=tmp_path / "work",
+        output_dir=tmp_path / "out",
+        keep_audio=False,
+    )
+
+    artifacts, state = pipeline.process_progressive(
+        item,
+        chunk_duration_seconds=30.0,
+        chunk_overlap_seconds=3.0,
+    )
+
+    json_path = next(path for path in artifacts.paths if path.suffix == ".json")
+    exported = reexport_transcript_json(
+        json_path,
+        output_dir=tmp_path / "exports",
+        output_formats=("txt", "md", "json", "srt", "vtt"),
+        overwrite=True,
+        include_timestamps=True,
+    )
+
+    assert state.transcript.text == "first core\nboundary\nsecond core"
+    assert {path.suffix for path in exported.paths} == {".txt", ".md", ".json", ".srt", ".vtt"}

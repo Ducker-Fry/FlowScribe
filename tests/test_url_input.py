@@ -34,6 +34,14 @@ def test_parse_url_args() -> None:
             "login.cookies.txt",
             "--proxy",
             "http://127.0.0.1:7890",
+            "--progressive",
+            "--chunk-seconds",
+            "45",
+            "--chunk-overlap-seconds",
+            "4",
+            "--resume",
+            "--max-workers",
+            "2",
         ]
     )
 
@@ -51,6 +59,11 @@ def test_parse_url_args() -> None:
     assert options.network_family == "ipv4"
     assert options.cookies == Path("login.cookies.txt")
     assert options.proxy == "http://127.0.0.1:7890"
+    assert options.progressive_mode == "enabled"
+    assert options.progressive_chunk_seconds == 45.0
+    assert options.progressive_chunk_overlap_seconds == 4.0
+    assert options.progressive_resume is True
+    assert options.progressive_max_workers == 2
 
 
 def test_validate_public_http_url_blocks_localhost() -> None:

@@ -82,6 +82,13 @@ class OutputArtifacts:
     """Files written for a transcript."""
 
     paths: tuple[Path, ...]
+    media_path: Path | None = None
+    media_kind: str | None = None
+    requested_media_kind: str | None = None
+    media_fallback: bool = False
+    source_kind: str | None = None
+    source_value: str | None = None
+    auto_bind_media: bool = False
 
     @property
     def txt_path(self) -> Path | None:

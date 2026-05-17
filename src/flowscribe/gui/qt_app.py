@@ -18,6 +18,7 @@ from flowscribe.cli.doctor import (
     resolve_faster_whisper_repo,
 )
 from flowscribe.core.errors import MediaPreparationError, OutputError, SearchError
+from flowscribe.core.models import OutputArtifacts
 from flowscribe.input.file_filter import is_supported_media
 from flowscribe.gui.export_profiles import (
     ExportProfile,
@@ -84,6 +85,9 @@ DEFAULT_GUI_PREFERENCES = {
     "word_timestamps": False,
     "overwrite": False,
     "keep_media": False,
+    "url_media_kind": "audio",
+    "url_media_output_dir": "",
+    "url_auto_bind_media": True,
     "network_family": "auto",
     "proxy": "",
 }
@@ -170,6 +174,8 @@ def _normalize_gui_preferences_payload(payload: object) -> dict[str, object]:
     model_name = source.get("model_name")
     language = source.get("language")
     preset = source.get("preset")
+    url_media_kind = source.get("url_media_kind")
+    url_media_output_dir = source.get("url_media_output_dir")
     network_family = source.get("network_family")
     proxy = source.get("proxy")
 
@@ -184,6 +190,11 @@ def _normalize_gui_preferences_payload(payload: object) -> dict[str, object]:
         "word_timestamps": bool(source.get("word_timestamps", False)),
         "overwrite": bool(source.get("overwrite", False)),
         "keep_media": bool(source.get("keep_media", False)),
+        "url_media_kind": url_media_kind if url_media_kind in {"audio", "video"} else "audio",
+        "url_media_output_dir": (
+            url_media_output_dir if isinstance(url_media_output_dir, str) else ""
+        ),
+        "url_auto_bind_media": bool(source.get("url_auto_bind_media", True)),
         "network_family": network_family if network_family in GUI_NETWORK_OPTIONS else "auto",
         "proxy": proxy if isinstance(proxy, str) else "",
     }
@@ -199,7 +210,7 @@ def _gui_state_payload(
     onboarding_state: dict[str, object] | None = None,
 ) -> dict[str, object]:
     return {
-        "version": 6,
+        "version": 7,
         "preferences": _gui_preferences_payload(preferences),
         "local_sources": _local_source_state_payload(paths, checked_paths),
         "recent_work": _recent_work_payload(recent_work),
@@ -545,6 +556,19 @@ def _view_tab_title_for_artifact(path: Path) -> str:
 
 def _artifact_selector_label(path: Path) -> str:
     return f"{_artifact_format_label(path)} | {path.name}"
+
+
+def _url_media_status_suffix(artifacts: OutputArtifacts) -> str:
+    if artifacts.media_path is None or artifacts.requested_media_kind is None:
+        return ""
+    if artifacts.media_fallback and artifacts.media_kind is not None:
+        return (
+            f"Requested {artifacts.requested_media_kind} media, "
+            f"saved {artifacts.media_kind} instead."
+        )
+    if artifacts.media_kind is not None:
+        return f"Saved {artifacts.media_kind} media."
+    return ""
 
 
 def _normalize_subtitle_artifact_text(path: Path, text: str) -> str:
@@ -1288,6 +1312,28 @@ class FlowScribeMainWindow:
 
                 self.url_input = QLineEdit()
                 self.url_input.setPlaceholderText("https://example.com/video")
+                self.url_media_mode_combo = QComboBox()
+                self.url_media_mode_combo.addItem("Do not save media", "none")
+                self.url_media_mode_combo.addItem("Save audio copy", "audio")
+                self.url_media_mode_combo.addItem("Save video copy", "video")
+                self.url_media_mode_combo.currentIndexChanged.connect(self._sync_url_media_controls)
+                self.url_media_dir_input = QLineEdit()
+                self.url_media_dir_input.setPlaceholderText("Save URL media into a custom folder")
+                choose_url_media_button = QPushButton("Browse")
+                choose_url_media_button.clicked.connect(self._choose_url_media_dir)
+                self.url_auto_bind_check = QCheckBox("Auto-bind saved URL media")
+                self.url_auto_bind_check.setChecked(True)
+                url_media_dir_row = QHBoxLayout()
+                url_media_dir_row.addWidget(self.url_media_dir_input)
+                url_media_dir_row.addWidget(choose_url_media_button)
+                url_media_layout = QGridLayout()
+                url_media_layout.setHorizontalSpacing(8)
+                url_media_layout.setVerticalSpacing(6)
+                url_media_layout.addWidget(QLabel("Save media"), 0, 0)
+                url_media_layout.addWidget(self.url_media_mode_combo, 0, 1)
+                url_media_layout.addWidget(QLabel("Save folder"), 1, 0)
+                url_media_layout.addLayout(url_media_dir_row, 1, 1)
+                url_media_layout.addWidget(self.url_auto_bind_check, 2, 1)
 
                 left_layout.addWidget(QLabel("Local files"))
                 left_layout.addWidget(self.file_list, 1)
@@ -1295,6 +1341,7 @@ class FlowScribeMainWindow:
                 left_layout.addSpacing(8)
                 left_layout.addWidget(QLabel("URL"))
                 left_layout.addWidget(self.url_input)
+                left_layout.addLayout(url_media_layout)
                 left_layout.addSpacing(8)
                 left_layout.addWidget(QLabel("System audio capture"))
 
@@ -1328,6 +1375,7 @@ class FlowScribeMainWindow:
                 settings_layout.setVerticalSpacing(10)
 
                 self.output_dir_input = QLineEdit("outputs")
+                self.output_dir_input.textChanged.connect(self._sync_url_media_controls)
                 choose_output_button = QPushButton("Browse")
                 choose_output_button.clicked.connect(self._choose_output_dir)
                 self.output_name_input = QLineEdit()
@@ -1374,7 +1422,6 @@ class FlowScribeMainWindow:
                 self.timestamps_check.setChecked(True)
                 self.word_timestamps_check = QCheckBox("Word timestamps")
                 self.overwrite_check = QCheckBox("Overwrite outputs")
-                self.keep_media_check = QCheckBox("Keep URL media")
 
                 settings_layout.addWidget(QLabel("Output directory"), 0, 0)
                 settings_layout.addLayout(output_row, 0, 1)
@@ -1397,7 +1444,6 @@ class FlowScribeMainWindow:
                 settings_layout.addWidget(self.timestamps_check, 9, 1)
                 settings_layout.addWidget(self.word_timestamps_check, 10, 1)
                 settings_layout.addWidget(self.overwrite_check, 11, 1)
-                settings_layout.addWidget(self.keep_media_check, 12, 1)
 
                 action_layout = QGridLayout()
                 action_layout.setHorizontalSpacing(8)
@@ -2285,6 +2331,32 @@ class FlowScribeMainWindow:
                 if path:
                     self.cookies_input.setText(path)
 
+            def _choose_url_media_dir(self) -> None:
+                from PySide6.QtWidgets import QFileDialog
+
+                start_dir = self.url_media_dir_input.text().strip() or str(self._default_url_media_dir())
+                path = QFileDialog.getExistingDirectory(self, "Choose URL media save folder", start_dir)
+                if path:
+                    self.url_media_dir_input.setText(path)
+
+            def _current_url_media_kind(self) -> str:
+                value = self.url_media_mode_combo.currentData()
+                if value in {"audio", "video", "none"}:
+                    return str(value)
+                return "none"
+
+            def _default_url_media_dir(self) -> Path:
+                return Path(self.output_dir_input.text().strip() or "outputs") / "url-media"
+
+            def _sync_url_media_controls(self) -> None:
+                save_enabled = self._current_url_media_kind() != "none"
+                self.url_media_dir_input.setEnabled(save_enabled)
+                self.url_auto_bind_check.setEnabled(save_enabled)
+                if save_enabled and not self.url_media_dir_input.text().strip():
+                    self.url_media_dir_input.setPlaceholderText(str(self._default_url_media_dir()))
+                elif not save_enabled:
+                    self.url_media_dir_input.setPlaceholderText("Save URL media into a custom folder")
+
             def _open_transcript_json(self) -> None:
                 from PySide6.QtWidgets import QFileDialog
 
@@ -2320,6 +2392,9 @@ class FlowScribeMainWindow:
                 language = self.language_combo.currentText()
                 preset = self.preset_combo.currentText()
                 cookies_text = self.cookies_input.text().strip()
+                url_media_kind = self._current_url_media_kind()
+                url_media_dir_text = self.url_media_dir_input.text().strip()
+                keep_media = url_media_kind != "none"
 
                 return GuiTranscriptionForm(
                     local_paths=selected_local_paths,
@@ -2333,7 +2408,16 @@ class FlowScribeMainWindow:
                     timestamps=self.timestamps_check.isChecked(),
                     word_timestamps=self.word_timestamps_check.isChecked(),
                     overwrite=self.overwrite_check.isChecked(),
-                    keep_media=self.keep_media_check.isChecked(),
+                    keep_media=keep_media,
+                    url_media_kind="audio" if url_media_kind == "none" else url_media_kind,
+                    url_media_output_dir=(
+                        Path(url_media_dir_text)
+                        if url_media_dir_text
+                        else self._default_url_media_dir()
+                    )
+                    if keep_media
+                    else None,
+                    auto_bind_media=self.url_auto_bind_check.isChecked(),
                     network_family=self.network_combo.currentText(),
                     proxy=self.proxy_input.text(),
                     cookies_path=Path(cookies_text) if cookies_text else None,
@@ -2354,7 +2438,14 @@ class FlowScribeMainWindow:
                     "timestamps": self.timestamps_check.isChecked(),
                     "word_timestamps": self.word_timestamps_check.isChecked(),
                     "overwrite": self.overwrite_check.isChecked(),
-                    "keep_media": self.keep_media_check.isChecked(),
+                    "keep_media": self._current_url_media_kind() != "none",
+                    "url_media_kind": (
+                        "audio"
+                        if self._current_url_media_kind() == "none"
+                        else self._current_url_media_kind()
+                    ),
+                    "url_media_output_dir": self.url_media_dir_input.text().strip(),
+                    "url_auto_bind_media": self.url_auto_bind_check.isChecked(),
                     "network_family": self.network_combo.currentText(),
                     "proxy": self.proxy_input.text(),
                 }
@@ -2380,11 +2471,21 @@ class FlowScribeMainWindow:
                 self.model_combo.setCurrentText(str(preferences["model_name"]))
                 self.language_combo.setCurrentText(str(preferences["language"]))
                 self.preset_combo.setCurrentText(str(preferences["preset"]))
+                target_url_media_kind = (
+                    str(preferences["url_media_kind"])
+                    if preferences.get("keep_media", False)
+                    else "none"
+                )
+                index = self.url_media_mode_combo.findData(target_url_media_kind)
+                if index >= 0:
+                    self.url_media_mode_combo.setCurrentIndex(index)
+                self.url_media_dir_input.setText(str(preferences.get("url_media_output_dir", "")))
+                self.url_auto_bind_check.setChecked(bool(preferences.get("url_auto_bind_media", True)))
                 self.network_combo.setCurrentText(str(preferences["network_family"]))
                 self.proxy_input.setText(str(preferences["proxy"]))
                 self._apply_export_preferences(preferences)
                 self.overwrite_check.setChecked(bool(preferences["overwrite"]))
-                self.keep_media_check.setChecked(bool(preferences["keep_media"]))
+                self._sync_url_media_controls()
                 self._refresh_diagnostics_summary()
 
             def _save_settings(self) -> None:
@@ -2851,13 +2952,28 @@ class FlowScribeMainWindow:
                 self.status_label.setText(f"Done. Succeeded: {result.succeeded}.")
                 self.preview_output.append("\nOutput files:")
                 transcript_loaded = False
+                auto_bound_media = False
+                url_media_notes: list[str] = []
                 output_paths: list[Path] = []
                 for artifacts in result.outputs:
+                    media_note = _url_media_status_suffix(artifacts)
+                    if media_note:
+                        url_media_notes.append(media_note)
                     for path in artifacts.paths:
                         output_paths.append(path)
                         self.preview_output.append(str(path))
                         if not transcript_loaded and path.suffix.lower() == ".json":
                             transcript_loaded = self._load_transcript_json(path)
+                            if (
+                                transcript_loaded
+                                and artifacts.media_path is not None
+                                and artifacts.auto_bind_media
+                                and Path(artifacts.media_path).is_file()
+                            ):
+                                auto_bound_media = self._bind_media_path(
+                                    Path(artifacts.media_path),
+                                    auto_bound=True,
+                                )
                 self._load_artifact_views(tuple(output_paths), replace=True)
                 if not transcript_loaded:
                     self._transcript_view = None
@@ -2869,6 +2985,18 @@ class FlowScribeMainWindow:
                     self._select_view_tab("run_details")
                 else:
                     self._select_view_tab("transcript")
+                    if auto_bound_media and self._media_path is not None:
+                        status = (
+                            f"Done. Succeeded: {result.succeeded}. "
+                            f"Auto-bound saved media: {self._media_path.name}."
+                        )
+                        if url_media_notes:
+                            status += " " + " ".join(url_media_notes)
+                        self.status_label.setText(status)
+                    elif url_media_notes:
+                        self.status_label.setText(
+                            f"Done. Succeeded: {result.succeeded}. " + " ".join(url_media_notes)
+                        )
                 self._cleanup_temporary_capture_files()
 
             def _fail_transcription(self, message: str) -> None:
@@ -3444,10 +3572,14 @@ class FlowScribeMainWindow:
                             transcript_path,
                             output_dir=result.job.output_dir,
                             source_kind=source_kind,
-                            source_media_path=_infer_library_source_media_path_from_result(
-                                result,
-                                transcript_path,
+                            source_media_path=(
+                                artifacts.media_path
+                                or _infer_library_source_media_path_from_result(
+                                    result,
+                                    transcript_path,
+                                )
                             ),
+                            media_path=artifacts.media_path if artifacts.auto_bind_media else None,
                             output_paths=tuple(artifacts.paths),
                         )
 

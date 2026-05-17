@@ -2,13 +2,16 @@
 
 This guide explains how to work on FlowScribe as a developer.
 
+For the quickest current-project context, read
+`docs/developer-handoff.md` before this guide.
+
 ## Setup
 
 ```powershell
 cd E:\Draft\FlowScribe
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -e .[dev]
+python -m pip install -e .[dev,gui]
 ```
 
 FlowScribe also requires `ffmpeg` and `ffprobe` on `PATH` for real media processing:
@@ -70,6 +73,12 @@ Build a portable Windows executable:
 .\scripts\build_exe.ps1
 ```
 
+Build the desktop GUI package:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_gui_exe.ps1 -Python python
+```
+
 See [Packaging](packaging.md) for release details.
 
 Create a tagged release:
@@ -81,14 +90,97 @@ git push origin v0.1.1
 
 See [Release Automation](release-automation.md) for the GitHub Actions release workflow.
 
+## Fast Context Rebuild
+
+If you are starting work in a fresh conversation, use this order:
+
+1. `docs/developer-handoff.md`
+2. `docs/dev-state.md`
+3. `docs/roadmap.md`
+4. `docs/long-media-progressive-transcription-task-list.md`
+
+Then open the relevant code entry points for the task at hand.
+
+## Current High-Signal Work Areas
+
+### Progressive Long-Media Transcription
+
+This is the current primary engineering line.
+
+Look here first:
+
+- `src/flowscribe/core/progressive.py`
+- `src/flowscribe/core/pipeline.py`
+- `src/flowscribe/app/service.py`
+- `src/flowscribe/cli/main.py`
+- `src/flowscribe/gui/qt_app.py`
+
+Already landed:
+
+- chunk planning
+- chunk cache and resume
+- GUI progress events, duration progress, and ETA plumbing
+- limited worker concurrency groundwork
+- CLI progressive options and auto-selection rules
+- conservative Chinese-oriented overlap and merge protection
+
+### URL Media Preservation
+
+The GUI URL workflow now includes user-visible media preservation choices and
+auto-binding behavior.
+
+Look here:
+
+- `src/flowscribe/input/url_downloader.py`
+- `src/flowscribe/app/models.py`
+- `src/flowscribe/app/service.py`
+- `src/flowscribe/gui/state.py`
+- `src/flowscribe/gui/qt_app.py`
+
+Implemented behavior:
+
+- save no media, saved audio, or saved video
+- custom save directory
+- auto-bind saved media to the transcript
+- fallback messaging when requested video preservation resolves to audio only
+
 ## Development Workflow
 
 1. Update requirements or architecture notes when changing behavior.
 2. Keep the CLI thin and put business behavior in core or adapters.
 3. Add or update tests for the changed module.
-4. Run `python -m pytest`.
-5. Run `python -m ruff check src tests`.
-6. Update README, user guide, or changelog when user-visible behavior changes.
+4. Run focused `pytest` checks first, then broader checks if risk grows.
+5. Run focused `ruff` checks first, then broader checks if needed.
+6. Update README, developer docs, and user-facing docs when behavior changes.
+7. If packaging or release behavior changed, update `docs/packaging.md` and
+   `docs/release-automation.md` in the same step.
+
+## Focused Verification Commands
+
+Progressive core and service work:
+
+```powershell
+python -m pytest tests\test_progressive_transcription.py tests\test_app_service.py tests\test_cli_main.py
+python -m ruff check src\flowscribe\core src\flowscribe\app src\flowscribe\cli tests\test_progressive_transcription.py tests\test_app_service.py tests\test_cli_main.py
+```
+
+GUI and URL workflow work:
+
+```powershell
+python -m pytest tests\test_gui_state.py tests\test_gui_qt_app.py tests\test_url_input.py tests\test_app_service.py
+python -m ruff check src\flowscribe\gui src\flowscribe\input\url_downloader.py src\flowscribe\app tests\test_gui_state.py tests\test_gui_qt_app.py tests\test_url_input.py tests\test_app_service.py
+```
+
+Packaging and release smoke validation:
+
+```powershell
+.\scripts\build_exe.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_gui_exe.ps1 -Python python
+.\dist\FlowScribe\FlowScribe.exe doctor
+.\dist\FlowScribeGUI\FlowScribeGUI.exe --self-test
+.\dist\FlowScribeGUI\WasapiCaptureHelper.exe version
+.\dist\FlowScribeGUI\WasapiCaptureHelper.exe probe
+```
 
 ## Adding an Input Source
 
@@ -144,6 +236,7 @@ Use manual media tests for:
 - English speech.
 - Mixed-language speech.
 - Long video files.
+- Long URL-derived media.
 - Files without audio streams.
 - Corrupted or unsupported files.
 

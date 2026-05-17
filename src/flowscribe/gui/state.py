@@ -32,6 +32,9 @@ class GuiTranscriptionForm:
     word_timestamps: bool = False
     overwrite: bool = False
     keep_media: bool = False
+    url_media_kind: str = "audio"
+    url_media_output_dir: Path | None = None
+    auto_bind_media: bool = True
     network_family: str = "auto"
     proxy: str = ""
     cookies_path: Path | None = None
@@ -72,6 +75,14 @@ class GuiTranscriptionForm:
         if self.network_family not in {"auto", "ipv4", "ipv6"}:
             errors.append("Network family must be auto, ipv4, or ipv6.")
 
+        if self.url_media_kind not in {"audio", "video"}:
+            errors.append("URL media kind must be audio or video.")
+
+        if self.keep_media and self.url_media_output_dir is not None:
+            candidate = self.url_media_output_dir.expanduser()
+            if candidate.exists() and not candidate.is_dir():
+                errors.append("URL media save path must be a folder.")
+
         return errors
 
     def to_job(self) -> TranscriptionJob:
@@ -84,7 +95,14 @@ class GuiTranscriptionForm:
         ]
         if self.url.strip():
             sources.append(
-                SourceSpec(kind="url", value=self.url.strip(), keep_media=self.keep_media)
+                SourceSpec(
+                    kind="url",
+                    value=self.url.strip(),
+                    keep_media=self.keep_media,
+                    url_media_kind=self.url_media_kind,
+                    media_output_dir=self.url_media_output_dir,
+                    auto_bind_media=self.auto_bind_media if self.keep_media else False,
+                )
             )
 
         language = self.language.strip() or None
@@ -117,6 +135,9 @@ class GuiTranscriptionForm:
                     "kind": source.kind,
                     "value": source.value,
                     "keep_media": source.keep_media,
+                    "url_media_kind": source.url_media_kind,
+                    "media_output_dir": str(source.media_output_dir) if source.media_output_dir else None,
+                    "auto_bind_media": source.auto_bind_media,
                 }
                 for source in job.sources
             ],

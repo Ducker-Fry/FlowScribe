@@ -20,6 +20,8 @@ from flowscribe.media.inspector import LocalMediaInspector
 from flowscribe.output.time_format import format_timestamp
 from flowscribe.search.transcript_search import search_transcript_file
 
+CLI_PROGRESSIVE_AUTO_THRESHOLD_SECONDS = 20 * 60
+
 
 def main(argv: list[str] | None = None) -> int:
     options = parse_args(argv)
@@ -216,6 +218,9 @@ def _search_payload(options, hits) -> dict:
 
 
 def _job_from_transcribe_options(options) -> TranscriptionJob:
+    progressive_enabled, progressive_note = _resolve_cli_progressive_mode_for_transcribe(options)
+    if progressive_note:
+        print(progressive_note)
     return TranscriptionJob(
         sources=tuple(
             SourceSpec(kind="local", value=str(input_path), recursive=options.recursive)
@@ -236,10 +241,18 @@ def _job_from_transcribe_options(options) -> TranscriptionJob:
         output_formats=options.output_formats,
         overwrite=options.overwrite,
         keep_audio=options.keep_audio,
+        progressive_enabled=progressive_enabled,
+        progressive_resume=options.progressive_resume,
+        progressive_chunk_seconds=options.progressive_chunk_seconds,
+        progressive_chunk_overlap_seconds=options.progressive_chunk_overlap_seconds,
+        progressive_max_workers=options.progressive_max_workers,
     )
 
 
 def _job_from_url_options(options) -> TranscriptionJob:
+    progressive_enabled, progressive_note = _resolve_cli_progressive_mode_for_url(options)
+    if progressive_note:
+        print(progressive_note)
     return TranscriptionJob(
         sources=(SourceSpec(kind="url", value=options.url, keep_media=options.keep_media),),
         output_dir=options.output_dir,
@@ -263,6 +276,11 @@ def _job_from_url_options(options) -> TranscriptionJob:
         network_family=options.network_family,
         cookies_path=options.cookies,
         proxy=options.proxy,
+        progressive_enabled=progressive_enabled,
+        progressive_resume=options.progressive_resume,
+        progressive_chunk_seconds=options.progressive_chunk_seconds,
+        progressive_chunk_overlap_seconds=options.progressive_chunk_overlap_seconds,
+        progressive_max_workers=options.progressive_max_workers,
     )
 
 
@@ -273,7 +291,79 @@ def _print_cli_progress(event: ProgressEvent) -> None:
         return
     if event.stage == "discover" and event.source is None:
         return
-    print(event.message)
+    line = _cli_progress_line(event)
+    if line:
+        print(line)
+
+
+def _cli_progress_line(event: ProgressEvent) -> str:
+    if event.processed_duration_seconds is not None:
+        parts = [event.message]
+        if event.total_duration_seconds is not None:
+            parts.append(
+                f"Progress {format_timestamp(event.processed_duration_seconds)} / "
+                f"{format_timestamp(event.total_duration_seconds)}"
+            )
+        if event.chunk_index is not None and event.chunk_count is not None:
+            parts.append(f"Chunk {event.chunk_index}/{event.chunk_count}")
+        if event.realtime_factor is not None:
+            parts.append(f"Speed {event.realtime_factor:.1f}x")
+        if event.eta_seconds is not None:
+            parts.append(f"ETA {format_timestamp(event.eta_seconds)}")
+        if event.resumed:
+            parts.append("resumed")
+        return " | ".join(parts)
+    return event.message
+
+
+def _resolve_cli_progressive_mode_for_transcribe(options) -> tuple[bool, str | None]:
+    if options.progressive_mode == "enabled":
+        return True, "Progressive transcription enabled by CLI flag."
+    if options.progressive_mode == "disabled":
+        return False, "Using classic one-shot transcription by CLI flag."
+    if options.recursive or len(options.inputs) != 1:
+        return False, "Using classic one-shot transcription for batch/local multi-source CLI runs."
+
+    input_path = options.inputs[0]
+    if not input_path.is_file():
+        return False, None
+    try:
+        inspection = LocalMediaInspector(timeout_seconds=10).inspect(input_path)
+    except FlowScribeError:
+        return False, None
+    if inspection.duration_seconds is not None and inspection.duration_seconds >= CLI_PROGRESSIVE_AUTO_THRESHOLD_SECONDS:
+        return True, (
+            "Auto-enabled progressive transcription for long local media "
+            f"({format_timestamp(inspection.duration_seconds)} >= "
+            f"{format_timestamp(CLI_PROGRESSIVE_AUTO_THRESHOLD_SECONDS)})."
+        )
+    return False, None
+
+
+def _resolve_cli_progressive_mode_for_url(options) -> tuple[bool, str | None]:
+    if options.progressive_mode == "enabled":
+        return True, "Progressive transcription enabled by CLI flag."
+    if options.progressive_mode == "disabled":
+        return False, "Using classic one-shot transcription by CLI flag."
+    try:
+        inspection = UrlInspector(
+            timeout_seconds=min(15, options.download_timeout_seconds),
+            network_family=options.network_family,
+            cookies_path=options.cookies,
+            proxy=options.proxy,
+        ).inspect(options.url)
+    except FlowScribeError:
+        return False, None
+    if (
+        inspection.duration_seconds is not None
+        and inspection.duration_seconds >= CLI_PROGRESSIVE_AUTO_THRESHOLD_SECONDS
+    ):
+        return True, (
+            "Auto-enabled progressive transcription for long URL media "
+            f"({format_timestamp(inspection.duration_seconds)} >= "
+            f"{format_timestamp(CLI_PROGRESSIVE_AUTO_THRESHOLD_SECONDS)})."
+        )
+    return False, None
 
 
 def _is_http_url(value: str) -> bool:

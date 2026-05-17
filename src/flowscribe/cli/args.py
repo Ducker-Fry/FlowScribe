@@ -6,6 +6,9 @@ import argparse
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
+
+ProgressiveMode = Literal["auto", "enabled", "disabled"]
 
 
 @dataclass(frozen=True)
@@ -28,6 +31,11 @@ class CliOptions:
     recursive: bool
     overwrite: bool
     keep_audio: bool
+    progressive_mode: ProgressiveMode
+    progressive_chunk_seconds: float
+    progressive_chunk_overlap_seconds: float
+    progressive_resume: bool
+    progressive_max_workers: int
 
 
 @dataclass(frozen=True)
@@ -86,6 +94,11 @@ class UrlOptions:
     network_family: str
     cookies: Path | None
     proxy: str | None
+    progressive_mode: ProgressiveMode
+    progressive_chunk_seconds: float
+    progressive_chunk_overlap_seconds: float
+    progressive_resume: bool
+    progressive_max_workers: int
 
 
 @dataclass(frozen=True)
@@ -222,6 +235,7 @@ def parse_transcribe_args(argv: list[str] | None = None, *, prog: str = "flowscr
         action="store_true",
         help="Keep prepared WAV files in the work directory for debugging or reuse.",
     )
+    add_progressive_options(parser)
     namespace = parser.parse_args(argv)
     return CliOptions(
         command="transcribe",
@@ -242,6 +256,11 @@ def parse_transcribe_args(argv: list[str] | None = None, *, prog: str = "flowscr
         recursive=namespace.recursive,
         overwrite=namespace.overwrite,
         keep_audio=namespace.keep_audio,
+        progressive_mode=namespace.progressive_mode,
+        progressive_chunk_seconds=namespace.progressive_chunk_seconds,
+        progressive_chunk_overlap_seconds=namespace.progressive_chunk_overlap_seconds,
+        progressive_resume=namespace.progressive_resume,
+        progressive_max_workers=namespace.progressive_max_workers,
     )
 
 
@@ -335,6 +354,53 @@ def add_transcription_options(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Keep prepared WAV files in the work directory for debugging or reuse.",
     )
+    add_progressive_options(parser)
+
+
+def add_progressive_options(parser: argparse.ArgumentParser) -> None:
+    progressive_group = parser.add_mutually_exclusive_group()
+    progressive_group.add_argument(
+        "--progressive",
+        action="store_const",
+        const="enabled",
+        dest="progressive_mode",
+        help="Force progressive chunked transcription for longer-running media.",
+    )
+    progressive_group.add_argument(
+        "--no-progressive",
+        action="store_const",
+        const="disabled",
+        dest="progressive_mode",
+        help="Force the classic one-shot transcription path.",
+    )
+    parser.set_defaults(progressive_mode="auto")
+    parser.add_argument(
+        "--chunk-seconds",
+        type=positive_float,
+        dest="progressive_chunk_seconds",
+        default=30.0,
+        help="Progressive chunk size in seconds. Default: 30",
+    )
+    parser.add_argument(
+        "--chunk-overlap-seconds",
+        type=non_negative_float,
+        dest="progressive_chunk_overlap_seconds",
+        default=3.0,
+        help="Progressive chunk overlap in seconds. Default: 3",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        dest="progressive_resume",
+        help="Resume from progressive chunk cache when it is available.",
+    )
+    parser.add_argument(
+        "--max-workers",
+        type=positive_int,
+        dest="progressive_max_workers",
+        default=1,
+        help="Maximum progressive chunk workers. Default: 1",
+    )
 
 
 def parse_url_args(argv: list[str] | None = None) -> UrlOptions:
@@ -410,6 +476,11 @@ def parse_url_args(argv: list[str] | None = None) -> UrlOptions:
         network_family=namespace.network_family,
         cookies=namespace.cookies,
         proxy=namespace.proxy,
+        progressive_mode=namespace.progressive_mode,
+        progressive_chunk_seconds=namespace.progressive_chunk_seconds,
+        progressive_chunk_overlap_seconds=namespace.progressive_chunk_overlap_seconds,
+        progressive_resume=namespace.progressive_resume,
+        progressive_max_workers=namespace.progressive_max_workers,
     )
 
 
@@ -584,6 +655,20 @@ def positive_int(value: str) -> int:
 
 def non_negative_int(value: str) -> int:
     parsed = int(value)
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("Value cannot be negative.")
+    return parsed
+
+
+def positive_float(value: str) -> float:
+    parsed = float(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("Value must be greater than zero.")
+    return parsed
+
+
+def non_negative_float(value: str) -> float:
+    parsed = float(value)
     if parsed < 0:
         raise argparse.ArgumentTypeError("Value cannot be negative.")
     return parsed

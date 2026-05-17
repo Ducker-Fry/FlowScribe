@@ -31,6 +31,8 @@ FlowScribe is a local-first transcription toolkit that turns local media and pub
 - Build a portable Windows GUI executable with quiet packaged startup defaults.
 - Use a consolidated `Views` workspace, transcript library, and help surface in the GUI.
 - Start long-media progressive transcription so transcript segments can appear before the full run finishes.
+- Save URL-derived media in the GUI, choose where it goes, and auto-bind it
+  back to the transcript workspace.
 
 ## Current Scope
 
@@ -264,6 +266,8 @@ The GUI currently supports:
 - Transcript segment editing, re-export, and quick artifact switching.
 - A help and diagnostics surface for first-run guidance and common recovery paths.
 - Progressive long-run transcription plumbing with chunk planning, resume-ready cache, and GUI-facing progress events.
+- URL media preservation choices, custom save directories, and auto-bind
+  behavior for saved URL media.
 
 See [Desktop GUI](docs/gui.md) for the current workflow and packaging notes.
 
@@ -357,6 +361,7 @@ If the beginning of a video is missing or inaccurate, retry with `--no-vad-filte
 - [GUI Interfaces](docs/gui-interfaces.md)
 - [Release Installation](docs/release-installation.md)
 - [Development Guide](docs/development-guide.md)
+- [Developer Handoff](docs/developer-handoff.md)
 - [Packaging](docs/packaging.md)
 - [Release Automation](docs/release-automation.md)
 - [Long Media Progressive Transcription Task List](docs/long-media-progressive-transcription-task-list.md)

@@ -8,6 +8,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
@@ -23,10 +24,15 @@ AUDIO_EXTENSIONS = {".aac", ".aiff", ".flac", ".m4a", ".mp3", ".ogg", ".opus", "
 VIDEO_EXTENSIONS = SUPPORTED_MEDIA_EXTENSIONS - AUDIO_EXTENSIONS
 
 
+UrlSavedMediaKind = Literal["audio", "video"]
+
+
 @dataclass(frozen=True)
 class UrlDownloadResult:
     path: Path
     cleanup_dir: Path
+    saved_media_path: Path | None = None
+    saved_media_kind: UrlSavedMediaKind = "audio"
 
 
 class UrlAudioDownloader:
@@ -53,7 +59,12 @@ class UrlAudioDownloader:
         self._ffmpeg_executable = ffmpeg_executable or resolve_tool_path("ffmpeg")
         self._ffprobe_executable = ffprobe_executable or resolve_tool_path("ffprobe")
 
-    def download_audio(self, url: str) -> UrlDownloadResult:
+    def download_audio(
+        self,
+        url: str,
+        *,
+        saved_media_kind: UrlSavedMediaKind = "audio",
+    ) -> UrlDownloadResult:
         validate_public_http_url(url, network_family=self._network_family)
         item_dir = self._download_dir / self._safe_id(url)
         if item_dir.exists():
@@ -61,13 +72,33 @@ class UrlAudioDownloader:
         item_dir.mkdir(parents=True, exist_ok=True)
 
         suffix = Path(urlparse(url).path).suffix.lower()
+        bindable_media_path: Path | None = None
+        actual_media_kind: UrlSavedMediaKind = saved_media_kind
         if suffix in AUDIO_EXTENSIONS:
             path = self._download_direct_audio(url, item_dir, suffix)
+            bindable_media_path = path
+            actual_media_kind = "audio"
         elif suffix in VIDEO_EXTENSIONS:
+            if saved_media_kind == "video":
+                bindable_media_path = self._download_direct_video_copy(url, item_dir)
+                if bindable_media_path is not None:
+                    actual_media_kind = "video"
             path = self._extract_direct_video_audio(url, item_dir)
+            if bindable_media_path is None:
+                bindable_media_path = path
+                actual_media_kind = "audio"
         else:
-            path = self._download_page_audio(url, item_dir)
-        return UrlDownloadResult(path=path, cleanup_dir=item_dir)
+            path, bindable_media_path, actual_media_kind = self._download_page_audio(
+                url,
+                item_dir,
+                saved_media_kind=saved_media_kind,
+            )
+        return UrlDownloadResult(
+            path=path,
+            cleanup_dir=item_dir,
+            saved_media_path=bindable_media_path,
+            saved_media_kind=actual_media_kind,
+        )
 
     def _download_direct_audio(self, url: str, item_dir: Path, suffix: str) -> Path:
         request = Request(url, headers={"User-Agent": "FlowScribe/0.1"})
@@ -142,7 +173,13 @@ class UrlAudioDownloader:
         self._ensure_duration(path)
         return path
 
-    def _download_page_audio(self, url: str, item_dir: Path) -> Path:
+    def _download_page_audio(
+        self,
+        url: str,
+        item_dir: Path,
+        *,
+        saved_media_kind: UrlSavedMediaKind,
+    ) -> tuple[Path, Path | None, UrlSavedMediaKind]:
         try:
             from yt_dlp import YoutubeDL
             from yt_dlp.utils import DownloadError as YtDlpDownloadError
@@ -183,7 +220,17 @@ class UrlAudioDownloader:
                     "If the page requires login, retry with `--cookies path\\to\\cookies.txt`."
                 )
             validate_public_http_url(stream_url, network_family=self._network_family)
-            return self._extract_page_stream_audio(stream_url, item_dir)
+            saved_media_path = None
+            actual_kind: UrlSavedMediaKind = "audio"
+            if saved_media_kind == "video":
+                saved_media_path = self._download_page_video(url, item_dir, base_options)
+                if saved_media_path is not None:
+                    actual_kind = "video"
+            audio_path = self._extract_page_stream_audio(stream_url, item_dir)
+            if saved_media_path is None:
+                saved_media_path = audio_path
+                actual_kind = "audio"
+            return audio_path, saved_media_path, actual_kind
 
         output_template = str(item_dir / "remote-audio.%(ext)s")
         options = {
@@ -213,6 +260,86 @@ class UrlAudioDownloader:
         path = max(files, key=lambda candidate: candidate.stat().st_size)
         self._ensure_size(path)
         self._ensure_duration(path)
+        saved_media_path: Path | None = path
+        actual_kind: UrlSavedMediaKind = "audio"
+        if saved_media_kind == "video":
+            video_path = self._download_page_video(url, item_dir, base_options)
+            if video_path is not None:
+                saved_media_path = video_path
+                actual_kind = "video"
+        return path, saved_media_path, actual_kind
+
+    def _download_page_video(
+        self,
+        url: str,
+        item_dir: Path,
+        base_options: dict,
+    ) -> Path | None:
+        try:
+            from yt_dlp import YoutubeDL
+            from yt_dlp.utils import DownloadError as YtDlpDownloadError
+        except ImportError:
+            return None
+
+        output_template = str(item_dir / "remote-media.%(ext)s")
+        options = {
+            **base_options,
+            "format": "best[acodec!=none][vcodec!=none]/best",
+            "outtmpl": output_template,
+            "max_filesize": self._max_bytes,
+            "progress_hooks": [self._yt_dlp_progress_hook],
+        }
+        try:
+            with YoutubeDL(options) as ydl:
+                ydl.download([url])
+        except YtDlpDownloadError:
+            return None
+
+        candidates = [
+            path
+            for path in item_dir.iterdir()
+            if path.is_file() and path.name.startswith("remote-media.")
+        ]
+        if not candidates:
+            return None
+        path = max(candidates, key=lambda candidate: candidate.stat().st_size)
+        self._ensure_size(path)
+        return path
+
+    def _download_direct_video_copy(self, url: str, item_dir: Path) -> Path | None:
+        path = item_dir / "remote-media.mp4"
+        command = [
+            self._ffmpeg_executable,
+            "-y",
+            "-timeout",
+            str(self._timeout_seconds * 1_000_000),
+            "-i",
+            url,
+            "-t",
+            str(self._max_duration_seconds),
+            "-map",
+            "0:v?",
+            "-map",
+            "0:a?",
+            "-c",
+            "copy",
+            str(path),
+        ]
+        try:
+            process_timeout = self._max_duration_seconds + self._timeout_seconds
+            subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=process_timeout,
+                check=True,
+                env=proxy_environment(self._proxy),
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired, subprocess.CalledProcessError):
+            return None
+        if not path.exists():
+            return None
+        self._ensure_size(path)
         return path
 
     def _extract_page_stream_audio(self, stream_url: str, item_dir: Path) -> Path:

@@ -7,6 +7,7 @@ import time
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
+from shutil import move
 
 from flowscribe.app.models import (
     ErrorInfo,
@@ -26,6 +27,7 @@ from flowscribe.core.models import (
     TranscriptionChunkPlan,
 )
 from flowscribe.core.pipeline import LocalTranscriptionPipeline
+from flowscribe.core.progressive import tuned_chunk_overlap_seconds
 from flowscribe.input.local_source import LocalFileSource
 from flowscribe.input.url_downloader import UrlAudioDownloader
 from flowscribe.media.audio_extractor import FfmpegAudioExtractor
@@ -194,8 +196,12 @@ class TranscriptionService:
                     artifacts, _ = pipeline.process_progressive(
                         item,
                         chunk_duration_seconds=job.progressive_chunk_seconds,
-                        chunk_overlap_seconds=job.progressive_chunk_overlap_seconds,
-                        resume=True,
+                        chunk_overlap_seconds=tuned_chunk_overlap_seconds(
+                            requested_overlap_seconds=job.progressive_chunk_overlap_seconds,
+                            language=job.language,
+                            preset=job.preset,
+                        ),
+                        resume=job.progressive_resume,
                         keep_progressive_cache=True,
                         max_workers=job.progressive_max_workers,
                         plan_callback=lambda duration_info, chunk_plan: self._emit_progressive_plan(
@@ -275,7 +281,10 @@ class TranscriptionService:
             )
         )
         self._ensure_not_canceled(should_cancel)
-        download = downloader.download_audio(source.value)
+        download = downloader.download_audio(
+            source.value,
+            saved_media_kind=source.url_media_kind if source.keep_media else "audio",
+        )
         try:
             self._emit_progress(
                 progress,
@@ -295,8 +304,12 @@ class TranscriptionService:
                 artifacts, _ = pipeline.process_progressive(
                     item,
                     chunk_duration_seconds=job.progressive_chunk_seconds,
-                    chunk_overlap_seconds=job.progressive_chunk_overlap_seconds,
-                    resume=True,
+                    chunk_overlap_seconds=tuned_chunk_overlap_seconds(
+                        requested_overlap_seconds=job.progressive_chunk_overlap_seconds,
+                        language=job.language,
+                        preset=job.preset,
+                    ),
+                    resume=job.progressive_resume,
                     keep_progressive_cache=True,
                     max_workers=job.progressive_max_workers,
                     plan_callback=lambda duration_info, chunk_plan: self._emit_progressive_plan(
@@ -316,6 +329,25 @@ class TranscriptionService:
                 )
             else:
                 artifacts = pipeline.process(item)
+            preserved_media_path = self._preserve_url_media(
+                download,
+                source=source,
+                job=job,
+            )
+            artifacts = OutputArtifacts(
+                paths=artifacts.paths,
+                media_path=preserved_media_path,
+                media_kind=download.saved_media_kind if preserved_media_path is not None else None,
+                requested_media_kind=source.url_media_kind if source.keep_media else None,
+                media_fallback=(
+                    preserved_media_path is not None
+                    and source.keep_media
+                    and download.saved_media_kind != source.url_media_kind
+                ),
+                source_kind=source.kind,
+                source_value=source.value,
+                auto_bind_media=source.auto_bind_media,
+            )
             for path in artifacts.paths:
                 self._emit_progress(
                     progress,
@@ -328,9 +360,47 @@ class TranscriptionService:
                     )
                 )
         finally:
-            if not source.keep_media:
-                shutil.rmtree(download.cleanup_dir, ignore_errors=True)
+            shutil.rmtree(download.cleanup_dir, ignore_errors=True)
         return artifacts
+
+    def _preserve_url_media(
+        self,
+        download,
+        *,
+        source: SourceSpec,
+        job: TranscriptionJob,
+    ) -> Path | None:
+        if not source.keep_media:
+            return None
+
+        candidate = download.saved_media_path or download.path
+        if not candidate.exists():
+            return None
+
+        target_root = (
+            source.media_output_dir
+            if source.media_output_dir is not None
+            else job.output_dir / "url-media"
+        )
+        target_root = target_root.expanduser().resolve()
+        target_dir = target_root / download.cleanup_dir.name
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target_path = self._available_target_path(target_dir / candidate.name)
+        move(str(candidate), str(target_path))
+        return target_path
+
+    @staticmethod
+    def _available_target_path(path: Path) -> Path:
+        if not path.exists():
+            return path
+        stem = path.stem
+        suffix = path.suffix
+        counter = 2
+        while True:
+            candidate = path.with_name(f"{stem}-{counter}{suffix}")
+            if not candidate.exists():
+                return candidate
+            counter += 1
 
     @staticmethod
     def _ensure_not_canceled(should_cancel: Callable[[], bool]) -> None:
