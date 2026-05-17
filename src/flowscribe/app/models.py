@@ -90,6 +90,7 @@ class ProgressEvent:
     chunk_index: int | None = None
     chunk_count: int | None = None
     completed_chunks: int | None = None
+    failed_chunks: int | None = None
     segments: tuple[TranscriptSegment, ...] = ()
     resumed: bool = False
 

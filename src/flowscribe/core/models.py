@@ -204,6 +204,10 @@ class ProgressiveTranscriptionState:
     def completed_chunks(self) -> int:
         return sum(1 for result in self.chunk_results if result.status == "done")
 
+    @property
+    def failed_chunks(self) -> int:
+        return sum(1 for result in self.chunk_results if result.status == "failed")
+
 
 @dataclass(frozen=True)
 class ProgressiveTranscriptionUpdate:

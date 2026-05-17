@@ -9,6 +9,7 @@ from flowscribe.core.models import (
     MediaDurationInfo,
     MediaItem,
     OutputArtifacts,
+    PreparedAudio,
     ProgressiveTranscriptionState,
     ProgressiveTranscriptionUpdate,
     Transcript,
@@ -22,6 +23,7 @@ from flowscribe.core.progressive import (
     ProgressiveTranscriptionExecutor,
 )
 from flowscribe.core.ports import ArtifactWriter, MediaPreparer, Transcriber
+from flowscribe.media.audio_extractor import PreparedAudioCache
 
 
 class LocalTranscriptionPipeline:
@@ -34,6 +36,7 @@ class LocalTranscriptionPipeline:
         work_dir: Path,
         output_dir: Path,
         keep_audio: bool = False,
+        prepared_audio_cache_dir: Path | None = None,
         transcript_normalizer: Callable[[Transcript], Transcript] | None = None,
     ) -> None:
         self._media_preparer = media_preparer
@@ -43,6 +46,21 @@ class LocalTranscriptionPipeline:
         self._output_dir = output_dir
         self._keep_audio = keep_audio
         self._transcript_normalizer = transcript_normalizer
+        self._audio_cache = (
+            PreparedAudioCache(prepared_audio_cache_dir)
+            if prepared_audio_cache_dir is not None
+            else None
+        )
+
+    def _prepare_or_cache(self, item: MediaItem, work_dir: Path) -> PreparedAudio:
+        if self._audio_cache is not None:
+            cached = self._audio_cache.get(item)
+            if cached is not None:
+                return cached
+        prepared = self._media_preparer.prepare(item, work_dir)
+        if self._audio_cache is not None:
+            self._audio_cache.put(prepared)
+        return prepared
 
     def process(self, item: MediaItem) -> OutputArtifacts:
         transcript = self.build_transcript(item)
@@ -50,7 +68,7 @@ class LocalTranscriptionPipeline:
 
     def build_transcript(self, item: MediaItem) -> Transcript:
         item_work_dir = self._work_dir / item.path.stem
-        prepared_audio = self._media_preparer.prepare(item, item_work_dir)
+        prepared_audio = self._prepare_or_cache(item, item_work_dir)
         try:
             transcript = self._transcriber.transcribe(prepared_audio)
             if self._transcript_normalizer is not None:
@@ -69,12 +87,13 @@ class LocalTranscriptionPipeline:
         resume: bool = False,
         keep_progressive_cache: bool = True,
         max_workers: int = 1,
+        max_failed_chunks: int = 3,
         plan_callback: Callable[[MediaDurationInfo, TranscriptionChunkPlan], None] | None = None,
         update_callback: Callable[[ProgressiveTranscriptionUpdate], None] | None = None,
     ) -> ProgressiveTranscriptionState:
         item_work_dir = self._work_dir / item.path.stem
         cache_store = ProgressiveChunkCache(item_work_dir / ".progressive")
-        prepared_audio = self._media_preparer.prepare(item, item_work_dir)
+        prepared_audio = self._prepare_or_cache(item, item_work_dir)
         try:
             duration_info = PreparedAudioDurationProbe().probe(prepared_audio)
             chunk_plan = FixedDurationChunkPlanner(
@@ -90,6 +109,7 @@ class LocalTranscriptionPipeline:
                 cache_store=cache_store,
                 resume=resume,
                 max_workers=max_workers,
+                max_failed_chunks=max_failed_chunks,
                 update_callback=update_callback,
             )
             transcript = state.transcript
@@ -130,6 +150,7 @@ class LocalTranscriptionPipeline:
         resume: bool = False,
         keep_progressive_cache: bool = True,
         max_workers: int = 1,
+        max_failed_chunks: int = 3,
         plan_callback: Callable[[MediaDurationInfo, TranscriptionChunkPlan], None] | None = None,
         update_callback: Callable[[ProgressiveTranscriptionUpdate], None] | None = None,
     ) -> tuple[OutputArtifacts, ProgressiveTranscriptionState]:
@@ -140,6 +161,7 @@ class LocalTranscriptionPipeline:
             resume=resume,
             keep_progressive_cache=keep_progressive_cache,
             max_workers=max_workers,
+            max_failed_chunks=max_failed_chunks,
             plan_callback=plan_callback,
             update_callback=update_callback,
         )

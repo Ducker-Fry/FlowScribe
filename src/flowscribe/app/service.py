@@ -477,6 +477,7 @@ class TranscriptionService:
                     total_seconds=total_seconds,
                     chunk_index=update.chunk_result.chunk.index,
                     chunk_count=len(update.state.chunk_plan.chunks),
+                    failed_chunks=update.state.failed_chunks,
                     realtime_factor=realtime_factor,
                     eta_seconds=eta_seconds,
                     resumed=update.resumed,
@@ -489,6 +490,7 @@ class TranscriptionService:
                 chunk_index=update.chunk_result.chunk.index,
                 chunk_count=len(update.state.chunk_plan.chunks),
                 completed_chunks=update.state.completed_chunks,
+                failed_chunks=update.state.failed_chunks,
                 segments=update.appended_segments,
                 resumed=update.resumed,
             ),
@@ -580,9 +582,10 @@ def _progressive_status_message(
     total_seconds: float | None,
     chunk_index: int,
     chunk_count: int,
-    realtime_factor: float | None,
-    eta_seconds: float | None,
-    resumed: bool,
+    failed_chunks: int = 0,
+    realtime_factor: float | None = None,
+    eta_seconds: float | None = None,
+    resumed: bool = False,
 ) -> str:
     prefix = "Resumed" if resumed else "Processed"
     if total_seconds is None:
@@ -593,6 +596,8 @@ def _progressive_status_message(
             f"{_format_duration_label(processed_seconds)} / {_format_duration_label(total_seconds)}."
         )
     extras: list[str] = []
+    if failed_chunks > 0:
+        extras.append(f"{failed_chunks} failed")
     if realtime_factor is not None:
         extras.append(f"{realtime_factor:.1f}x realtime")
     if eta_seconds is not None:

@@ -332,6 +332,7 @@ class ProgressiveTranscriptionExecutor:
         cache_store: ProgressiveChunkCache | None = None,
         resume: bool = False,
         max_workers: int = 1,
+        max_failed_chunks: int = 0,
         update_callback: Callable[[ProgressiveTranscriptionUpdate], None] | None = None,
     ) -> ProgressiveTranscriptionState:
         if cache_store is not None:
@@ -342,6 +343,7 @@ class ProgressiveTranscriptionExecutor:
         chunk_results: list[ChunkTranscriptionResult] = []
         merged_segments: list[TranscriptSegment] = []
         processed_duration_seconds = 0.0
+        failed_count = 0
         first_transcript: Transcript | None = None
         chunk_lookup = {chunk.index: chunk for chunk in chunk_plan.chunks}
         pending_chunks = [
@@ -361,24 +363,40 @@ class ProgressiveTranscriptionExecutor:
             chunk = chunk_lookup[update.chunk_result.chunk.index]
             result = update.chunk_result
             if result.status == "failed":
-                chunk_results.append(result)
-                if cache_store is not None:
-                    cache_store.save_chunk_result(result)
-                    cache_store.save_state(
-                        chunk_plan=chunk_plan,
-                        transcript=self._build_partial_transcript(
-                            audio=audio,
-                            first_transcript=first_transcript,
-                            merged_segments=merged_segments,
-                        ),
-                        chunk_results=tuple(chunk_results),
-                        processed_duration_seconds=processed_duration_seconds,
-                        status="failed",
-                        error_message=result.error_message,
+                retried = self._retry_one_chunk(audio, chunk, result)
+                if retried.status == "done":
+                    update = ProgressiveTranscriptionUpdate(
+                        state=update.state,
+                        chunk_result=retried,
+                        appended_segments=(),
+                        resumed=False,
                     )
-                raise TranscriptionError(
-                    f"Progressive transcription failed for {audio.path} chunk {chunk.index}: {result.error_message}"
-                )
+                    result = retried
+                else:
+                    failed_count += 1
+                    chunk_results.append(result)
+                    if cache_store is not None:
+                        cache_store.save_chunk_result(result)
+                    if failed_count > max_failed_chunks:
+                        if cache_store is not None:
+                            cache_store.save_state(
+                                chunk_plan=chunk_plan,
+                                transcript=self._build_partial_transcript(
+                                    audio=audio,
+                                    first_transcript=first_transcript,
+                                    merged_segments=merged_segments,
+                                ),
+                                chunk_results=tuple(chunk_results),
+                                processed_duration_seconds=processed_duration_seconds,
+                                status="failed",
+                                error_message=result.error_message,
+                            )
+                        raise TranscriptionError(
+                            f"Progressive transcription failed for {audio.path} "
+                            f"chunk {chunk.index} ({failed_count} total failures): "
+                            f"{result.error_message}"
+                        )
+                    continue
 
             chunk_results.append(result)
             first_transcript = first_transcript or result.transcript
@@ -606,6 +624,23 @@ class ProgressiveTranscriptionExecutor:
             options=first_transcript.options,
             created_at=first_transcript.created_at,
         )
+
+    def _retry_one_chunk(
+        self,
+        audio: PreparedAudio,
+        chunk: TranscriptionChunk,
+        previous_result: ChunkTranscriptionResult,
+    ) -> ChunkTranscriptionResult:
+        """Retry a failed chunk once and return the result."""
+        try:
+            return self._transcribe_one_chunk(audio, chunk, transcriber=self._transcriber)
+        except Exception as exc:
+            return ChunkTranscriptionResult(
+                chunk=chunk,
+                status="failed",
+                elapsed_seconds=previous_result.elapsed_seconds,
+                error_message=str(exc),
+            )
 
     @staticmethod
     def _normalize_chunk_transcript(transcript: Transcript, *, chunk: TranscriptionChunk) -> Transcript:

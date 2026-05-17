@@ -656,7 +656,10 @@ def _progress_event_status_line(event: ProgressEvent) -> str:
             f"{_compact_duration_label(event.total_duration_seconds)}"
         )
     if event.chunk_index is not None and event.chunk_count is not None:
-        parts.append(f"Chunk: {event.chunk_index}/{event.chunk_count}")
+        chunk_text = f"Chunk: {event.chunk_index}/{event.chunk_count}"
+        if event.failed_chunks is not None and event.failed_chunks > 0:
+            chunk_text += f" ({event.failed_chunks} failed)"
+        parts.append(chunk_text)
     if event.realtime_factor is not None:
         parts.append(f"Speed: {event.realtime_factor:.1f}x")
     if event.eta_seconds is not None:
@@ -1214,6 +1217,7 @@ class FlowScribeMainWindow:
                 self._state_load_warning: str | None = None
                 self._artifact_viewers: dict[Path, object] = {}
                 self._workspace_artifact_paths: tuple[Path, ...] = ()
+                self._last_chunk_index = 0
                 self._workspace_artifact_selector: object | None = None
                 self._workspace_artifact_viewer_stack: object | None = None
                 self._workspace_artifact_viewer: object | None = None
@@ -2891,6 +2895,21 @@ class FlowScribeMainWindow:
                     )
                     self.progress_bar.setValue(value)
                 if event.segments:
+                    current_chunk = event.chunk_index or 0
+                    if current_chunk != self._last_chunk_index and self._last_chunk_index > 0:
+                        separator = QListWidgetItem("─" * 30)
+                        separator.setFlags(Qt.ItemFlag.ItemIsEnabled)
+                        self.transcript_segments.addItem(separator)
+                    if event.chunk_index is not None and event.chunk_count is not None:
+                        header = QListWidgetItem(
+                            f"╾ Chunk {event.chunk_index}/{event.chunk_count} ╼"
+                        )
+                        header.setFlags(Qt.ItemFlag.ItemIsEnabled)
+                        bold_font = header.font()
+                        bold_font.setBold(True)
+                        header.setFont(bold_font)
+                        self.transcript_segments.addItem(header)
+                    self._last_chunk_index = current_chunk
                     for segment in event.segments:
                         self.transcript_segments.addItem(_render_progress_segment_line(segment))
                     self._select_view_tab("transcript")
