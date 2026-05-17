@@ -16,6 +16,8 @@ dist/
 |   `-- supporting runtime files
 `-- FlowScribeGUI/
     |-- FlowScribeGUI.exe
+    |-- ffmpeg.exe
+    |-- ffprobe.exe
     |-- WasapiCaptureHelper.exe
     |-- NAudio*.dll
     `-- supporting runtime files
@@ -74,10 +76,12 @@ The GUI script will:
 4. Build a one-folder GUI executable with PyInstaller.
 5. Copy `WasapiCaptureHelper.exe` and NAudio dependency files into the GUI release folder.
 6. Smoke-test the packaged helper with `WasapiCaptureHelper.exe version`.
-7. Apply a runtime hook that defaults packaged GUI builds to `FLOWSCRIBE_GUI_LOG_MODE=user`.
-8. Launch the GUI with `--windowed`, so end-user runs do not open a console window.
-9. Preserve the packaged GUI's quiet logging mode while keeping user-facing
-   helper/capture status text inside the application.
+7. Copy `ffmpeg.exe` and `ffprobe.exe` into the GUI release folder for URL media
+   extraction support (same lookup path as the CLI package).
+8. Apply a runtime hook that defaults packaged GUI builds to `FLOWSCRIBE_GUI_LOG_MODE=user`.
+9. Launch the GUI with `--windowed`, so end-user runs do not open a console window.
+10. Preserve the packaged GUI's quiet logging mode while keeping user-facing
+    helper/capture status text inside the application.
 
 Optional parameters:
 
@@ -173,6 +177,8 @@ The CLI ZIP should contain the entire `dist/FlowScribe/` folder, including:
 The GUI ZIP should contain the entire `dist/FlowScribeGUI/` folder, including:
 
 - `FlowScribeGUI.exe`
+- `ffmpeg.exe`
+- `ffprobe.exe`
 - `WasapiCaptureHelper.exe`
 - NAudio dependency DLLs
 - all PyInstaller runtime files

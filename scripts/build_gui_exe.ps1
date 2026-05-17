@@ -32,6 +32,62 @@ function Assert-InProject {
     }
 }
 
+function Copy-Tool {
+    param(
+        [string]$Name,
+        [string]$DestinationDir
+    )
+
+    $candidatePaths = New-Object System.Collections.Generic.List[string]
+
+    if ($env:ChocolateyInstall) {
+        $chocoLib = Join-Path $env:ChocolateyInstall "lib"
+        if (Test-Path $chocoLib) {
+            Get-ChildItem -Path $chocoLib -Recurse -Filter "$Name.exe" -ErrorAction SilentlyContinue |
+                ForEach-Object { $candidatePaths.Add($_.FullName) }
+        }
+    }
+
+    $tool = Get-Command $Name -ErrorAction SilentlyContinue
+    if ($tool) {
+        $candidatePaths.Add($tool.Source)
+    }
+
+    foreach ($candidate in ($candidatePaths | Select-Object -Unique)) {
+        if ($candidate -match "\\[Cc]hocolatey\\bin\\") {
+            continue
+        }
+
+        $pushedLocation = $false
+        try {
+            Push-Location (Split-Path -Parent $candidate)
+            $pushedLocation = $true
+            & $candidate -version *> $null
+            $exitCode = $LASTEXITCODE
+            Pop-Location
+            $pushedLocation = $false
+            if ($exitCode -ne 0) { continue }
+
+            Copy-Item -LiteralPath $candidate -Destination (Join-Path $DestinationDir "$Name.exe") -Force
+
+            $toolDir = Split-Path -Parent $candidate
+            Get-ChildItem -LiteralPath $toolDir -Filter "*.dll" -ErrorAction SilentlyContinue |
+                Copy-Item -Destination $DestinationDir -Force
+
+            Write-Host "Copied $Name from $candidate"
+            return
+        }
+        catch {
+            if ($pushedLocation) {
+                Pop-Location
+            }
+            continue
+        }
+    }
+
+    throw "$Name was not found or could not run. Install a working ffmpeg build before packaging."
+}
+
 function Copy-WasapiHelper {
     param(
         [string]$SourceDir,
@@ -119,6 +175,10 @@ try {
 
     Write-Step "Copy WASAPI helper into GUI release folder"
     Copy-WasapiHelper -SourceDir $HelperStageDir -DestinationDir $PackageDir
+
+    Write-Step "Copy ffmpeg and ffprobe into GUI release folder"
+    Copy-Tool -Name "ffmpeg" -DestinationDir $PackageDir
+    Copy-Tool -Name "ffprobe" -DestinationDir $PackageDir
 
     Write-Step "Done"
     Write-Host "GUI release folder: $PackageDir" -ForegroundColor Green

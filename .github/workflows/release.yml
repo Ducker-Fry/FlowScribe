@@ -181,7 +181,7 @@ jobs:
           - `flowscribe doctor` environment diagnostics.
           - Chinese-oriented preset: `--preset zh`.
           - Portable Windows one-folder build.
-          - Bundled `ffmpeg.exe` and `ffprobe.exe`.
+          - Bundled `ffmpeg.exe` and `ffprobe.exe` in both CLI and GUI packages.
 
           ## Download
 
