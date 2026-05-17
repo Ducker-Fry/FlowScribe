@@ -11,7 +11,18 @@
       "PowerShell(.\\\\dist\\\\FlowScribe\\\\FlowScribe.exe doctor 2>&1)",
       "PowerShell(powershell -NoProfile -ExecutionPolicy Bypass -File .\\\\scripts\\\\build_gui_exe.ps1 -Python python 2>&1)",
       "PowerShell(.\\\\dist\\\\FlowScribeGUI\\\\WasapiCaptureHelper.exe version; Write-Host \"---\"; .\\\\dist\\\\FlowScribeGUI\\\\FlowScribeGUI.exe --self-test 2>&1; Write-Host \"---\"; Write-Host \"GUI exit code: $LASTEXITCODE\")",
-      "PowerShell(git add .)"
+      "PowerShell(git add .)",
+      "PowerShell(git commit -m \"Prepare v0.2.7\")",
+      "PowerShell(git push 2>&1)",
+      "PowerShell(git tag v0.2.7)",
+      "PowerShell(git push origin v0.2.7 2>&1)",
+      "PowerShell(git ls-remote --tags origin v0.2.7 2>&1)",
+      "PowerShell(python -m ruff check src/flowscribe/media/audio_extractor.py src/flowscribe/core/pipeline.py src/flowscribe/core/progressive.py src/flowscribe/core/models.py src/flowscribe/app/models.py src/flowscribe/app/service.py src/flowscribe/gui/qt_app.py 2>&1)",
+      "PowerShell(python -m pytest -p no:cacheprovider --basetemp=\"$env:TEMP\\\\pytest-fs\" --tb=line 2>&1 | Select-Object -Last 15)",
+      "PowerShell(python -m pytest -p no:cacheprovider --basetemp=\"$env:TEMP\\\\pytest-fs\" --tb=short tests/test_progressive_transcription.py tests/test_app_service.py tests/test_gui_state.py tests/test_gui_qt_app.py tests/test_cli_main.py 2>&1 | Select-Object -Last 20)",
+      "PowerShell(python -m compileall src/flowscribe/media/audio_extractor.py src/flowscribe/core/pipeline.py src/flowscribe/core/progressive.py src/flowscribe/core/models.py src/flowscribe/app/models.py src/flowscribe/app/service.py src/flowscribe/gui/qt_app.py 2>&1)",
+      "PowerShell(git add .claude/)",
+      "PowerShell(git commit -m \"Add CLAUDE.md project knowledge file and memory index\")"
     ]
   }
 }
