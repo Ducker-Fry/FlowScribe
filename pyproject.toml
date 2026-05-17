@@ -8,20 +8,25 @@ version = "0.2.8"
 description = "Local-first media transcription toolkit for turning audio and video into raw readable transcripts."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = "MIT"
 authors = [
-  { name = "FlowScribe contributors" }
+  { name = "FlowScribe contributors" },
 ]
 keywords = ["transcription", "whisper", "audio", "video", "cli", "gui"]
 classifiers = [
-  "Development Status :: 2 - Pre-Alpha",
+  "Development Status :: 3 - Alpha",
   "Environment :: Console",
-  "Environment :: X11 Applications :: Qt",
+  "Environment :: Win32 (MS Windows)",
   "Intended Audience :: End Users/Desktop",
+"Natural Language :: Chinese (Simplified)",
+  "Natural Language :: English",
+  "Operating System :: Microsoft :: Windows",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Topic :: Multimedia :: Sound/Audio :: Speech",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
   "faster-whisper>=1.0",
@@ -37,7 +42,14 @@ dev = [
 ]
 gui = [
   "PySide6>=6.7",
+  "openpyxl>=3.1",
 ]
+
+[project.urls]
+Homepage = "https://github.com/Ducker-Fry/FlowScribe"
+Source = "https://github.com/Ducker-Fry/FlowScribe"
+BugTracker = "https://github.com/Ducker-Fry/FlowScribe/issues"
+Documentation = "https://github.com/Ducker-Fry/FlowScribe#readme"
 
 [project.scripts]
 flowscribe = "flowscribe.cli.main:main"

@@ -1,2 +1,2 @@
-"""Desktop GUI entry points and UI-facing models."""
+"""PySide6 desktop GUI — main window, workers, widgets, and state management."""
 

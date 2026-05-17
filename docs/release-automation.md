@@ -132,3 +132,39 @@ run is the first run for that tag.
 - The workflow verifies the packaged WASAPI helper with `WasapiCaptureHelper.exe version` and `WasapiCaptureHelper.exe probe`.
 - The workflow verifies the packaged GUI entry point with `FlowScribeGUI.exe --self-test`.
 - If GitHub has a temporary checkout or release API failure, rerun the workflow from the Actions page. The rerun path should now update the existing release instead of failing on duplicate creation.
+
+## PyPI Publishing
+
+FlowScribe can also be published to PyPI so users can install with `pip install flowscribe`.
+
+### Manual publish
+
+```powershell
+# Build wheel and source distribution
+python -m build
+
+# Upload to PyPI (requires twine and PyPI API token)
+python -m twine upload dist/flowscribe-*
+```
+
+### Automated publish via CI
+
+The release workflow can publish to PyPI automatically after a successful build by adding a `pypi` job that runs `twine upload` with a `PYPI_TOKEN` secret.
+
+### PyPI package contents
+
+The PyPI package includes only Python source code (~140 KB). Unlike the portable ZIP releases, it does **not** bundle:
+- `ffmpeg`/`ffprobe` (users install separately or use `scripts\setup_env.ps1`)
+- `WasapiCaptureHelper.exe` (optional, for system audio capture)
+- PySide6 or any C extension libraries (these are pip dependencies)
+
+Users install system dependencies with:
+
+```powershell
+# Automated setup
+powershell -ExecutionPolicy Bypass -File scripts\setup_env.ps1 -Gui
+
+# Or manually
+pip install flowscribe[gui]
+# Install ffmpeg separately via winget/choco or manual download
+```

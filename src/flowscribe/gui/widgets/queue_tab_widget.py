@@ -1,0 +1,230 @@
+"""Queue management tab widget for the Views dialog."""
+
+from __future__ import annotations
+
+
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
+    QComboBox,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QProgressBar,
+    QPushButton,
+    QSpinBox,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
+
+from flowscribe.queue.models import QueueItem, QueueItemStatus
+
+
+_STATUS_ICONS: dict[QueueItemStatus, str] = {
+    "pending": "[...]",
+    "running": "[>>>]",
+    "completed": "[OK]",
+    "failed": "[ERR]",
+    "canceled": "[---]",
+}
+
+
+class QueueTabWidget(QWidget):
+
+    enqueue_urls_requested = Signal(str)
+    import_file_requested = Signal(str)
+    start_queue_requested = Signal()
+    cancel_queue_requested = Signal()
+    skip_current_requested = Signal()
+    retry_item_requested = Signal(str)
+    remove_item_requested = Signal(str)
+    clear_completed_requested = Signal()
+    reorder_requested = Signal(list)
+    output_strategy_changed = Signal(str)
+    max_retries_changed = Signal(int)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._item_ids: list[str] = []
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
+
+        import_label = QLabel("Paste URLs (one per line) or import from file:")
+        layout.addWidget(import_label)
+
+        self._url_input = QTextEdit()
+        self._url_input.setPlaceholderText(
+            "https://example.com/video1\nhttps://example.com/video2\n..."
+        )
+        self._url_input.setMaximumHeight(100)
+        layout.addWidget(self._url_input)
+
+        import_row = QHBoxLayout()
+        self._add_urls_btn = QPushButton("Add URLs")
+        self._add_urls_btn.clicked.connect(self._on_add_urls)
+        import_row.addWidget(self._add_urls_btn)
+
+        self._import_file_btn = QPushButton("Import File...")
+        self._import_file_btn.clicked.connect(self._on_import_file)
+        import_row.addWidget(self._import_file_btn)
+        import_row.addStretch()
+        layout.addLayout(import_row)
+
+        settings_row = QHBoxLayout()
+        settings_row.addWidget(QLabel("Output:"))
+        self._output_strategy_combo = QComboBox()
+        self._output_strategy_combo.addItems(["Unified Directory", "Per-Source Subdir", "Name Template"])
+        self._output_strategy_combo.currentIndexChanged.connect(self._on_strategy_changed)
+        settings_row.addWidget(self._output_strategy_combo)
+
+        settings_row.addWidget(QLabel("Max Retries:"))
+        self._max_retries_spin = QSpinBox()
+        self._max_retries_spin.setRange(0, 10)
+        self._max_retries_spin.setValue(2)
+        self._max_retries_spin.valueChanged.connect(self.max_retries_changed.emit)
+        settings_row.addWidget(self._max_retries_spin)
+        settings_row.addStretch()
+        layout.addLayout(settings_row)
+
+        queue_label = QLabel("Queue:")
+        layout.addWidget(queue_label)
+
+        self._queue_list = QListWidget()
+        self._queue_list.setDragDropMode(QListWidget.DragDropMode.InternalMove)
+        self._queue_list.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self._queue_list.model().rowsMoved.connect(self._on_rows_moved)
+        layout.addWidget(self._queue_list, stretch=1)
+
+        self._progress_bar = QProgressBar()
+        self._progress_bar.setRange(0, 100)
+        self._progress_bar.setValue(0)
+        layout.addWidget(self._progress_bar)
+
+        self._status_label = QLabel("Queue idle.")
+        layout.addWidget(self._status_label)
+
+        action_row = QHBoxLayout()
+        self._start_btn = QPushButton("Start Queue")
+        self._start_btn.clicked.connect(self.start_queue_requested.emit)
+        action_row.addWidget(self._start_btn)
+
+        self._cancel_btn = QPushButton("Cancel All")
+        self._cancel_btn.setEnabled(False)
+        self._cancel_btn.clicked.connect(self.cancel_queue_requested.emit)
+        action_row.addWidget(self._cancel_btn)
+
+        self._skip_btn = QPushButton("Skip Current")
+        self._skip_btn.setEnabled(False)
+        self._skip_btn.clicked.connect(self.skip_current_requested.emit)
+        action_row.addWidget(self._skip_btn)
+        layout.addLayout(action_row)
+
+        action_row2 = QHBoxLayout()
+        self._retry_btn = QPushButton("Retry Selected")
+        self._retry_btn.clicked.connect(self._on_retry_selected)
+        action_row2.addWidget(self._retry_btn)
+
+        self._remove_btn = QPushButton("Remove Selected")
+        self._remove_btn.clicked.connect(self._on_remove_selected)
+        action_row2.addWidget(self._remove_btn)
+
+        self._clear_btn = QPushButton("Clear Completed")
+        self._clear_btn.clicked.connect(self.clear_completed_requested.emit)
+        action_row2.addWidget(self._clear_btn)
+        layout.addLayout(action_row2)
+
+    def refresh_queue_list(self, items: list[QueueItem]) -> None:
+        self._queue_list.clear()
+        self._item_ids.clear()
+        for item in items:
+            icon = _STATUS_ICONS.get(item.status, "[?]")
+            label = item.display_label
+            if item.error_message and item.status == "failed":
+                text = f"{icon} {label}  ({item.error_message[:60]})"
+            elif item.status == "running":
+                text = f"{icon} {label}  (attempt {item.attempt_count + 1})"
+            else:
+                text = f"{icon} {label}"
+            list_item = QListWidgetItem(text)
+            list_item.setData(Qt.ItemDataRole.UserRole, item.item_id)
+            self._queue_list.addItem(list_item)
+            self._item_ids.append(item.item_id)
+
+    def set_overall_progress(self, completed: int, total: int) -> None:
+        if total > 0:
+            self._progress_bar.setValue(int(completed / total * 100))
+        else:
+            self._progress_bar.setValue(0)
+        self._status_label.setText(f"Completed {completed}/{total}")
+
+    def set_running(self, running: bool) -> None:
+        self._start_btn.setEnabled(not running)
+        self._cancel_btn.setEnabled(running)
+        self._skip_btn.setEnabled(running)
+        self._add_urls_btn.setEnabled(not running)
+        self._import_file_btn.setEnabled(not running)
+        if not running:
+            self._status_label.setText("Queue idle.")
+
+    def set_current_item_status(self, label: str) -> None:
+        self._status_label.setText(label)
+
+    @property
+    def output_strategy_mode(self) -> str:
+        index = self._output_strategy_combo.currentIndex()
+        return ("unified", "per_source", "template")[index]
+
+    @property
+    def max_retries(self) -> int:
+        return self._max_retries_spin.value()
+
+    def _on_add_urls(self) -> None:
+        text = self._url_input.toPlainText().strip()
+        if text:
+            self.enqueue_urls_requested.emit(text)
+            self._url_input.clear()
+
+    def _on_import_file(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import URLs from file",
+            "",
+            "Supported Files (*.txt *.csv *.xlsx);;Text Files (*.txt);;CSV Files (*.csv);;Excel Files (*.xlsx)",
+        )
+        if path:
+            self.import_file_requested.emit(path)
+
+    def _on_strategy_changed(self, index: int) -> None:
+        mode = ("unified", "per_source", "template")[index]
+        self.output_strategy_changed.emit(mode)
+
+    def _on_retry_selected(self) -> None:
+        current = self._queue_list.currentItem()
+        if current:
+            item_id = current.data(Qt.ItemDataRole.UserRole)
+            if item_id:
+                self.retry_item_requested.emit(item_id)
+
+    def _on_remove_selected(self) -> None:
+        current = self._queue_list.currentItem()
+        if current:
+            item_id = current.data(Qt.ItemDataRole.UserRole)
+            if item_id:
+                self.remove_item_requested.emit(item_id)
+
+    def _on_rows_moved(self) -> None:
+        new_order: list[str] = []
+        for i in range(self._queue_list.count()):
+            item = self._queue_list.item(i)
+            if item:
+                item_id = item.data(Qt.ItemDataRole.UserRole)
+                if item_id:
+                    new_order.append(item_id)
+        if new_order:
+            self.reorder_requested.emit(new_order)

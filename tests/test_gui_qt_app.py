@@ -4,7 +4,7 @@ from pathlib import Path
 from flowscribe.app.models import ProgressEvent, SourceSpec, TranscriptionJob, TranscriptionResult
 from flowscribe.core.models import OutputArtifacts, TranscriptSegment
 from flowscribe.gui.export_profiles import ExportProfile
-from flowscribe.gui.qt_app import (
+from flowscribe.gui.utils import (
     _artifact_format_label,
     _artifact_summary,
     _build_library_entry,
@@ -321,6 +321,7 @@ def test_gui_state_payload_uses_nested_preferences_and_local_sources(tmp_path: P
                 "run_details": True,
                 "transcript": True,
                 "library": True,
+                "queue": True,
             },
             "current_tab": "transcript",
         },
@@ -420,6 +421,7 @@ def test_normalize_gui_state_payload_supports_nested_and_legacy_formats(tmp_path
             "run_details": True,
             "transcript": False,
             "library": True,
+            "queue": True,
         },
         "current_tab": "library",
     }
@@ -464,6 +466,7 @@ def test_normalize_gui_state_payload_supports_nested_and_legacy_formats(tmp_path
             "run_details": True,
             "transcript": True,
             "library": True,
+            "queue": True,
         },
         "current_tab": "transcript",
     }
@@ -492,6 +495,7 @@ def test_view_preferences_payload_keeps_valid_state_and_falls_back_safely() -> N
                 "run_details": False,
                 "transcript": False,
                 "library": False,
+                "queue": False,
             },
             "current_tab": "library",
         }
@@ -500,6 +504,7 @@ def test_view_preferences_payload_keeps_valid_state_and_falls_back_safely() -> N
             "run_details": False,
             "transcript": True,
             "library": False,
+            "queue": False,
         },
         "current_tab": "transcript",
     }

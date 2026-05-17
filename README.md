@@ -13,6 +13,7 @@ FlowScribe is a local-first transcription toolkit that turns local media and pub
 
 - Transcribe local audio and video files.
 - Transcribe public URLs with audio-first downloading/extraction.
+- **Batch queue system**: import multiple URLs from text/CSV/Excel, process sequentially with auto-retry and completion notification.
 - Process a single file, multiple files, or a folder.
 - Recursively scan folders.
 - Prepare audio with `ffmpeg`.
@@ -54,25 +55,57 @@ Out of scope for the current release line:
 
 ## Requirements
 
-Developer install from source:
-
 - Python 3.10 or newer.
-- `ffmpeg` and `ffprobe` available on `PATH`.
+- `ffmpeg` and `ffprobe` available on `PATH` (see setup script below).
 - Windows PowerShell or another terminal.
 
-Portable Windows release:
+## Installation
 
-- Download and unzip the release folder.
-- `ffmpeg.exe` and `ffprobe.exe` are included in the release folder.
-- Whisper models are not bundled; the first model run may download model files.
+### Quick install via pip (recommended)
 
-## Installation From Source
+Install the CLI:
 
 ```powershell
-cd E:\Draft\FlowScribe
+pip install flowscribe
+```
+
+Install with desktop GUI support:
+
+```powershell
+pip install flowscribe[gui]
+```
+
+Verify the installation:
+
+```powershell
+flowscribe doctor
+```
+
+### Automated environment setup
+
+The setup script creates a virtual environment, installs FlowScribe, detects or installs `ffmpeg`/`ffprobe`, and optionally builds the WASAPI system-audio helper:
+
+```powershell
+# CLI only
+powershell -ExecutionPolicy Bypass -File scripts\setup_env.ps1
+
+# With GUI support
+powershell -ExecutionPolicy Bypass -File scripts\setup_env.ps1 -Gui
+
+# With GUI + dev dependencies
+powershell -ExecutionPolicy Bypass -File scripts\setup_env.ps1 -Gui -Dev
+```
+
+The script auto-detects and installs `ffmpeg` via `winget` when available.
+
+### Development install from source
+
+```powershell
+git clone https://github.com/Ducker-Fry/FlowScribe.git
+cd FlowScribe
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -e .[dev]
+python -m pip install -e .[gui,dev]
 ```
 
 Check the CLI:
@@ -81,17 +114,17 @@ Check the CLI:
 flowscribe --help
 ```
 
-Check the local environment:
-
-```powershell
-flowscribe doctor
-```
-
-Run the desktop GUI from source:
+Run the desktop GUI:
 
 ```powershell
 flowscribe gui
 ```
+
+### Portable Windows release
+
+Download and unzip the release folder from the [Releases](https://github.com/Ducker-Fry/FlowScribe/releases) page. `ffmpeg.exe` and `ffprobe.exe` are included.
+
+Whisper models are not bundled; the first run may download model files.
 
 ## Quick Start
 
