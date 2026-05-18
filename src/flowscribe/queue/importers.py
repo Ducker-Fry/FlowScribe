@@ -77,7 +77,7 @@ def deduplicate_sources(
 ) -> list[SourceSpec]:
     existing_keys: set[str] = set()
     for item in existing_items:
-        if item.status in ("pending", "running"):
+        if item.status in ("pending", "running", "completed"):
             existing_keys.add(f"{item.source.kind}:{item.source.value}")
     return [
         source

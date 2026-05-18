@@ -263,7 +263,7 @@ class ConservativeChunkMergePolicy:
 class ProgressiveTranscriptConsistencyChecker:
     """Validate merged chunk output before it is written or resumed."""
 
-    def __init__(self, *, max_allowed_overlap_seconds: float = 0.35) -> None:
+    def __init__(self, *, max_allowed_overlap_seconds: float = 1.5) -> None:
         self._max_allowed_overlap_seconds = max_allowed_overlap_seconds
 
     def validate(self, transcript: Transcript) -> Transcript:

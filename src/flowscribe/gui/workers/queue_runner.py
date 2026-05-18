@@ -49,6 +49,7 @@ class QueueRunner(QObject):
 
     def _process_item(self, item: QueueItem) -> bool:
         job = item.to_job()
+        print(f"[QueueRunner] Processing job with output_dir={job.output_dir}, formats={job.output_formats}")
         try:
             result = TranscriptionService().run(
                 job,
@@ -56,8 +57,14 @@ class QueueRunner(QObject):
                 should_cancel=lambda: self._cancel_current or self._cancel_all,
             )
         except Exception as exc:
+            print(f"[QueueRunner] Exception during transcription: {exc}")
             self._mark_failed(item, str(exc))
             return False
+
+        print(f"[QueueRunner] Result: canceled={result.canceled}, errors={len(result.errors)}, outputs={len(result.outputs)}")
+        if result.outputs:
+            for idx, output in enumerate(result.outputs):
+                print(f"[QueueRunner] Output {idx}: paths={output.paths}")
 
         if result.canceled:
             self._store.update_item(
@@ -67,9 +74,11 @@ class QueueRunner(QObject):
             return False
 
         if result.errors:
+            print(f"[QueueRunner] Marking as failed due to errors: {result.errors[0].message}")
             self._mark_failed(item, result.errors[0].message)
             return False
 
+        print(f"[QueueRunner] Marking as completed")
         self._store.update_item(
             item.item_id, status="completed", finished_at=datetime.now()
         )

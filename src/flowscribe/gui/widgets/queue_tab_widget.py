@@ -92,6 +92,10 @@ class QueueTabWidget(QWidget):
         settings_row.addStretch()
         layout.addLayout(settings_row)
 
+        self._output_dir_label = QLabel()
+        self._output_dir_label.setStyleSheet("color: #888; font-size: 10pt;")
+        layout.addWidget(self._output_dir_label)
+
         queue_label = QLabel("Queue:")
         layout.addWidget(queue_label)
 
@@ -184,11 +188,35 @@ class QueueTabWidget(QWidget):
     def max_retries(self) -> int:
         return self._max_retries_spin.value()
 
+    def set_output_dir_display(self, output_dir: str, output_formats: tuple[str, ...] = ()) -> None:
+        """Update the output directory display label."""
+        formats_text = ", ".join(output_formats) if output_formats else "json (default)"
+        self._output_dir_label.setText(f"Output: {output_dir} | Formats: {formats_text}")
+
     def _on_add_urls(self) -> None:
         text = self._url_input.toPlainText().strip()
-        if text:
-            self.enqueue_urls_requested.emit(text)
-            self._url_input.clear()
+        if not text:
+            return
+
+        # Try to extract URLs from rich text if plain text doesn't contain URLs
+        from PySide6.QtGui import QGuiApplication
+        clipboard = QGuiApplication.clipboard()
+        mime_data = clipboard.mimeData()
+
+        # If plain text doesn't look like URLs, try HTML
+        if mime_data and mime_data.hasHtml() and not text.startswith("http"):
+            html = mime_data.html()
+            # Extract href attributes from HTML
+            import re
+            urls = re.findall(r'href=["\']([^"\']+)["\']', html)
+            if urls:
+                # Filter to http/https URLs
+                http_urls = [u for u in urls if u.startswith(("http://", "https://"))]
+                if http_urls:
+                    text = "\n".join(http_urls)
+
+        self.enqueue_urls_requested.emit(text)
+        self._url_input.clear()
 
     def _on_import_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(

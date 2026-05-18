@@ -3331,17 +3331,26 @@ class MainWindow(QMainWindow):
     # --- Batch Queue Methods ---
 
     def _current_queue_item_settings(self) -> QueueItemSettings:
+        language_text = self.language_combo.currentText().strip()
+        language = None if language_text == "auto" else (language_text or None)
+        preset_text = self.preset_combo.currentText().strip()
+        preset = None if preset_text == "none" else (preset_text or None)
+
+        output_formats = tuple(
+            fmt
+            for fmt, checkbox in self.format_checks.items()
+            if checkbox.isChecked()
+        )
+        # Default to JSON if no formats selected
+        if not output_formats:
+            output_formats = ("json",)
+
         return QueueItemSettings(
             output_dir=Path(self.output_dir_input.text().strip() or "outputs"),
             model_name=self.model_combo.currentText().strip() or "small",
-            language=self.language_combo.currentText().strip() or None,
-            preset=self.preset_combo.currentText().strip() or None,
-            output_formats=tuple(
-                fmt
-                for fmt in SUPPORTED_GUI_FORMATS
-                if getattr(self, f"format_{fmt}_check", None) is not None
-                and getattr(self, f"format_{fmt}_check").isChecked()
-            ),
+            language=language,
+            preset=preset,
+            output_formats=output_formats,
             timestamps=self.timestamps_check.isChecked(),
             word_timestamps=self.word_timestamps_check.isChecked(),
             overwrite=self.overwrite_check.isChecked(),
@@ -3362,7 +3371,7 @@ class MainWindow(QMainWindow):
     def _enqueue_urls_from_text(self, text: str) -> None:
         urls = parse_urls_from_text(text)
         if not urls:
-            self.status_label.setText("No valid URLs found in the pasted text.")
+            self.status_label.setText("No valid URLs found. URLs must start with http:// or https://")
             return
         self._enqueue_url_list(urls)
 
@@ -3408,6 +3417,9 @@ class MainWindow(QMainWindow):
             return
         items = self._queue_store.load_items()
         self._queue_tab.refresh_queue_list(items)
+        output_dir = self.output_dir_input.text().strip() or "outputs"
+        settings = self._current_queue_item_settings()
+        self._queue_tab.set_output_dir_display(output_dir, settings.output_formats)
 
     def _start_queue_processing(self) -> None:
         if self._queue_thread is not None:
