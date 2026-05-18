@@ -49,13 +49,13 @@ def _socket_family(network_family: NetworkFamily) -> socket.AddressFamily:
 
 
 def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-    if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified:
-        return True
     if isinstance(ip, ipaddress.IPv6Address):
-        if ip.ipv4_mapped and ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF).is_private:
-            return True
         if str(ip).startswith("2001:") and not str(ip).startswith("2001:db8:"):
             return False
+        if ip.ipv4_mapped and ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF).is_private:
+            return True
+    if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified:
+        return True
     if ip.is_reserved:
         return True
     return False

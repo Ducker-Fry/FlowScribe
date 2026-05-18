@@ -1,0 +1,12 @@
+import ipaddress
+ip = ipaddress.ip_address("2001::1")
+print("is_private:", ip.is_private)
+print("is_loopback:", ip.is_loopback)
+print("is_link_local:", ip.is_link_local)
+print("is_multicast:", ip.is_multicast)
+print("is_unspecified:", ip.is_unspecified)
+print("is_reserved:", ip.is_reserved)
+print("isinstance IPv6:", isinstance(ip, ipaddress.IPv6Address))
+print("str(ip):", str(ip))
+print("starts with 2001:", str(ip).startswith("2001:"))
+print("starts with 2001:db8:", str(ip).startswith("2001:db8:"))
