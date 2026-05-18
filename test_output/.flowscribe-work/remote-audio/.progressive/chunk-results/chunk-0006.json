@@ -1,0 +1,66 @@
+{
+  "chunk": {
+    "index": 6,
+    "start_seconds": 135.0,
+    "end_seconds": 165.0,
+    "overlap_seconds": 3.0
+  },
+  "status": "done",
+  "elapsed_seconds": 4.716275000013411,
+  "error_message": null,
+  "merged_segment_count": 5,
+  "transcript": {
+    "source": "E:\\Draft\\FlowScribe\\test_output\\.flowscribe-work\\.url-media\\url-0424974c68530290\\remote-audio.webm",
+    "language": "en",
+    "model_name": "small",
+    "created_at": "2026-05-18T10:43:58",
+    "options": {
+      "model_name": "small",
+      "language": null,
+      "task": "transcribe",
+      "beam_size": 5,
+      "vad_filter": false,
+      "initial_prompt": null,
+      "preset": null,
+      "word_timestamps": false,
+      "provider_name": "local-whisper"
+    },
+    "segments": [
+      {
+        "text": "We've known each other for so long Your heart's been aching, but",
+        "start_seconds": 135.0,
+        "end_seconds": 142.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "You're too shy to say it, except we both know what's been going on",
+        "start_seconds": 142.0,
+        "end_seconds": 149.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "We know the game and we're gonna play it I just wanna tell you how I feel",
+        "start_seconds": 149.0,
+        "end_seconds": 157.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "Gotta make you understand",
+        "start_seconds": 157.0,
+        "end_seconds": 161.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "Never gonna give you up Never gonna let you down",
+        "start_seconds": 161.0,
+        "end_seconds": 165.0,
+        "raw_words": [],
+        "words": []
+      }
+    ]
+  }
+}

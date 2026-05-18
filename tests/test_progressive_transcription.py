@@ -369,12 +369,39 @@ def test_progressive_consistency_checker_rejects_large_segment_overlap(tmp_path:
         source=MediaItem(path=tmp_path / "sample.mp4"),
         segments=(
             TranscriptSegment(text="one", start_seconds=0.0, end_seconds=5.0),
-            TranscriptSegment(text="two", start_seconds=4.0, end_seconds=8.0),
+            TranscriptSegment(text="two", start_seconds=1.0, end_seconds=8.0),
         ),
     )
 
+    # Strict mode should reject
     with pytest.raises(Exception, match="overlaps the previous segment too much"):
-        ProgressiveTranscriptConsistencyChecker().validate(transcript)
+        ProgressiveTranscriptConsistencyChecker(auto_fix_timestamps=False).validate(transcript)
+
+    # Auto-fix mode should fix the issue
+    fixed = ProgressiveTranscriptConsistencyChecker(auto_fix_timestamps=True).validate(transcript)
+    assert len(fixed.segments) == 2
+    assert fixed.segments[1].start_seconds >= fixed.segments[0].end_seconds - 3.0
+
+
+def test_progressive_consistency_checker_fixes_backward_timestamps(tmp_path: Path) -> None:
+    """Test that auto-fix mode corrects segments that start before previous segment."""
+    transcript = Transcript(
+        source=MediaItem(path=tmp_path / "sample.mp4"),
+        segments=(
+            TranscriptSegment(text="one", start_seconds=10.0, end_seconds=15.0),
+            TranscriptSegment(text="two", start_seconds=8.0, end_seconds=18.0),
+        ),
+    )
+
+    # Strict mode should reject
+    with pytest.raises(Exception, match="starts before the previous segment"):
+        ProgressiveTranscriptConsistencyChecker(auto_fix_timestamps=False).validate(transcript)
+
+    # Auto-fix mode should fix by using previous segment's start as minimum
+    fixed = ProgressiveTranscriptConsistencyChecker(auto_fix_timestamps=True).validate(transcript)
+    assert len(fixed.segments) == 2
+    assert fixed.segments[1].start_seconds == 10.0  # Fixed to previous segment's start
+    assert fixed.segments[1].end_seconds == 18.0  # End unchanged
 
 
 def test_pipeline_process_progressive_json_stays_reexportable(tmp_path: Path) -> None:

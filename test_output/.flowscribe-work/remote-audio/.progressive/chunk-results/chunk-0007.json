@@ -1,0 +1,73 @@
+{
+  "chunk": {
+    "index": 7,
+    "start_seconds": 162.0,
+    "end_seconds": 192.0,
+    "overlap_seconds": 3.0
+  },
+  "status": "done",
+  "elapsed_seconds": 14.981403800018597,
+  "error_message": null,
+  "merged_segment_count": 6,
+  "transcript": {
+    "source": "E:\\Draft\\FlowScribe\\test_output\\.flowscribe-work\\.url-media\\url-0424974c68530290\\remote-audio.webm",
+    "language": "en",
+    "model_name": "small",
+    "created_at": "2026-05-18T10:44:13",
+    "options": {
+      "model_name": "small",
+      "language": null,
+      "task": "transcribe",
+      "beam_size": 5,
+      "vad_filter": false,
+      "initial_prompt": null,
+      "preset": null,
+      "word_timestamps": false,
+      "provider_name": "local-whisper"
+    },
+    "segments": [
+      {
+        "text": "I'm gonna let you down, I'm gonna run around and desert you",
+        "start_seconds": 162.0,
+        "end_seconds": 169.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "I'm gonna make you cry, I'm gonna say goodbye",
+        "start_seconds": 169.0,
+        "end_seconds": 174.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "I'm gonna say goodbye and hurt you",
+        "start_seconds": 174.0,
+        "end_seconds": 178.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "I'm gonna give you up, I'm gonna let you down",
+        "start_seconds": 178.0,
+        "end_seconds": 182.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "I'm gonna run around and desert you",
+        "start_seconds": 182.0,
+        "end_seconds": 186.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "I'm gonna make you cry, I'm gonna say goodbye",
+        "start_seconds": 186.0,
+        "end_seconds": 191.0,
+        "raw_words": [],
+        "words": []
+      }
+    ]
+  }
+}

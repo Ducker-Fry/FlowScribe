@@ -1,0 +1,101 @@
+{
+  "chunk": {
+    "index": 8,
+    "start_seconds": 189.0,
+    "end_seconds": 213.043125,
+    "overlap_seconds": 3.0
+  },
+  "status": "done",
+  "elapsed_seconds": 3.5313687999732792,
+  "error_message": null,
+  "merged_segment_count": 8,
+  "transcript": {
+    "source": "E:\\Draft\\FlowScribe\\test_output\\.flowscribe-work\\.url-media\\url-0424974c68530290\\remote-audio.webm",
+    "language": "en",
+    "model_name": "small",
+    "created_at": "2026-05-18T10:44:16",
+    "options": {
+      "model_name": "small",
+      "language": null,
+      "task": "transcribe",
+      "beam_size": 5,
+      "vad_filter": false,
+      "initial_prompt": null,
+      "preset": null,
+      "word_timestamps": false,
+      "provider_name": "local-whisper"
+    },
+    "segments": [
+      {
+        "text": "If I'm gonna say goodbye",
+        "start_seconds": 189.0,
+        "end_seconds": 191.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "If I'm gonna say goodbye",
+        "start_seconds": 191.0,
+        "end_seconds": 193.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "And hurt you",
+        "start_seconds": 193.0,
+        "end_seconds": 195.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "If I'm gonna give you up",
+        "start_seconds": 195.0,
+        "end_seconds": 197.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "If I'm gonna let you down",
+        "start_seconds": 197.0,
+        "end_seconds": 199.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "If I'm gonna run around",
+        "start_seconds": 199.0,
+        "end_seconds": 201.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "And desert you",
+        "start_seconds": 201.0,
+        "end_seconds": 203.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "If I'm gonna make you hide",
+        "start_seconds": 203.0,
+        "end_seconds": 205.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "If I'm gonna say goodbye",
+        "start_seconds": 205.0,
+        "end_seconds": 207.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "If I'm gonna say goodbye",
+        "start_seconds": 207.0,
+        "end_seconds": 209.0,
+        "raw_words": [],
+        "words": []
+      }
+    ]
+  }
+}

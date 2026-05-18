@@ -128,5 +128,12 @@ class TranscriptionResult:
     def ok(self) -> bool:
         return not self.errors and not self.canceled
 
+    @property
+    def elapsed_seconds(self) -> float | None:
+        """Total elapsed time in seconds, or None if not finished."""
+        if self.finished_at is None:
+            return None
+        return (self.finished_at - self.started_at).total_seconds()
+
 
 ProgressCallback = Callable[[ProgressEvent], None]

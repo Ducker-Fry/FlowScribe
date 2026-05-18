@@ -1,0 +1,101 @@
+{
+  "chunk": {
+    "index": 2,
+    "start_seconds": 27.0,
+    "end_seconds": 57.0,
+    "overlap_seconds": 3.0
+  },
+  "status": "done",
+  "elapsed_seconds": 4.7431408999837,
+  "error_message": null,
+  "merged_segment_count": 10,
+  "transcript": {
+    "source": "E:\\Draft\\FlowScribe\\test_output\\.flowscribe-work\\.url-media\\url-0424974c68530290\\remote-audio.webm",
+    "language": "en",
+    "model_name": "small",
+    "created_at": "2026-05-18T10:43:32",
+    "options": {
+      "model_name": "small",
+      "language": null,
+      "task": "transcribe",
+      "beam_size": 5,
+      "vad_filter": false,
+      "initial_prompt": null,
+      "preset": null,
+      "word_timestamps": false,
+      "provider_name": "local-whisper"
+    },
+    "segments": [
+      {
+        "text": "I still commitments while I'm thinking of",
+        "start_seconds": 27.0,
+        "end_seconds": 31.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "You wouldn't get this from any other guy",
+        "start_seconds": 31.0,
+        "end_seconds": 35.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "I just wanna tell you how I'm feeling",
+        "start_seconds": 35.0,
+        "end_seconds": 40.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "Gotta make you understand",
+        "start_seconds": 40.0,
+        "end_seconds": 43.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "Never gonna give you up",
+        "start_seconds": 43.0,
+        "end_seconds": 45.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "Never gonna let you down",
+        "start_seconds": 45.0,
+        "end_seconds": 47.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "Never gonna run around and desert you",
+        "start_seconds": 47.0,
+        "end_seconds": 51.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "Never gonna make you cry",
+        "start_seconds": 51.0,
+        "end_seconds": 53.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "Never gonna say goodbye",
+        "start_seconds": 53.0,
+        "end_seconds": 55.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "Never gonna tell you",
+        "start_seconds": 55.0,
+        "end_seconds": 57.0,
+        "raw_words": [],
+        "words": []
+      }
+    ]
+  }
+}

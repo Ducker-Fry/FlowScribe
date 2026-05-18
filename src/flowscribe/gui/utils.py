@@ -534,6 +534,22 @@ def _url_media_status_suffix(artifacts: OutputArtifacts) -> str:
     return ""
 
 
+def _format_elapsed_time(seconds: float | None) -> str:
+    """Format elapsed time in human-readable form (e.g., '2m 34s', '1h 5m 23s')."""
+    if seconds is None:
+        return ""
+    seconds = int(seconds)
+    if seconds < 60:
+        return f"{seconds}s"
+    minutes = seconds // 60
+    secs = seconds % 60
+    if minutes < 60:
+        return f"{minutes}m {secs}s"
+    hours = minutes // 60
+    mins = minutes % 60
+    return f"{hours}h {mins}m {secs}s"
+
+
 def _normalize_subtitle_artifact_text(path: Path, text: str) -> str:
     lines = [line.rstrip() for line in text.replace("\r\n", "\n").split("\n")]
     normalized_lines: list[str] = []

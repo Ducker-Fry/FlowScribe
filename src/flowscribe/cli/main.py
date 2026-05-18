@@ -69,7 +69,9 @@ def run_transcribe(options) -> int:
     job = _job_from_transcribe_options(options)
     result = TranscriptionService().run(job, progress=_print_cli_progress)
 
-    print(f"Done. Succeeded: {result.succeeded}. Failed: {result.failed}.")
+    elapsed = result.elapsed_seconds
+    elapsed_str = f" Time: {_format_duration(elapsed)}." if elapsed is not None else ""
+    print(f"Done. Succeeded: {result.succeeded}. Failed: {result.failed}.{elapsed_str}")
     if result.errors:
         print("Failures:")
         for error in result.errors:
@@ -85,7 +87,9 @@ def run_url(options) -> int:
         for error in result.errors:
             print(f"Error: {error.message}", file=sys.stderr)
         return 2
-    print(f"Done. Succeeded: {result.succeeded}. Failed: {result.failed}.")
+    elapsed = result.elapsed_seconds
+    elapsed_str = f" Time: {_format_duration(elapsed)}." if elapsed is not None else ""
+    print(f"Done. Succeeded: {result.succeeded}. Failed: {result.failed}.{elapsed_str}")
     return 0
 
 
@@ -389,6 +393,22 @@ def _format_size(value: int | None) -> str:
     if value < 1024 * 1024:
         return f"{value / 1024:.1f} KiB"
     return f"{value / (1024 * 1024):.1f} MiB"
+
+
+def _format_duration(seconds: float | None) -> str:
+    """Format elapsed time in human-readable form (e.g., '2m 34s', '1h 5m 23s')."""
+    if seconds is None:
+        return "unknown"
+    seconds = int(seconds)
+    if seconds < 60:
+        return f"{seconds}s"
+    minutes = seconds // 60
+    secs = seconds % 60
+    if minutes < 60:
+        return f"{minutes}m {secs}s"
+    hours = minutes // 60
+    mins = minutes % 60
+    return f"{hours}h {mins}m {secs}s"
 
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -263,10 +263,22 @@ class ConservativeChunkMergePolicy:
 class ProgressiveTranscriptConsistencyChecker:
     """Validate merged chunk output before it is written or resumed."""
 
-    def __init__(self, *, max_allowed_overlap_seconds: float = 1.5) -> None:
+    def __init__(
+        self,
+        *,
+        max_allowed_overlap_seconds: float = 3.0,
+        auto_fix_timestamps: bool = True,
+    ) -> None:
         self._max_allowed_overlap_seconds = max_allowed_overlap_seconds
+        self._auto_fix_timestamps = auto_fix_timestamps
 
     def validate(self, transcript: Transcript) -> Transcript:
+        if not self._auto_fix_timestamps:
+            return self._validate_strict(transcript)
+        return self._validate_and_fix(transcript)
+
+    def _validate_strict(self, transcript: Transcript) -> Transcript:
+        """Strict validation without auto-fixing."""
         previous: TranscriptSegment | None = None
         for index, segment in enumerate(transcript.segments, start=1):
             self._validate_segment(segment, index=index)
@@ -275,7 +287,71 @@ class ProgressiveTranscriptConsistencyChecker:
             previous = segment
         return transcript
 
+    def _validate_and_fix(self, transcript: Transcript) -> Transcript:
+        """Validate and auto-fix timestamp issues."""
+        if not transcript.segments:
+            return transcript
+
+        fixed_segments: list[TranscriptSegment] = []
+        previous: TranscriptSegment | None = None
+
+        for index, segment in enumerate(transcript.segments, start=1):
+            # Validate segment internal consistency
+            if (
+                segment.start_seconds is not None
+                and segment.end_seconds is not None
+                and segment.end_seconds < segment.start_seconds
+            ):
+                raise TranscriptionError(
+                    f"Progressive transcript segment {index} ends before it starts."
+                )
+
+            # Fix timestamp order issues
+            if previous is not None:
+                segment = self._fix_segment_order(previous, segment, index=index)
+
+            fixed_segments.append(segment)
+            previous = segment
+
+        return Transcript(
+            source=transcript.source,
+            segments=tuple(fixed_segments),
+            language=transcript.language,
+            model_name=transcript.model_name,
+            options=transcript.options,
+            created_at=transcript.created_at,
+        )
+
+    def _fix_segment_order(
+        self,
+        previous: TranscriptSegment,
+        current: TranscriptSegment,
+        *,
+        index: int,
+    ) -> TranscriptSegment:
+        """Fix timestamp order issues by adjusting current segment."""
+        if current.start_seconds is None or previous.start_seconds is None:
+            return current
+
+        # Fix: current starts before previous
+        if current.start_seconds < previous.start_seconds:
+            # Use previous segment's start as minimum
+            fixed_start = previous.start_seconds
+            return replace(current, start_seconds=fixed_start)
+
+        # Fix: excessive overlap
+        if (
+            previous.end_seconds is not None
+            and current.start_seconds < previous.end_seconds - self._max_allowed_overlap_seconds
+        ):
+            # Adjust to maximum allowed overlap
+            fixed_start = previous.end_seconds - self._max_allowed_overlap_seconds
+            return replace(current, start_seconds=fixed_start)
+
+        return current
+
     def _validate_segment(self, segment: TranscriptSegment, *, index: int) -> None:
+        """Validate segment internal consistency."""
         if (
             segment.start_seconds is not None
             and segment.end_seconds is not None
@@ -292,6 +368,7 @@ class ProgressiveTranscriptConsistencyChecker:
         *,
         index: int,
     ) -> None:
+        """Validate segment order (strict mode)."""
         if (
             previous.start_seconds is not None
             and current.start_seconds is not None

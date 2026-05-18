@@ -119,7 +119,27 @@ class LocalWhisperTranscriber:
         if self._model is None:
             from faster_whisper import WhisperModel
 
-            self._model = WhisperModel(self._model_name, device="auto", compute_type="auto")
+            # CPU optimization: use int8 quantization for better performance
+            device = "auto"
+            compute_type = "auto"
+
+            # Try to detect if CUDA is available
+            try:
+                import ctranslate2
+                if ctranslate2.get_cuda_device_count() == 0:
+                    # No GPU, optimize for CPU
+                    device = "cpu"
+                    compute_type = "int8"
+            except Exception:
+                pass
+
+            self._model = WhisperModel(
+                self._model_name,
+                device=device,
+                compute_type=compute_type,
+                cpu_threads=0,  # Use all available CPU threads
+                num_workers=1,
+            )
         return self._model
 
     def fork_for_worker(self) -> "LocalWhisperTranscriber":

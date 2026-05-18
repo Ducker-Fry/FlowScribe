@@ -1,0 +1,122 @@
+{
+  "chunk": {
+    "index": 4,
+    "start_seconds": 81.0,
+    "end_seconds": 111.0,
+    "overlap_seconds": 3.0
+  },
+  "status": "done",
+  "elapsed_seconds": 12.193381599965505,
+  "error_message": null,
+  "merged_segment_count": 13,
+  "transcript": {
+    "source": "E:\\Draft\\FlowScribe\\test_output\\.flowscribe-work\\.url-media\\url-0424974c68530290\\remote-audio.webm",
+    "language": "en",
+    "model_name": "small",
+    "created_at": "2026-05-18T10:43:49",
+    "options": {
+      "model_name": "small",
+      "language": null,
+      "task": "transcribe",
+      "beam_size": 5,
+      "vad_filter": false,
+      "initial_prompt": null,
+      "preset": null,
+      "word_timestamps": false,
+      "provider_name": "local-whisper"
+    },
+    "segments": [
+      {
+        "text": "Don't tell me you're too much to see",
+        "start_seconds": 81.0,
+        "end_seconds": 85.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "Never gonna give you up",
+        "start_seconds": 85.0,
+        "end_seconds": 87.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "Never gonna let you down",
+        "start_seconds": 87.0,
+        "end_seconds": 89.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "Never gonna run around and",
+        "start_seconds": 89.0,
+        "end_seconds": 91.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "Dissert you",
+        "start_seconds": 91.0,
+        "end_seconds": 93.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "Never gonna make you cry",
+        "start_seconds": 93.0,
+        "end_seconds": 95.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "Never gonna say goodbye",
+        "start_seconds": 95.0,
+        "end_seconds": 97.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "Never gonna tell a lie",
+        "start_seconds": 97.0,
+        "end_seconds": 99.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "And break you",
+        "start_seconds": 99.0,
+        "end_seconds": 101.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "Never gonna give you up",
+        "start_seconds": 101.0,
+        "end_seconds": 103.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "Never gonna let you down",
+        "start_seconds": 103.0,
+        "end_seconds": 105.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "Never gonna run around and",
+        "start_seconds": 105.0,
+        "end_seconds": 107.0,
+        "raw_words": [],
+        "words": []
+      },
+      {
+        "text": "Dissert you",
+        "start_seconds": 107.0,
+        "end_seconds": 109.0,
+        "raw_words": [],
+        "words": []
+      }
+    ]
+  }
+}

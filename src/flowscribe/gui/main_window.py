@@ -100,6 +100,7 @@ from flowscribe.gui.utils import (
     _render_progress_segment_line,
     _sort_workspace_artifact_paths,
     _url_media_status_suffix,
+    _format_elapsed_time,
     _user_facing_doctor_message,
     _user_facing_folder_label,
     _user_facing_state_file_label,
@@ -1943,7 +1944,10 @@ class MainWindow(QMainWindow):
             return
 
         self._remember_recent_job(result, "completed")
-        self.status_label.setText(f"Done. Succeeded: {result.succeeded}.")
+        elapsed_str = _format_elapsed_time(result.elapsed_seconds)
+        time_suffix = f" Time: {elapsed_str}." if elapsed_str else ""
+        self.status_label.setText(f"Done. Succeeded: {result.succeeded}.{time_suffix}")
+        self.preview_output.append(f"\nDone. Succeeded: {result.succeeded}. Failed: {result.failed}.{time_suffix}")
         self.preview_output.append("\nOutput files:")
         transcript_loaded = False
         auto_bound_media = False
@@ -1979,18 +1983,22 @@ class MainWindow(QMainWindow):
             self._select_view_tab("run_details")
         else:
             self._select_view_tab("transcript")
+            elapsed_str = _format_elapsed_time(result.elapsed_seconds)
+            time_suffix = f" Time: {elapsed_str}." if elapsed_str else ""
             if auto_bound_media and self._media_path is not None:
                 status = (
                     f"Done. Succeeded: {result.succeeded}. "
-                    f"Auto-bound saved media: {self._media_path.name}."
+                    f"Auto-bound saved media: {self._media_path.name}.{time_suffix}"
                 )
                 if url_media_notes:
                     status += " " + " ".join(url_media_notes)
                 self.status_label.setText(status)
             elif url_media_notes:
                 self.status_label.setText(
-                    f"Done. Succeeded: {result.succeeded}. " + " ".join(url_media_notes)
+                    f"Done. Succeeded: {result.succeeded}.{time_suffix} " + " ".join(url_media_notes)
                 )
+            else:
+                self.status_label.setText(f"Done. Succeeded: {result.succeeded}.{time_suffix}")
         self._cleanup_temporary_capture_files()
 
     def _fail_transcription(self, message: str) -> None:
