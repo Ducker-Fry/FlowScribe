@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sys
 from dataclasses import asdict
 from pathlib import Path
@@ -33,6 +34,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_inspect(options)
     if options.command == "url":
         return run_url(options)
+    if options.command == "serve":
+        return run_serve(options)
     if options.command == "version":
         print(f"FlowScribe {__version__}")
         print(f"Python {sys.version.split()[0]}")
@@ -91,6 +94,72 @@ def run_url(options) -> int:
     elapsed_str = f" Time: {_format_duration(elapsed)}." if elapsed is not None else ""
     print(f"Done. Succeeded: {result.succeeded}. Failed: {result.failed}.{elapsed_str}")
     return 0
+
+
+def run_serve(options) -> int:
+    """Start HTTP server for Bookmarklet integration."""
+    from flowscribe.server import BookmarkletServer
+
+    # Configure logging with better formatting
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
+    print("=" * 70)
+    print("FlowScribe Bookmarklet Server")
+    print("=" * 70)
+    print(f"Listening on: http://{options.host}:{options.port}")
+    print(f"Queue store:  {options.queue_store_path}")
+    print("")
+    print("Default Settings:")
+    print(f"  Output dir:  {options.output_dir}")
+    print(f"  Formats:     {', '.join(options.output_formats)}")
+    print(f"  Model:       {options.model_name}")
+    print(f"  Language:    {options.language or 'auto-detect'}")
+    print("")
+    print("Bookmarklet Installation:")
+    print(f"  1. Visit http://{options.host}:{options.port}/bookmarklet.js")
+    print("  2. Copy the JavaScript code")
+    print("  3. Create a bookmark in your browser with the code as URL")
+    print("")
+    print("API Endpoints:")
+    print(f"  POST http://{options.host}:{options.port}/add-url     - Add single URL")
+    print(f"  POST http://{options.host}:{options.port}/add-urls    - Add multiple URLs")
+    print(f"  GET  http://{options.host}:{options.port}/status      - Get queue status")
+    print("")
+    print("Status reports will be shown every 30 seconds")
+    print("Press Ctrl+C to stop")
+    print("=" * 70)
+    print("")
+
+    try:
+        server = BookmarkletServer(
+            queue_store_path=options.queue_store_path,
+            host=options.host,
+            port=options.port,
+            status_interval=30,
+            default_output_dir=options.output_dir,
+            default_output_formats=options.output_formats,
+            default_model_name=options.model_name,
+            default_language=options.language,
+        )
+        server.start()
+        return 0
+    except KeyboardInterrupt:
+        print("\n✓ Server stopped")
+        return 0
+    except OSError as e:
+        if "address already in use" in str(e).lower():
+            print(f"\n❌ Error: Port {options.port} is already in use", file=sys.stderr)
+            print(f"   Try a different port: flowscribe serve --port {options.port + 1}", file=sys.stderr)
+        else:
+            print(f"\n❌ Error: {e}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"\n❌ Unexpected error: {e}", file=sys.stderr)
+        return 2
 
 
 def run_inspect(options) -> int:

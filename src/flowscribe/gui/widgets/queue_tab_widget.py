@@ -5,8 +5,10 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFileDialog,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -44,6 +46,8 @@ class QueueTabWidget(QWidget):
     reorder_requested = Signal(list)
     output_strategy_changed = Signal(str)
     max_retries_changed = Signal(int)
+    server_start_requested = Signal(int)  # port
+    server_stop_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -54,6 +58,42 @@ class QueueTabWidget(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
+
+        # Bookmarklet Server section
+        server_group = QGroupBox("Bookmarklet Server")
+        server_layout = QVBoxLayout(server_group)
+        server_layout.setSpacing(4)
+
+        server_control_row = QHBoxLayout()
+        self._server_enabled_check = QCheckBox("Enable Server")
+        self._server_enabled_check.setToolTip("Start HTTP server to receive URLs from browser bookmarklet")
+        self._server_enabled_check.stateChanged.connect(self._on_server_toggle)
+        server_control_row.addWidget(self._server_enabled_check)
+
+        server_control_row.addWidget(QLabel("Port:"))
+        self._server_port_spin = QSpinBox()
+        self._server_port_spin.setRange(1024, 65535)
+        self._server_port_spin.setValue(8765)
+        self._server_port_spin.setMaximumWidth(80)
+        self._server_port_spin.setToolTip("Server port (default: 8765)")
+        server_control_row.addWidget(self._server_port_spin)
+
+        self._server_status_label = QLabel("Server: Stopped")
+        self._server_status_label.setStyleSheet("color: gray;")
+        server_control_row.addWidget(self._server_status_label)
+        server_control_row.addStretch()
+
+        server_layout.addLayout(server_control_row)
+
+        self._server_info_label = QLabel(
+            "Enable server to add URLs from browser. "
+            "Visit http://127.0.0.1:8765/bookmarklet.js for installation."
+        )
+        self._server_info_label.setWordWrap(True)
+        self._server_info_label.setStyleSheet("color: gray; font-size: 10px;")
+        server_layout.addWidget(self._server_info_label)
+
+        layout.addWidget(server_group)
 
         import_label = QLabel("Paste URLs (one per line) or import from file:")
         layout.addWidget(import_label)
@@ -256,3 +296,33 @@ class QueueTabWidget(QWidget):
                     new_order.append(item_id)
         if new_order:
             self.reorder_requested.emit(new_order)
+
+    def _on_server_toggle(self, state: int) -> None:
+        """Handle server enable/disable toggle."""
+        if state == Qt.CheckState.Checked.value:
+            port = self._server_port_spin.value()
+            self._server_port_spin.setEnabled(False)
+            self.server_start_requested.emit(port)
+        else:
+            self._server_port_spin.setEnabled(True)
+            self.server_stop_requested.emit()
+
+    def set_server_status(self, running: bool, port: int | None = None) -> None:
+        """Update server status display."""
+        if running and port:
+            self._server_status_label.setText(f"Server: Running on port {port}")
+            self._server_status_label.setStyleSheet("color: green;")
+            self._server_info_label.setText(
+                f"Server running. Visit http://127.0.0.1:{port}/bookmarklet.js for installation."
+            )
+            self._server_enabled_check.setChecked(True)
+            self._server_port_spin.setEnabled(False)
+        else:
+            self._server_status_label.setText("Server: Stopped")
+            self._server_status_label.setStyleSheet("color: gray;")
+            self._server_info_label.setText(
+                "Enable server to add URLs from browser. "
+                "Visit http://127.0.0.1:8765/bookmarklet.js for installation."
+            )
+            self._server_enabled_check.setChecked(False)
+            self._server_port_spin.setEnabled(True)

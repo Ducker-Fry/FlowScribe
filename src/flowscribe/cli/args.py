@@ -102,13 +102,25 @@ class UrlOptions:
 
 
 @dataclass(frozen=True)
+class ServeOptions:
+    command: str
+    host: str
+    port: int
+    queue_store_path: Path
+    output_dir: Path
+    output_formats: tuple[str, ...]
+    model_name: str
+    language: str | None
+
+
+@dataclass(frozen=True)
 class SimpleCommandOptions:
     command: str
 
 
 def parse_args(
     argv: list[str] | None = None,
-) -> CliOptions | DoctorOptions | SearchOptions | InspectOptions | UrlOptions | SimpleCommandOptions:
+) -> CliOptions | DoctorOptions | SearchOptions | InspectOptions | UrlOptions | ServeOptions | SimpleCommandOptions:
     argv = sys.argv[1:] if argv is None else argv
     if not argv:
         return parse_transcribe_args(argv)
@@ -124,6 +136,8 @@ def parse_args(
         return parse_inspect_args(argv[1:])
     if command == "url":
         return parse_url_args(argv[1:])
+    if command == "serve":
+        return parse_serve_args(argv[1:])
     if command in {"version", "formats", "models", "capture", "gui"}:
         return parse_simple_command_args(command, argv[1:])
     return parse_transcribe_args(argv)
@@ -611,6 +625,86 @@ def parse_inspect_args(argv: list[str] | None = None) -> InspectOptions:
         network_family=namespace.network_family,
         cookies=namespace.cookies,
         proxy=namespace.proxy,
+    )
+
+
+def parse_serve_args(argv: list[str] | None = None) -> ServeOptions:
+    parser = argparse.ArgumentParser(
+        prog="flowscribe serve",
+        description="Start HTTP server for Bookmarklet integration.",
+    )
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Host address to bind. Default: 127.0.0.1",
+    )
+    parser.add_argument(
+        "--port",
+        type=positive_int,
+        default=8765,
+        help="Port to listen on. Default: 8765",
+    )
+    parser.add_argument(
+        "--queue-store",
+        type=Path,
+        default=None,
+        help="Path to batch-queue.json. Default: {AppData}/FlowScribe/batch-queue.json",
+    )
+    parser.add_argument(
+        "-o",
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Default output directory for transcripts. Default: ~/Documents/FlowScribe",
+    )
+    parser.add_argument(
+        "--format",
+        dest="output_formats",
+        default="json",
+        help="Default output formats (comma-separated). Default: json",
+    )
+    parser.add_argument(
+        "-m",
+        "--model",
+        dest="model_name",
+        default="small",
+        help="Default transcription model. Default: small",
+    )
+    parser.add_argument(
+        "-l",
+        "--language",
+        default=None,
+        help="Default language code (e.g., zh, en). Default: auto-detect",
+    )
+    namespace = parser.parse_args(argv)
+
+    # Default queue store path
+    queue_store_path = namespace.queue_store
+    if queue_store_path is None:
+        from flowscribe.server.handlers import _get_app_data_dir
+        queue_store_path = _get_app_data_dir() / "batch-queue.json"
+
+    # Default output directory
+    output_dir = namespace.output_dir
+    if output_dir is None:
+        output_dir = Path.home() / "Documents" / "FlowScribe"
+
+    # Parse output formats
+    output_formats = tuple(
+        fmt.strip().lower()
+        for fmt in namespace.output_formats.split(",")
+        if fmt.strip()
+    )
+
+    return ServeOptions(
+        command="serve",
+        host=namespace.host,
+        port=namespace.port,
+        queue_store_path=queue_store_path,
+        output_dir=output_dir,
+        output_formats=output_formats,
+        model_name=namespace.model_name,
+        language=namespace.language,
     )
 
 

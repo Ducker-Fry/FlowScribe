@@ -7,7 +7,7 @@ from datetime import datetime
 from html import escape
 from pathlib import Path
 
-from PySide6.QtCore import QThread, QTimer, Qt, QUrl
+from PySide6.QtCore import QThread, QTimer, Qt, QUrl, QFileSystemWatcher
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import QMainWindow, QListWidgetItem
@@ -187,6 +187,10 @@ class MainWindow(QMainWindow):
         self._library_summary_label: object | None = None
         self._recent_work = _default_recent_work()
         self._help_dialog: object | None = None
+        self._queue_file_watcher: QFileSystemWatcher | None = None
+        self._server_thread: QThread | None = None
+        self._server_worker: object | None = None
+        self._server_port: int | None = None
         self._help_viewer: object | None = None
         self._recent_work_dialog: object | None = None
         self._recent_transcripts_list: object | None = None
@@ -909,7 +913,12 @@ class MainWindow(QMainWindow):
         queue_page.remove_item_requested.connect(self._remove_queue_item)
         queue_page.clear_completed_requested.connect(self._clear_completed_queue_items)
         queue_page.reorder_requested.connect(self._reorder_queue_items)
+        queue_page.server_start_requested.connect(self._start_bookmarklet_server)
+        queue_page.server_stop_requested.connect(self._stop_bookmarklet_server)
         self._queue_tab = queue_page
+
+        # Setup file watcher for queue file
+        self._setup_queue_file_watcher()
 
         self._view_tab_pages = {
             "run_details": run_details_page,
@@ -3429,6 +3438,41 @@ class MainWindow(QMainWindow):
         settings = self._current_queue_item_settings()
         self._queue_tab.set_output_dir_display(output_dir, settings.output_formats)
 
+    def _setup_queue_file_watcher(self) -> None:
+        """Setup file watcher to detect external queue changes (e.g., from Bookmarklet server)."""
+        queue_path = self._queue_store._path
+        if not queue_path.parent.exists():
+            queue_path.parent.mkdir(parents=True, exist_ok=True)
+
+        self._queue_file_watcher = QFileSystemWatcher()
+
+        # Watch both the file and its parent directory
+        # (watching directory helps detect file creation)
+        if queue_path.exists():
+            self._queue_file_watcher.addPath(str(queue_path))
+        self._queue_file_watcher.addPath(str(queue_path.parent))
+
+        # Connect to refresh handler
+        self._queue_file_watcher.fileChanged.connect(self._on_queue_file_changed)
+        self._queue_file_watcher.directoryChanged.connect(self._on_queue_directory_changed)
+
+    def _on_queue_file_changed(self, path: str) -> None:
+        """Handle queue file changes from external sources."""
+        # Re-add the file to watcher (Qt removes it after change)
+        queue_path = self._queue_store._path
+        if queue_path.exists() and str(queue_path) not in self._queue_file_watcher.files():
+            self._queue_file_watcher.addPath(str(queue_path))
+
+        # Refresh queue display
+        self._refresh_queue_tab()
+
+    def _on_queue_directory_changed(self, path: str) -> None:
+        """Handle queue directory changes (file creation)."""
+        queue_path = self._queue_store._path
+        if queue_path.exists() and str(queue_path) not in self._queue_file_watcher.files():
+            self._queue_file_watcher.addPath(str(queue_path))
+            self._refresh_queue_tab()
+
     def _start_queue_processing(self) -> None:
         if self._queue_thread is not None:
             self.status_label.setText("Queue is already running.")
@@ -3520,4 +3564,68 @@ class MainWindow(QMainWindow):
 
     def _reorder_queue_items(self, item_ids: list[str]) -> None:
         self._queue_store.reorder(item_ids)
+
+    def _start_bookmarklet_server(self, port: int) -> None:
+        """Start the Bookmarklet server in a background thread."""
+        if self._server_thread is not None:
+            self.status_label.setText("Server is already running.")
+            return
+
+        from flowscribe.gui.workers.server_worker import ServerWorker
+
+        # Get current settings
+        output_dir = Path(self.output_dir_input.text().strip() or "outputs")
+        settings = self._current_queue_item_settings()
+
+        self._server_worker = ServerWorker(
+            queue_store_path=self._queue_store._path,
+            port=port,
+            output_dir=output_dir,
+            output_formats=settings.output_formats,
+            model_name=settings.model_name,
+            language=settings.language,
+        )
+
+        self._server_thread = QThread()
+        self._server_worker.moveToThread(self._server_thread)
+
+        # Connect signals
+        self._server_thread.started.connect(self._server_worker.run)
+        self._server_worker.started.connect(self._on_server_started)
+        self._server_worker.stopped.connect(self._on_server_stopped)
+        self._server_worker.error.connect(self._on_server_error)
+
+        self._server_thread.start()
+
+    def _stop_bookmarklet_server(self) -> None:
+        """Stop the Bookmarklet server."""
+        if self._server_worker:
+            self._server_worker.stop()
+
+    def _on_server_started(self, port: int) -> None:
+        """Handle server started event."""
+        self._server_port = port
+        if self._queue_tab:
+            self._queue_tab.set_server_status(True, port)
+        self.status_label.setText(f"Bookmarklet server started on port {port}")
+
+    def _on_server_stopped(self) -> None:
+        """Handle server stopped event."""
+        if self._server_thread:
+            self._server_thread.quit()
+            self._server_thread.wait()
+            self._server_thread = None
+
+        self._server_worker = None
+        self._server_port = None
+
+        if self._queue_tab:
+            self._queue_tab.set_server_status(False)
+        self.status_label.setText("Bookmarklet server stopped")
+
+    def _on_server_error(self, error_msg: str) -> None:
+        """Handle server error."""
+        if self._queue_tab:
+            self._queue_tab.set_server_status(False)
+        self.status_label.setText(f"Server error: {error_msg}")
 

@@ -33,6 +33,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_gui_exe.ps1 
 # Run from source
 python -m flowscribe --help
 python -m flowscribe.gui
+python -m flowscribe serve  # Start Bookmarklet server
 
 # Release (commit then tag)
 git commit -m "Prepare v0.x.y"; git push; git tag v0.x.y; git push origin v0.x.y
@@ -43,7 +44,7 @@ git commit -m "Prepare v0.x.y"; git push; git tag v0.x.y; git push origin v0.x.y
 ```
 src/flowscribe/
 ├── app/            Service layer — TranscriptionService, ProgressEvent, TranscriptionJob
-├── cli/main.py     Argparse dispatch (transcribe/url/inspect/search)
+├── cli/main.py     Argparse dispatch (transcribe/url/inspect/search/serve)
 ├── config/         Runtime settings, presets
 ├── core/           Domain models, pipeline orchestration, progressive chunking, ports, errors
 ├── gui/            PySide6 — main_window.py, qt_app.py (entry), state.py, utils.py
@@ -56,9 +57,10 @@ src/flowscribe/
 ├── output/         Writers for txt/md/json/srt/vtt, path builder
 ├── queue/          Batch queue system (models, store, importers, runner)
 ├── search/         Full-text search over transcript JSON
+├── server/         HTTP server for Bookmarklet integration (bookmarklet_server.py, handlers.py)
 ├── transcript/     Transcript editing, re-export from existing JSON
 └── transcription/  Provider abstraction + LocalWhisperTranscriber (faster-whisper)
-tests/              39 test files matching source modules
+tests/              41 test files matching source modules
 scripts/            build_exe.ps1, build_gui_exe.ps1, build_wasapi_helper.ps1
 tools/              wasapi-capture-helper/ (.NET 8 C# WASAPI loopback capture)
 docs/               Developer handoff, dev-state, packaging, release-automation, roadmap
@@ -82,6 +84,8 @@ Key files by layer:
 - **`queue/models.py`** — `QueueItem`, `QueueItemSettings`, `BatchOutputStrategy`
 - **`queue/store.py`** — `BatchQueueStore` (JSON persistence at `{AppData}/FlowScribe/batch-queue.json`)
 - **`queue/importers.py`** — URL parsing, .txt/.csv/.xlsx import, deduplication
+- **`server/bookmarklet_server.py`** — `BookmarkletServer` (HTTP server for browser integration)
+- **`server/handlers.py`** — `AddUrlHandler` (request processing, queue integration)
 - **`cli/main.py`** — argparser dispatch to service
 - **`input/url_downloader.py`** — `UrlAudioDownloader.download_audio()` (yt-dlp/ffmpeg)
 - **`input/url_security.py`** — `validate_public_http_url()` (blocks private IPs, allows Teredo IPv6)
@@ -96,6 +100,7 @@ Detailed class table → [CLAUDE_CLASSES.md](CLAUDE_CLASSES.md) (read on demand)
 CLI:        flowscribe transcribe → app/service.py → pipeline.process[_progressive]()
 GUI:        Start click → state.to_job() → _TranscriptionWorker → service.run(progress=...) → Qt signal
 Queue:      Add URLs → QueueItem → QueueRunner.run() → dequeue → service.run() → mark completed
+Bookmarklet: Browser click → POST /add-url → AddUrlHandler → BatchQueueStore.enqueue() → GUI auto-refresh
 URL:        SourceSpec(url) → _run_url_source() → UrlAudioDownloader → pipeline → optional media preserve
 Chunk flow: transcribe_clip() → FixedDurationChunkPlanner [30s+3s overlap] → Executor [serial/parallel, retry×1] → MergePolicy → ConsistencyChecker → Deduplicator → Cache.persist()
 ```
@@ -117,6 +122,7 @@ Chunk flow: transcribe_clip() → FixedDurationChunkPlanner [30s+3s overlap] →
 - Auto-retry on failure (configurable max retries, default 2)
 - Settings snapshot at enqueue time (output dir, formats, model, language, etc.)
 - Queue persistence across GUI restarts
+- **File watcher integration**: GUI auto-refreshes when queue file changes (e.g., from Bookmarklet server)
 - Completion notification with sound (planned)
 
 **Important notes**:

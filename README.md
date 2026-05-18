@@ -14,6 +14,7 @@ FlowScribe is a local-first transcription toolkit that turns local media and pub
 - Transcribe local audio and video files.
 - Transcribe public URLs with audio-first downloading/extraction.
 - **Batch queue system**: import multiple URLs from text/CSV/Excel, process sequentially with auto-retry and completion notification.
+- **Bookmarklet integration**: one-click URL capture from browser to queue.
 - Process a single file, multiple files, or a folder.
 - Recursively scan folders.
 - Prepare audio with `ffmpeg`.
@@ -145,6 +146,18 @@ Transcribe a public URL with audio-first handling:
 ```powershell
 flowscribe url "https://example.com/video-or-audio" -o outputs
 ```
+
+**Bookmarklet integration** for one-click URL capture:
+
+```powershell
+# Start GUI and enable server in Queue tab
+python -m flowscribe.gui
+
+# Or use command-line server
+python -m flowscribe serve -o outputs --format txt,srt
+```
+
+Install the bookmarklet in your browser, then click it on any video page to add URLs to the queue. See [docs/bookmarklet.md](docs/bookmarklet.md) for details.
 
 URL input defaults to audio-first behavior. FlowScribe downloads or extracts audio for
 transcription and does not intentionally keep high-resolution video files. Use
