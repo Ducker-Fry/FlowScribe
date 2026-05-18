@@ -47,15 +47,18 @@ src/flowscribe/
 ├── config/         Runtime settings, presets
 ├── core/           Domain models, pipeline orchestration, progressive chunking, ports, errors
 ├── gui/            PySide6 — main_window.py, qt_app.py (entry), state.py, utils.py
-├── input/          Local file discovery, URL download/inspection
+│   ├── widgets/    Queue tab, source list, custom UI components
+│   └── workers/    QThread workers (transcription, queue runner)
+├── input/          Local file discovery, URL download/inspection, URL security validation
 ├── library/        Transcript library (JSON-backed persistent index)
 ├── media/          ffmpeg extraction, WASAPI capture, audio cache
 ├── nlp/            Chinese word alignment (jieba), simplified conversion (opencc)
 ├── output/         Writers for txt/md/json/srt/vtt, path builder
+├── queue/          Batch queue system (models, store, importers, runner)
 ├── search/         Full-text search over transcript JSON
 ├── transcript/     Transcript editing, re-export from existing JSON
 └── transcription/  Provider abstraction + LocalWhisperTranscriber (faster-whisper)
-tests/              28 test files matching source modules
+tests/              39 test files matching source modules
 scripts/            build_exe.ps1, build_gui_exe.ps1, build_wasapi_helper.ps1
 tools/              wasapi-capture-helper/ (.NET 8 C# WASAPI loopback capture)
 docs/               Developer handoff, dev-state, packaging, release-automation, roadmap
@@ -68,13 +71,19 @@ Layered pipeline: `InputSource → MediaPreparer → Transcriber → ArtifactWri
 Key files by layer:
 - **`core/`** — domain models, `LocalTranscriptionPipeline` orchestrator, progressive chunking, `ports.py` (protocols), `errors.py` (error hierarchy)
 - **`app/service.py`** — `TranscriptionService.run(job)` entry point, wires pipeline, emits progress
-- **`gui/main_window.py`** — `MainWindow(QMainWindow)` (3322 lines), all UI logic
+- **`gui/main_window.py`** — `MainWindow(QMainWindow)` (3400+ lines), all UI logic, queue integration
 - **`gui/qt_app.py`** — `run_gui()` entry point, `FlowScribeMainWindow` compat wrapper
 - **`gui/utils.py`** — 68 stateless pure functions for state payloads, formatting, rendering
 - **`gui/workers/transcription_worker.py`** — `TranscriptionWorker` (QThread wrapper)
+- **`gui/workers/queue_runner.py`** — `QueueRunner` (sequential batch processor)
+- **`gui/widgets/queue_tab_widget.py`** — Queue tab UI (URL paste, import, drag-reorder)
 - **`gui/widgets/source_list_widget.py`** — `SourceListWidget` (drag-drop media list)
+- **`queue/models.py`** — `QueueItem`, `QueueItemSettings`, `BatchOutputStrategy`
+- **`queue/store.py`** — `BatchQueueStore` (JSON persistence at `{AppData}/FlowScribe/batch-queue.json`)
+- **`queue/importers.py`** — URL parsing, .txt/.csv/.xlsx import, deduplication
 - **`cli/main.py`** — argparser dispatch to service
 - **`input/url_downloader.py`** — `UrlAudioDownloader.download_audio()` (yt-dlp/ffmpeg)
+- **`input/url_security.py`** — `validate_public_http_url()` (blocks private IPs, allows Teredo IPv6)
 - **`media/audio_extractor.py`** — `FfmpegAudioExtractor`, `PreparedAudioCache`
 - **`transcription/providers.py`** — `LocalWhisperTranscriber` (faster-whisper wrapper)
 
@@ -85,9 +94,37 @@ Detailed class table → [CLAUDE_CLASSES.md](CLAUDE_CLASSES.md) (read on demand)
 ```
 CLI:        flowscribe transcribe → app/service.py → pipeline.process[_progressive]()
 GUI:        Start click → state.to_job() → _TranscriptionWorker → service.run(progress=...) → Qt signal
+Queue:      Add URLs → QueueItem → QueueRunner.run() → dequeue → service.run() → mark completed
 URL:        SourceSpec(url) → _run_url_source() → UrlAudioDownloader → pipeline → optional media preserve
 Chunk flow: transcribe_clip() → FixedDurationChunkPlanner [30s+3s overlap] → Executor [serial/parallel, retry×1] → MergePolicy → ConsistencyChecker → Cache.persist()
 ```
+
+## Batch Queue System
+
+**Architecture**: Sequential processor with persistent JSON queue, auto-retry, and drag-reorder UI.
+
+**Key components**:
+- `QueueItem` — frozen dataclass with source, settings snapshot, output strategy, status, retry count
+- `BatchQueueStore` — JSON persistence at `{AppData}/FlowScribe/batch-queue.json`, full-rewrite on mutation
+- `QueueRunner` — QObject on QThread, dequeues items one by one, calls `TranscriptionService.run()` per item
+- `QueueTabWidget` — UI in Views dialog with URL paste, file import (.txt/.csv/.xlsx), drag-reorder list
+
+**Features**:
+- Multi-URL import from text/CSV/Excel with deduplication (blocks pending/running/completed, allows failed)
+- Smart URL extraction from rich text clipboard (HTML href parsing)
+- Batch output strategies: unified directory, per-source subdirs, template naming
+- Auto-retry on failure (configurable max retries, default 2)
+- Settings snapshot at enqueue time (output dir, formats, model, language, etc.)
+- Queue persistence across GUI restarts
+- Completion notification with sound (planned)
+
+**Important notes**:
+- Language "auto" → `None` for faster-whisper compatibility
+- Preset "none" → `None` for faster-whisper compatibility
+- Output formats read from `self.format_checks` dict in MainWindow
+- Default to JSON if no formats selected
+- IPv6 Teredo addresses (2001::/32) allowed in URL validation
+- Progressive overlap tolerance: 1.5s (increased from 0.35s to handle edge cases)
 
 ## Key Dependencies
 
@@ -96,13 +133,16 @@ Chunk flow: transcribe_clip() → FixedDurationChunkPlanner [30s+3s overlap] →
 - `yt-dlp>=2025.1` — URL media extraction
 - `jieba>=0.42` — Chinese text segmentation
 - `opencc-python-reimplemented>=0.1.7` — Traditional→Simplified Chinese
+- `openpyxl>=3.1` — Excel file import for batch queue (GUI optional dependency)
 - External: `ffmpeg`/`ffprobe`, `WasapiCaptureHelper.exe` (.NET 8)
 
 ## Testing Patterns
 
 - pytest with `testpaths = ["tests"]`; Ruff lint (line-length 100)
-- Mock-based testing for service, URL downloader, progressive executor
+- Mock-based testing for service, URL downloader, progressive executor, queue system
+- 39 test files covering core, queue, GUI utilities, and integration scenarios
 - Run focused: `python -m pytest tests/test_file.py`
+- Queue tests: `tests/test_queue_models.py`, `tests/test_queue_store.py`, `tests/test_queue_importers.py`
 
 ## Workflow Preferences
 
