@@ -69,7 +69,8 @@ docs/               Developer handoff, dev-state, packaging, release-automation,
 Layered pipeline: `InputSource → MediaPreparer → Transcriber → ArtifactWriter`
 
 Key files by layer:
-- **`core/`** — domain models, `LocalTranscriptionPipeline` orchestrator, progressive chunking, `ports.py` (protocols), `errors.py` (error hierarchy)
+- **`core/`** — domain models, `LocalTranscriptionPipeline` orchestrator, progressive chunking, deduplication, `ports.py` (protocols), `errors.py` (error hierarchy)
+- **`core/deduplication.py`** — `TranscriptDeduplicator` (post-processing duplicate removal at chunk boundaries)
 - **`app/service.py`** — `TranscriptionService.run(job)` entry point, wires pipeline, emits progress
 - **`gui/main_window.py`** — `MainWindow(QMainWindow)` (3400+ lines), all UI logic, queue integration
 - **`gui/qt_app.py`** — `run_gui()` entry point, `FlowScribeMainWindow` compat wrapper
@@ -96,7 +97,7 @@ CLI:        flowscribe transcribe → app/service.py → pipeline.process[_progr
 GUI:        Start click → state.to_job() → _TranscriptionWorker → service.run(progress=...) → Qt signal
 Queue:      Add URLs → QueueItem → QueueRunner.run() → dequeue → service.run() → mark completed
 URL:        SourceSpec(url) → _run_url_source() → UrlAudioDownloader → pipeline → optional media preserve
-Chunk flow: transcribe_clip() → FixedDurationChunkPlanner [30s+3s overlap] → Executor [serial/parallel, retry×1] → MergePolicy → ConsistencyChecker → Cache.persist()
+Chunk flow: transcribe_clip() → FixedDurationChunkPlanner [30s+3s overlap] → Executor [serial/parallel, retry×1] → MergePolicy → ConsistencyChecker → Deduplicator → Cache.persist()
 ```
 
 ## Batch Queue System
@@ -127,6 +128,7 @@ Chunk flow: transcribe_clip() → FixedDurationChunkPlanner [30s+3s overlap] →
 - Progressive overlap tolerance: 3.0s (increased from 1.5s to handle long audio timestamp drift)
 - Progressive timestamp auto-fix: enabled by default to correct Whisper timestamp anomalies in long audio
 - CPU optimization: auto-detects CPU-only systems and enables int8 quantization for 15-25% speed boost
+- **Transcript deduplication**: enabled by default, removes duplicate segments at chunk boundaries after transcription completes (not during chunk merging)
 
 ## Performance Metrics
 
@@ -154,10 +156,11 @@ Chunk flow: transcribe_clip() → FixedDurationChunkPlanner [30s+3s overlap] →
 ## Testing Patterns
 
 - pytest with `testpaths = ["tests"]`; Ruff lint (line-length 100)
-- Mock-based testing for service, URL downloader, progressive executor, queue system
-- 39 test files covering core, queue, GUI utilities, and integration scenarios
+- Mock-based testing for service, URL downloader, progressive executor, queue system, deduplication
+- 41 test files covering core, queue, GUI utilities, and integration scenarios
 - Run focused: `python -m pytest tests/test_file.py`
 - Queue tests: `tests/test_queue_models.py`, `tests/test_queue_store.py`, `tests/test_queue_importers.py`
+- Deduplication tests: `tests/test_deduplication.py`, `tests/test_deduplication_integration.py`
 
 ## Workflow Preferences
 

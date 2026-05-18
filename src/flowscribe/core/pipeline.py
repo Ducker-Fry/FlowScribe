@@ -15,6 +15,7 @@ from flowscribe.core.models import (
     Transcript,
     TranscriptionChunkPlan,
 )
+from flowscribe.core.deduplication import TranscriptDeduplicator
 from flowscribe.core.progressive import (
     FixedDurationChunkPlanner,
     ProgressiveChunkCache,
@@ -38,6 +39,7 @@ class LocalTranscriptionPipeline:
         keep_audio: bool = False,
         prepared_audio_cache_dir: Path | None = None,
         transcript_normalizer: Callable[[Transcript], Transcript] | None = None,
+        enable_deduplication: bool = True,
     ) -> None:
         self._media_preparer = media_preparer
         self._transcriber = transcriber
@@ -46,6 +48,8 @@ class LocalTranscriptionPipeline:
         self._output_dir = output_dir
         self._keep_audio = keep_audio
         self._transcript_normalizer = transcript_normalizer
+        self._enable_deduplication = enable_deduplication
+        self._deduplicator = TranscriptDeduplicator() if enable_deduplication else None
         self._audio_cache = (
             PreparedAudioCache(prepared_audio_cache_dir)
             if prepared_audio_cache_dir is not None
@@ -73,6 +77,8 @@ class LocalTranscriptionPipeline:
             transcript = self._transcriber.transcribe(prepared_audio)
             if self._transcript_normalizer is not None:
                 transcript = self._transcript_normalizer(transcript)
+            if self._deduplicator is not None:
+                transcript = self._deduplicator.deduplicate(transcript)
             return transcript
         finally:
             if not self._keep_audio:
@@ -116,6 +122,9 @@ class LocalTranscriptionPipeline:
             if self._transcript_normalizer is not None:
                 transcript = self._transcript_normalizer(transcript)
                 transcript = ProgressiveTranscriptConsistencyChecker().validate(transcript)
+            if self._deduplicator is not None:
+                transcript = self._deduplicator.deduplicate(transcript)
+            if self._transcript_normalizer is not None or self._deduplicator is not None:
                 state = ProgressiveTranscriptionState(
                     source=state.source,
                     duration_info=state.duration_info,
