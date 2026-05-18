@@ -24,6 +24,7 @@ dist/
 /outputs-timestamps/
 /src/flowscribe/gui/outputs/
 /src/flowscribe/outputs/
+/test_output/
 *.log
 
 # Sensitive browser/session cookies
