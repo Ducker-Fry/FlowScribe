@@ -4,6 +4,7 @@ from __future__ import annotations
 
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -41,18 +42,21 @@ class QueueTabWidget(QWidget):
     cancel_queue_requested = Signal()
     skip_current_requested = Signal()
     retry_item_requested = Signal(str)
-    remove_item_requested = Signal(str)
+    remove_items_requested = Signal(list)  # list[str]
     clear_completed_requested = Signal()
     reorder_requested = Signal(list)
     output_strategy_changed = Signal(str)
     max_retries_changed = Signal(int)
     server_start_requested = Signal(int)  # port
     server_stop_requested = Signal()
+    edit_item_settings_requested = Signal(str)  # item_id
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._item_ids: list[str] = []
         self._setup_ui()
+        self._queue_list.itemChanged.connect(self._update_button_states)
+        self._queue_list.itemSelectionChanged.connect(self._update_button_states)
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -174,6 +178,10 @@ class QueueTabWidget(QWidget):
         self._retry_btn.clicked.connect(self._on_retry_selected)
         action_row2.addWidget(self._retry_btn)
 
+        self._edit_settings_btn = QPushButton("Edit Settings")
+        self._edit_settings_btn.clicked.connect(self._on_edit_settings)
+        action_row2.addWidget(self._edit_settings_btn)
+
         self._remove_btn = QPushButton("Remove Selected")
         self._remove_btn.clicked.connect(self._on_remove_selected)
         action_row2.addWidget(self._remove_btn)
@@ -181,6 +189,11 @@ class QueueTabWidget(QWidget):
         self._clear_btn = QPushButton("Clear Completed")
         self._clear_btn.clicked.connect(self.clear_completed_requested.emit)
         action_row2.addWidget(self._clear_btn)
+
+        self._select_all_btn = QPushButton("Select All")
+        self._select_all_btn.clicked.connect(self._on_select_all)
+        action_row2.addWidget(self._select_all_btn)
+
         layout.addLayout(action_row2)
 
     def refresh_queue_list(self, items: list[QueueItem]) -> None:
@@ -197,6 +210,8 @@ class QueueTabWidget(QWidget):
                 text = f"{icon} {label}"
             list_item = QListWidgetItem(text)
             list_item.setData(Qt.ItemDataRole.UserRole, item.item_id)
+            list_item.setFlags(list_item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            list_item.setCheckState(Qt.CheckState.Unchecked)
             self._queue_list.addItem(list_item)
             self._item_ids.append(item.item_id)
 
@@ -232,6 +247,31 @@ class QueueTabWidget(QWidget):
         """Update the output directory display label."""
         formats_text = ", ".join(output_formats) if output_formats else "json (default)"
         self._output_dir_label.setText(f"Output: {output_dir} | Formats: {formats_text}")
+
+    def get_checked_item_ids(self) -> list[str]:
+        """Return IDs of all checked items."""
+        checked = []
+        for i in range(self._queue_list.count()):
+            item = self._queue_list.item(i)
+            if item and item.checkState() == Qt.CheckState.Checked:
+                item_id = item.data(Qt.ItemDataRole.UserRole)
+                if item_id:
+                    checked.append(item_id)
+        return checked
+
+    def get_selected_or_checked_item_ids(self) -> list[str]:
+        """Return checked items (priority) or current selected item."""
+        checked = self.get_checked_item_ids()
+        if checked:
+            return checked
+
+        current = self._queue_list.currentItem()
+        if current:
+            item_id = current.data(Qt.ItemDataRole.UserRole)
+            if item_id:
+                return [item_id]
+
+        return []
 
     def _on_add_urls(self) -> None:
         text = self._url_input.toPlainText().strip()
@@ -279,12 +319,65 @@ class QueueTabWidget(QWidget):
             if item_id:
                 self.retry_item_requested.emit(item_id)
 
-    def _on_remove_selected(self) -> None:
+    def _on_edit_settings(self) -> None:
         current = self._queue_list.currentItem()
         if current:
             item_id = current.data(Qt.ItemDataRole.UserRole)
             if item_id:
-                self.remove_item_requested.emit(item_id)
+                self.edit_item_settings_requested.emit(item_id)
+
+    def _on_remove_selected(self) -> None:
+        item_ids = self.get_selected_or_checked_item_ids()
+        if item_ids:
+            self.remove_items_requested.emit(item_ids)
+
+    def _on_select_all(self) -> None:
+        """Select all items in queue."""
+        for i in range(self._queue_list.count()):
+            item = self._queue_list.item(i)
+            if item:
+                item.setCheckState(Qt.CheckState.Checked)
+
+    def _update_button_states(self) -> None:
+        """Update button text and enabled state based on selection/checked items."""
+        checked_count = len(self.get_checked_item_ids())
+        selected = self._queue_list.currentItem()
+
+        if checked_count > 0:
+            self._remove_btn.setText(f"Remove Checked ({checked_count})")
+            self._remove_btn.setEnabled(True)
+        elif selected:
+            self._remove_btn.setText("Remove Selected")
+            self._remove_btn.setEnabled(True)
+        else:
+            self._remove_btn.setText("Remove Selected")
+            self._remove_btn.setEnabled(False)
+
+    def keyPressEvent(self, event) -> None:
+        """Handle keyboard shortcuts."""
+        if event.key() == Qt.Key.Key_Space:
+            current = self._queue_list.currentItem()
+            if current:
+                current.setCheckState(
+                    Qt.CheckState.Unchecked
+                    if current.checkState() == Qt.CheckState.Checked
+                    else Qt.CheckState.Checked
+                )
+                event.accept()
+                return
+        elif event.key() == Qt.Key.Key_Delete:
+            self._on_remove_selected()
+            event.accept()
+            return
+        elif event.matches(QKeySequence.StandardKey.SelectAll):
+            for i in range(self._queue_list.count()):
+                item = self._queue_list.item(i)
+                if item:
+                    item.setCheckState(Qt.CheckState.Checked)
+            event.accept()
+            return
+
+        super().keyPressEvent(event)
 
     def _on_rows_moved(self) -> None:
         new_order: list[str] = []

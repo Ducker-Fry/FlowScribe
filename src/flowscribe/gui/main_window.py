@@ -336,6 +336,10 @@ class MainWindow(
         self.timestamps_check.setChecked(True)
         self.word_timestamps_check = QCheckBox("Word timestamps")
         self.overwrite_check = QCheckBox("Overwrite outputs")
+        self.progressive_enabled_check = QCheckBox("Enable progressive transcription")
+        self.progressive_enabled_check.setChecked(True)
+        self.progressive_resume_check = QCheckBox("Enable resume (skip completed chunks)")
+        self.progressive_resume_check.setChecked(True)
 
         settings_layout.addWidget(QLabel("Output directory"), 0, 0)
         settings_layout.addLayout(output_row, 0, 1)
@@ -358,6 +362,8 @@ class MainWindow(
         settings_layout.addWidget(self.timestamps_check, 9, 1)
         settings_layout.addWidget(self.word_timestamps_check, 10, 1)
         settings_layout.addWidget(self.overwrite_check, 11, 1)
+        settings_layout.addWidget(self.progressive_enabled_check, 12, 1)
+        settings_layout.addWidget(self.progressive_resume_check, 13, 1)
 
         action_layout = QGridLayout()
         action_layout.setHorizontalSpacing(8)
@@ -858,7 +864,8 @@ class MainWindow(
         queue_page.cancel_queue_requested.connect(self._stop_queue_processing)
         queue_page.skip_current_requested.connect(self._skip_current_queue_item)
         queue_page.retry_item_requested.connect(self._retry_queue_item)
-        queue_page.remove_item_requested.connect(self._remove_queue_item)
+        queue_page.edit_item_settings_requested.connect(self._edit_queue_item_settings)
+        queue_page.remove_items_requested.connect(self._remove_queue_items)
         queue_page.clear_completed_requested.connect(self._clear_completed_queue_items)
         queue_page.reorder_requested.connect(self._reorder_queue_items)
         queue_page.server_start_requested.connect(self._start_bookmarklet_server)
@@ -1274,4 +1281,24 @@ class MainWindow(
         if self._queue_tab:
             self._queue_tab.set_server_status(False)
         self.status_label.setText(f"Server error: {error_msg}")
+
+    def _remember_recent_output_dir(self, output_dir: Path) -> None:
+        """Remember the most recent output directory."""
+        self._last_output_dir = output_dir
+
+    def _remember_recent_transcript(self, path: Path) -> None:
+        """Remember the most recent transcript path."""
+        self._transcript_path = path
+
+    def _remember_recent_media_binding(self, path: Path) -> None:
+        """Remember the most recent media binding."""
+        self._media_path = path
+
+    def _remember_recent_job(self, result, status: str) -> None:
+        """Remember the most recent job result."""
+        pass
+
+    def _remember_recent_failed_run(self, message: str) -> None:
+        """Remember a failed run message."""
+        pass
 

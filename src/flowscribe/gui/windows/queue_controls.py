@@ -80,6 +80,8 @@ class QueueControlsMixin:
             cookies_path=Path(self.cookies_input.text().strip())
             if self.cookies_input.text().strip()
             else None,
+            progressive_enabled=self.progressive_enabled_check.isChecked(),
+            progressive_resume=self.progressive_resume_check.isChecked(),
         )
 
     def _current_output_strategy(self) -> BatchOutputStrategy:
@@ -255,9 +257,43 @@ class QueueControlsMixin:
         self._queue_store.update_item(item_id, status="pending", started_at=None, error_message=None)
         self._refresh_queue_tab()
 
-    def _remove_queue_item(self, item_id: str) -> None:
-        self._queue_store.remove_item(item_id)
-        self._refresh_queue_tab()
+    def _edit_queue_item_settings(self, item_id: str) -> None:
+        """Open dialog to edit queue item settings."""
+        item = self._queue_store.get_item(item_id)
+        if not item:
+            return
+
+        from flowscribe.gui.dialogs.queue_item_settings_dialog import QueueItemSettingsDialog
+
+        dialog = QueueItemSettingsDialog(self, item.settings, item.display_label)
+        dialog.exec()
+
+        new_settings = dialog.get_settings()
+        if new_settings:
+            self._queue_store.update_item(item_id, settings=new_settings)
+            self._refresh_queue_tab()
+            self.status_label.setText(f"Updated settings for: {item.display_label}")
+
+    def _remove_queue_items(self, item_ids: list[str]) -> None:
+        """Remove multiple queue items."""
+        if not item_ids:
+            return
+
+        from PySide6.QtWidgets import QMessageBox
+
+        count = len(item_ids)
+        reply = QMessageBox.question(
+            self,
+            "Confirm Removal",
+            f"Remove {count} item(s) from queue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            removed = self._queue_store.remove_items(item_ids)
+            self._refresh_queue_tab()
+            self.status_label.setText(f"Removed {removed} item(s) from queue.")
 
     def _clear_completed_queue_items(self) -> None:
         removed = self._queue_store.remove_completed()

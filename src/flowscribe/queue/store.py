@@ -85,6 +85,18 @@ class BatchQueueStore:
                 return items[i]
         return None
 
+    def get_item(self, item_id: str) -> QueueItem | None:
+        """Get a single item by ID.
+
+        Returns:
+            The queue item if found, None otherwise.
+        """
+        items = self.load_items()
+        for item in items:
+            if item.item_id == item_id:
+                return item
+        return None
+
     def remove_item(self, item_id: str) -> bool:
         items = self.load_items()
         before = len(items)
@@ -93,6 +105,21 @@ class BatchQueueStore:
             self.save_items(items)
             return True
         return False
+
+    def remove_items(self, item_ids: list[str]) -> int:
+        """Remove multiple items by ID.
+
+        Returns:
+            Number of items removed.
+        """
+        items = self.load_items()
+        before = len(items)
+        item_ids_set = set(item_ids)
+        items = [item for item in items if item.item_id not in item_ids_set]
+        removed = before - len(items)
+        if removed > 0:
+            self.save_items(items)
+        return removed
 
     def remove_completed(self) -> int:
         items = self.load_items()

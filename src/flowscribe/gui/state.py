@@ -38,6 +38,8 @@ class GuiTranscriptionForm:
     network_family: str = "auto"
     proxy: str = ""
     cookies_path: Path | None = None
+    progressive_enabled: bool = True
+    progressive_resume: bool = True
 
     def validate(self) -> list[str]:
         errors: list[str] = []
@@ -123,6 +125,8 @@ class GuiTranscriptionForm:
             network_family=self.network_family,
             proxy=proxy,
             cookies_path=self.cookies_path,
+            progressive_enabled=self.progressive_enabled,
+            progressive_resume=self.progressive_resume,
         )
 
     def preview(self) -> dict:
@@ -153,6 +157,8 @@ class GuiTranscriptionForm:
             "network_family": job.network_family,
             "proxy": job.proxy,
             "cookies_path": str(job.cookies_path) if job.cookies_path else None,
+            "progressive_enabled": job.progressive_enabled,
+            "progressive_resume": job.progressive_resume,
         }
 
 

@@ -66,6 +66,8 @@ class TranscriptionControlsMixin:
             network_family=self.network_combo.currentText(),
             proxy=self.proxy_input.text(),
             cookies_path=Path(cookies_text) if cookies_text else None,
+            progressive_enabled=self.progressive_enabled_check.isChecked(),
+            progressive_resume=self.progressive_resume_check.isChecked(),
         )
 
     def _start_transcription(self) -> None:
