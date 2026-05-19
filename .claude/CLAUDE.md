@@ -47,7 +47,10 @@ src/flowscribe/
 ├── cli/main.py     Argparse dispatch (transcribe/url/inspect/search/serve)
 ├── config/         Runtime settings, presets
 ├── core/           Domain models, pipeline orchestration, progressive chunking, ports, errors
-├── gui/            PySide6 — main_window.py, qt_app.py (entry), state.py, utils.py
+│   └── progressive/  Modular progressive transcription (planner, merger, executor)
+├── gui/            PySide6 — main_window.py, qt_app.py (entry), state.py
+│   ├── utils/      Modular utility functions (formatting, state, library, artifacts)
+│   ├── windows/    MainWindow mixins (transcription, viewer, library, workspace, capture, settings, queue)
 │   ├── widgets/    Queue tab, source list, custom UI components
 │   └── workers/    QThread workers (transcription, queue runner)
 ├── input/          Local file discovery, URL download/inspection, URL security validation
@@ -72,11 +75,13 @@ Layered pipeline: `InputSource → MediaPreparer → Transcriber → ArtifactWri
 
 Key files by layer:
 - **`core/`** — domain models, `LocalTranscriptionPipeline` orchestrator, progressive chunking, deduplication, `ports.py` (protocols), `errors.py` (error hierarchy)
+- **`core/progressive/`** — modular progressive transcription: `planner.py` (chunk planning), `merger.py` (merge policy), `executor.py` (execution & cache)
 - **`core/deduplication.py`** — `TranscriptDeduplicator` (post-processing duplicate removal at chunk boundaries)
 - **`app/service.py`** — `TranscriptionService.run(job)` entry point, wires pipeline, emits progress
-- **`gui/main_window.py`** — `MainWindow(QMainWindow)` (3400+ lines), all UI logic, queue integration
+- **`gui/main_window.py`** — `MainWindow(QMainWindow)` (1198 lines), core UI logic with mixin inheritance
+- **`gui/windows/`** — MainWindow mixins: `transcription_controls.py`, `transcript_viewer_controls.py`, `library_controls.py`, `workspace_controls.py`, `capture_controls.py`, `settings_controls.py`, `queue_controls.py`
+- **`gui/utils/`** — modular utility functions: `formatting.py`, `state.py`, `library.py`, `artifacts.py`
 - **`gui/qt_app.py`** — `run_gui()` entry point, `FlowScribeMainWindow` compat wrapper
-- **`gui/utils.py`** — 68 stateless pure functions for state payloads, formatting, rendering
 - **`gui/workers/transcription_worker.py`** — `TranscriptionWorker` (QThread wrapper)
 - **`gui/workers/queue_runner.py`** — `QueueRunner` (sequential batch processor)
 - **`gui/widgets/queue_tab_widget.py`** — Queue tab UI (URL paste, import, drag-reorder)
@@ -174,3 +179,95 @@ Chunk flow: transcribe_clip() → FixedDurationChunkPlanner [30s+3s overlap] →
 - **Standard mode**: Code + tests + lint + commit.
 - **Wrap-up mode**: Full test suite + build + docs + release if requested.
 - User runs builds/tests themselves and shares relevant output only.
+
+## Token Efficiency Guidelines
+
+**Core Principle**: Minimize token consumption through targeted reads, precise operations, and user-driven verification.
+
+**File Reading**:
+- Use `Grep` to locate code patterns before reading files (e.g., `Grep pattern="class TranscriptionService" type="py"`)
+- Use `Glob` to find files by pattern instead of reading directories (e.g., `Glob pattern="**/test_*.py"`)
+- Read only the specific files needed for the task — avoid exploratory reads
+- Use `offset` and `limit` parameters for large files (read relevant sections only)
+- Never re-read a file just edited — trust the Edit/Write tool succeeded
+- Check CLAUDE_CLASSES.md reference table before reading implementation files
+
+**Testing Strategy**:
+- Run **targeted tests only** — specify exact test file/function (e.g., `pytest tests/test_queue_store.py::test_enqueue`)
+- Redirect output and show summary: `python -m pytest tests/test_file.py > test.log 2>&1; Get-Content test.log -Tail 10`
+- Skip full test suite unless explicitly requested or in wrap-up mode
+- User runs tests and shares relevant output — don't run tests proactively
+- Avoid `--verbose` flag — use default output or `-q` for quieter output
+
+**Command Execution**:
+- Redirect verbose command output to files: `command > output.log 2>&1`
+- Filter output with `Select-String`, `Get-Content -Tail`, or `grep` equivalents
+- Show only errors, warnings, and summary lines from build/lint output
+- User runs builds/lints themselves — provide commands, don't execute unless asked
+
+**Code Changes**:
+- Make focused edits — change only what's needed for the task
+- Avoid refactoring unrelated code during bug fixes
+- Skip adding comments unless the WHY is non-obvious
+- Don't add defensive error handling for impossible scenarios
+- Trust internal code contracts — validate only at system boundaries
+
+**Verification**:
+- Skip verification reads after edits unless the change is safety-critical (auth, data handling, infrastructure)
+- For simple changes (typo fix, parameter rename), trust the edit succeeded
+- For complex changes, verify with targeted grep/read, not full file re-read
+- User will report if something broke — don't verify proactively
+
+**Documentation**:
+- Skip updating docs unless explicitly requested or in standard/wrap-up mode
+- Don't create README/CHANGELOG entries for internal changes
+- Update CLAUDE.md only for architectural changes or new patterns
+
+**Communication**:
+- One-sentence status updates at key moments only
+- End-of-turn summary: 1-2 sentences max
+- Skip narrating internal deliberation or tool choices
+- Don't explain what the code does if the code is self-explanatory
+
+**Anti-Patterns to Avoid**:
+- ❌ Reading entire file to verify a small edit
+- ❌ Running full test suite for a single-function change
+- ❌ Reading multiple files to understand context before making a targeted fix
+- ❌ Re-reading files already read in the same conversation
+- ❌ Verbose command output without filtering
+- ❌ Proactive verification of non-critical changes
+- ❌ Adding comments explaining WHAT the code does
+- ❌ Refactoring surrounding code during focused fixes
+
+**Preferred Patterns**:
+- ✅ Grep → targeted read → edit → done
+- ✅ User provides error → direct fix → user verifies
+- ✅ Glob to find files → read only relevant ones
+- ✅ Redirect output → show summary only
+- ✅ Trust edit succeeded → move to next task
+
+## Code Organization Guidelines
+
+**File Size Limits**: To maintain readability and avoid context overflow:
+- **Maximum file size**: 500 lines per file (strict limit)
+- **Target file size**: 200-300 lines per file (recommended)
+- **When creating new files**: Always check line count before writing
+- **When modifying files**: If a file exceeds 500 lines after changes, split it into focused modules
+
+**Refactoring Strategy**:
+- Use **Mixin pattern** for large classes (see `gui/main_window.py` → `gui/windows/*.py`)
+- Use **module packages** for large modules (see `core/progressive.py` → `core/progressive/*.py`)
+- Create **compatibility shims** to maintain backward compatibility (re-export from `__init__.py`)
+- Group related functions into focused modules by responsibility
+
+**Recent Refactoring** (2026-05):
+- `gui/main_window.py`: 3269 lines → 1198 lines (7 mixins in `gui/windows/`)
+- `core/progressive.py`: 973 lines → 40 lines (3 modules in `core/progressive/`)
+- `gui/utils.py`: 929 lines → 154 lines (4 modules in `gui/utils/`)
+- Removed: `media/system_audio_capture_legacy.py` (323 lines, unused)
+
+**Writing New Code**:
+- Start with focused, single-responsibility modules
+- If a module grows beyond 300 lines, consider splitting before it reaches 500
+- Use clear module names that describe their specific purpose
+- Prefer multiple small files over one large file
