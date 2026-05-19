@@ -78,7 +78,7 @@ class QueueRunner(QObject):
             self._mark_failed(item, result.errors[0].message)
             return False
 
-        print(f"[QueueRunner] Marking as completed")
+        print("[QueueRunner] Marking as completed")
         self._store.update_item(
             item.item_id, status="completed", finished_at=datetime.now()
         )

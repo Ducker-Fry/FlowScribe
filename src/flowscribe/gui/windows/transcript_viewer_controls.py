@@ -5,9 +5,9 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QUrl, Qt
+from PySide6.QtCore import QUrl
 from PySide6.QtMultimedia import QMediaPlayer
-from PySide6.QtWidgets import QListWidgetItem, QMessageBox
+from PySide6.QtWidgets import QMessageBox
 
 from flowscribe.core.errors import OutputError, SearchError
 from flowscribe.gui.transcript_viewer import (
@@ -29,7 +29,6 @@ from flowscribe.gui.utils import (
 from flowscribe.input.file_filter import is_supported_media
 from flowscribe.output.time_format import format_timestamp
 from flowscribe.transcript.editing import (
-    EditableTranscriptDocument,
     load_editable_transcript,
     render_editable_segment_line,
     save_editable_transcript,
@@ -465,7 +464,6 @@ class TranscriptViewerControlsMixin:
         return Path(path)
 
     def _save_transcript_edits(self, force_save_as: bool = False) -> bool:
-        from PySide6.QtWidgets import QMessageBox
 
         if self._editable_transcript is None:
             self.status_label.setText("Open a transcript JSON file before saving edits.")
@@ -595,7 +593,6 @@ class TranscriptViewerControlsMixin:
         return True
 
     def _confirm_unsaved_transcript_edits(self) -> bool:
-        from PySide6.QtWidgets import QMessageBox
 
         if not self._transcript_edit_dirty or self._editable_transcript is None:
             return True

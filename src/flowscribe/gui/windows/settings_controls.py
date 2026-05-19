@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QSignalBlocker, Qt
@@ -21,7 +20,6 @@ from flowscribe.gui.state_manager import load_gui_state, save_gui_state
 from flowscribe.gui.utils import (
     _gui_preferences_payload,
     _recent_work_payload,
-    _view_preferences_payload,
 )
 
 if TYPE_CHECKING:

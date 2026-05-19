@@ -13,7 +13,6 @@ from pathlib import Path
 from flowscribe.app.models import ProgressEvent
 from flowscribe.cli.doctor import resolve_faster_whisper_repo
 from flowscribe.core.models import OutputArtifacts
-from flowscribe.library import TranscriptLibraryEntry
 from flowscribe.output.time_format import format_timestamp
 
 

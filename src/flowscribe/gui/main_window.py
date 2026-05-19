@@ -3,65 +3,37 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
 from html import escape
 from pathlib import Path
 
-from PySide6.QtCore import QThread, QTimer, Qt, QUrl, QFileSystemWatcher
+from PySide6.QtCore import QThread, QTimer, Qt, QFileSystemWatcher
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import QMainWindow, QListWidgetItem
 
-from flowscribe.app.models import ProgressEvent
 from flowscribe.cli.doctor import (
     check_command,
     check_faster_whisper_import,
     check_output_dir,
 )
-from flowscribe.core.errors import MediaPreparationError, OutputError, SearchError
 from flowscribe.gui.export_profiles import (
     ExportProfile,
-    apply_export_profile,
-    create_export_profile,
-    export_profiles_payload,
-    profile_list_label,
-    remove_export_profile,
-    upsert_export_profile,
 )
 from flowscribe.gui.gui_logging import get_gui_logger
-from flowscribe.input.file_filter import is_supported_media
 from flowscribe.library import (
     TranscriptLibraryEntry,
-    filter_transcript_library_entries,
-    sort_transcript_library_entries,
 )
 from flowscribe.media.system_audio_capture_helper import CaptureController
-from flowscribe.output.time_format import format_timestamp
 from flowscribe.gui.state import (
-    GuiTranscriptionForm,
     SUPPORTED_GUI_FORMATS,
     is_acceptable_local_source,
 )
 from flowscribe.transcript.editing import (
     EditableTranscriptDocument,
-    load_editable_transcript,
-    render_editable_segment_line,
-    save_editable_transcript,
-    suggested_corrected_transcript_path,
-    update_editable_transcript_segment,
 )
-from flowscribe.transcript.reexport import reexport_transcript_json
 from flowscribe.gui.transcript_viewer import (
     TranscriptSearchHitView,
     TranscriptView,
-    load_transcript_view,
-    render_transcript_summary,
-    resolve_transcript_media_path,
-    search_transcript_view,
-    transcript_media_binding_warning,
-    transcript_segment_index_for_seconds,
-    transcript_search_hit_seek_seconds,
-    transcript_segment_seek_seconds,
 )
 from flowscribe.gui.utils import (
     DEFAULT_GUI_PREFERENCES,
@@ -71,48 +43,19 @@ from flowscribe.gui.utils import (
     GUI_MODEL_OPTIONS,
     GUI_NETWORK_OPTIONS,
     GUI_PRESET_OPTIONS,
-    MAX_RECENT_JOBS,
-    MAX_RECENT_MEDIA_BINDINGS,
-    MAX_RECENT_OUTPUT_DIRS,
-    MAX_RECENT_TRANSCRIPTS,
-    _artifact_compare_group,
-    _artifact_format_label,
-    _artifact_selector_label,
-    _artifact_summary,
-    _build_library_entry,
     _default_recent_work,
-    _discover_transcript_output_paths,
     _gui_preferences_payload,
-    _infer_library_source_kind_from_result,
-    _infer_library_source_media_path_from_result,
-    _is_viewable_artifact_path,
-    _library_entry_list_label,
-    _library_results_summary,
     _model_access_guidance_text,
-    _normalize_viewable_artifact_paths,
     _onboarding_state_payload,
     _onboarding_summary_text,
-    _progress_event_status_line,
-    _read_viewable_artifact_text,
-    _recent_transcript_list_label,
-    _recent_work_payload,
-    _render_json_artifact_html,
-    _render_progress_segment_line,
-    _sort_workspace_artifact_paths,
-    _url_media_status_suffix,
-    _format_elapsed_time,
     _user_facing_doctor_message,
     _user_facing_folder_label,
     _user_facing_state_file_label,
     _view_preferences_payload,
-    _view_tab_key_for_artifact,
-    _view_tab_title_for_artifact,
 )
 from flowscribe.gui.state_manager import (
     batch_queue_store,
     transcript_library_store,
-    load_gui_state,
-    save_gui_state,
 )
 from flowscribe.gui.workers.transcription_worker import TranscriptionWorker
 from flowscribe.gui.widgets.source_list_widget import (
@@ -122,17 +65,6 @@ from flowscribe.gui.widgets.source_list_widget import (
 from flowscribe.gui.widgets.queue_tab_widget import QueueTabWidget
 from flowscribe.gui.workers.queue_runner import QueueRunner
 from flowscribe.gui.notifications import QueueNotificationPlayer
-from flowscribe.queue.models import (
-    BatchOutputStrategy,
-    QueueItem,
-    QueueItemSettings,
-    generate_queue_item_id,
-)
-from flowscribe.queue.importers import (
-    deduplicate_sources,
-    import_urls_from_file,
-    parse_urls_from_text,
-)
 from flowscribe.gui.windows.transcription_controls import TranscriptionControlsMixin
 from flowscribe.gui.windows.transcript_viewer_controls import TranscriptViewerControlsMixin
 from flowscribe.gui.windows.library_controls import LibraryControlsMixin
