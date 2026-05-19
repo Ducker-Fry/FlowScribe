@@ -1,0 +1,124 @@
+# FlowScribe Bookmarklet - 快速安装指南
+
+## 📦 版本选择
+
+### 🌟 推荐：通用版（Universal）
+**适用场景**：任何网站，包括小红书、Bing 视频搜索、视频聚合网站等
+
+**功能**：
+- ✅ 通用视频链接检测
+- ✅ 支持 15+ 视频平台
+- ✅ 智能标题和缩略图提取
+- ✅ 批量添加
+- ✅ 快捷键 Alt+F
+
+**安装方法**：
+1. 复制下面的代码
+2. 在浏览器书签栏右键 → "添加书签"
+3. 名称填写：`FlowScribe`
+4. URL 粘贴复制的代码
+5. 保存
+
+**代码**：
+```
+javascript:(function(){'use strict';const c={serverUrl:'http://127.0.0.1:8765',timeout:5000,notificationDuration:3000,maxLinks:50};let p=false;const vp=[/bilibili\.com\/video\//i,/youtube\.com\/watch/i,/youtu\.be\//i,/xiaohongshu\.com\/explore\//i,/xiaohongshu\.com\/discovery\/item\//i,/vimeo\.com\//i,/dailymotion\.com\/video\//i,/twitch\.tv\//i,/tiktok\.com\/@/i,/douyin\.com\/video\//i,/iqiyi\.com\//i,/qq\.com\/.*\/cover\//i,/v\.qq\.com\//i,/youku\.com\/v_show\//i,/acfun\.cn\/v\//i];function detectUniversal(){const l=[],s=new Set();document.querySelectorAll('a[href]').forEach((a,i)=>{const h=a.href,t=a.textContent.trim();if(s.has(h)||!vp.some(p=>p.test(h)))return;let img=a.querySelector('img'),th=img?(img.src||img.dataset.src||img.dataset.original||''):'',ti=t||a.getAttribute('title')||a.getAttribute('aria-label')||'';if(!ti||ti.length<5){const pr=a.closest('div, li, article, section');if(pr){const te=pr.querySelector('.title, .name, h1, h2, h3, h4, [class*="title"], [class*="Title"]');if(te)ti=te.textContent.trim()}}let du='Unknown';const pr=a.closest('div, li, article, section');if(pr){const de=pr.querySelector('.duration, [class*="duration"], [class*="time"], time');if(de)du=de.textContent.trim()}if(ti&&ti.length>0){l.push({url:h,title:ti.substring(0,100),duration:du,thumbnail:th});s.add(h)}});return l.slice(0,c.maxLinks)}function detectBilibili(){const l=[];document.querySelectorAll('.bili-video-card, .video-card, .small-item, .list-item, .video-item').forEach((e,i)=>{const a=e.querySelector('a[href*="/video/"]'),t=e.querySelector('.bili-video-card__info--tit, .title, .name, h3, h4'),d=e.querySelector('.bili-video-card__stats__duration, .duration, [class*="duration"]'),img=e.querySelector('img');if(a&&a.href){const m=a.href.match(/BV[a-zA-Z0-9]+/);if(m)l.push({url:`https://www.bilibili.com/video/${m[0]}`,title:t?t.textContent.trim():`Video ${i+1}`,duration:d?d.textContent.trim():'Unknown',thumbnail:img?(img.src||img.dataset.src||''):''})}});return l}function detectYouTube(){const l=[];document.querySelectorAll('ytd-video-renderer, ytd-grid-video-renderer, ytd-playlist-video-renderer, ytd-compact-video-renderer').forEach((e,i)=>{const a=e.querySelector('a#video-title, a.yt-simple-endpoint'),d=e.querySelector('span.ytd-thumbnail-overlay-time-status-renderer, .ytd-thumbnail-overlay-time-status-renderer'),img=e.querySelector('img');if(a&&a.href){const u=new URL(a.href).searchParams.get('v');if(u)l.push({url:`https://www.youtube.com/watch?v=${u}`,title:a.textContent.trim()||`Video ${i+1}`,duration:d?d.textContent.trim():'Unknown',thumbnail:img?img.src:''})}});return l}function detectXiaohongshu(){const l=[];document.querySelectorAll('.note-item, .feed-item, [class*="note"], [class*="card"]').forEach((e,i)=>{const a=e.querySelector('a[href*="/explore/"], a[href*="/discovery/item/"]'),t=e.querySelector('.title, .note-title, [class*="title"]'),img=e.querySelector('img'),v=e.querySelector('[class*="video"], [class*="play"], .icon-video, .video-icon');if(a&&a.href&&v)l.push({url:a.href,title:t?t.textContent.trim():`Video ${i+1}`,duration:'Unknown',thumbnail:img?(img.src||img.dataset.src||''):''})});return l}function detectBing(){const l=[];document.querySelectorAll('.dg_u, .mc_vtvc, [class*="video"]').forEach((e,i)=>{const a=e.querySelector('a[href]'),t=e.querySelector('.mc_vtvc_title, .title, h2, h3'),d=e.querySelector('.mc_vtvc_meta_row_item, .duration, [class*="duration"]'),img=e.querySelector('img');if(a&&a.href)l.push({url:a.href,title:t?t.textContent.trim():a.textContent.trim()||`Video ${i+1}`,duration:d?d.textContent.trim():'Unknown',thumbnail:img?(img.src||img.dataset.src||''):''})});return l}function detectLinks(){const h=window.location.hostname;let l=[];if(h.includes('bilibili.com'))l=detectBilibili();else if(h.includes('youtube.com'))l=detectYouTube();else if(h.includes('xiaohongshu.com'))l=detectXiaohongshu();else if(h.includes('bing.com'))l=detectBing();return l.length>0?l:detectUniversal()}function extractUrl(){const u=window.location.href,h=window.location.hostname;if(h.includes('youtube.com')||h.includes('youtu.be')){if(u.includes('youtu.be/')){const m=u.match(/youtu\.be\/([a-zA-Z0-9_-]+)/);if(m)return`https://www.youtube.com/watch?v=${m[1]}`}if(u.includes('youtube.com/watch')){const o=new URL(u),v=o.searchParams.get('v');if(v)return`https://www.youtube.com/watch?v=${v}`}}if(h.includes('bilibili.com')){const b=u.match(/BV[a-zA-Z0-9]+/);if(b)return`https://www.bilibili.com/video/${b[0]}`}return u}function extractTitle(){let t=document.title.trim();if(!t){const o=document.querySelector('meta[property="og:title"]');if(o)t=o.getAttribute('content')||''}const s=[/ - YouTube$/,/ - Bilibili$/,/ - 哔哩哔哩$/,/ \| Bilibili$/,/_bilibili$/,/ - 小红书$/,/ - Bing$/];for(const r of s)t=t.replace(r,'');return t.trim()||'Untitled'}function showDialog(l){const e=document.getElementById('flowscribe-video-dialog');if(e)e.remove();const d=document.createElement('div');d.id='flowscribe-video-dialog';d.innerHTML=`<div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:999999;background:white;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.3);max-width:800px;width:90%;max-height:85vh;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Microsoft YaHei',sans-serif"><div style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white;padding:20px;font-size:18px;font-weight:600;display:flex;justify-content:space-between;align-items:center"><span>🎬 选择要添加的视频 (${l.length})</span><div style="display:flex;gap:10px"><button id="fs-select-all" style="padding:6px 12px;border:1px solid rgba(255,255,255,0.5);border-radius:4px;background:rgba(255,255,255,0.2);color:white;cursor:pointer;font-size:13px">全选/取消</button><button id="fs-close" style="padding:6px 12px;border:1px solid rgba(255,255,255,0.5);border-radius:4px;background:rgba(255,255,255,0.2);color:white;cursor:pointer;font-size:13px">✕</button></div></div><div style="padding:20px;max-height:500px;overflow-y:auto">${l.map((v,i)=>`<label style="display:flex;align-items:flex-start;padding:12px;margin-bottom:10px;border:2px solid #e0e0e0;border-radius:8px;cursor:pointer" onmouseover="this.style.borderColor='#667eea'" onmouseout="this.style.borderColor='#e0e0e0'"><input type="checkbox" checked data-idx="${i}" style="width:18px;height:18px;margin-right:12px;margin-top:4px;cursor:pointer;flex-shrink:0">${v.thumbnail?`<img src="${v.thumbnail}" style="width:120px;height:75px;object-fit:cover;border-radius:4px;margin-right:12px;flex-shrink:0;background:#f0f0f0" onerror="this.style.display='none'">`:''}  <div style="flex:1;min-width:0"><div style="font-weight:500;margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.4">${v.title}</div><div style="font-size:12px;color:#666">${v.duration}</div><div style="font-size:11px;color:#999;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${v.url}</div></div></label>`).join('')}</div><div style="padding:20px;border-top:1px solid #e0e0e0;display:flex;gap:10px;justify-content:space-between;align-items:center"><div style="font-size:13px;color:#666">已选择: <span id="fs-count">${l.length}</span> / ${l.length}</div><div style="display:flex;gap:10px"><button id="fs-cancel" style="padding:10px 20px;border:2px solid #e0e0e0;border-radius:6px;background:white;cursor:pointer;font-size:14px;font-weight:500">取消</button><button id="fs-add" style="padding:10px 20px;border:none;border-radius:6px;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white;cursor:pointer;font-size:14px;font-weight:500">添加选中项</button></div></div></div><div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:999998" id="fs-backdrop"></div>`;document.body.appendChild(d);function u(){const n=d.querySelectorAll('input:checked').length;document.getElementById('fs-count').textContent=n}d.querySelectorAll('input').forEach(n=>n.addEventListener('change',u));document.getElementById('fs-select-all').addEventListener('click',()=>{const n=d.querySelectorAll('input');const a=Array.from(n).every(x=>x.checked);n.forEach(x=>x.checked=!a);u()});document.getElementById('fs-close').addEventListener('click',()=>d.remove());document.getElementById('fs-cancel').addEventListener('click',()=>d.remove());document.getElementById('fs-backdrop').addEventListener('click',()=>d.remove());document.getElementById('fs-add').addEventListener('click',()=>{const n=Array.from(d.querySelectorAll('input:checked')).map(x=>parseInt(x.getAttribute('data-idx')));const s=n.map(i=>l[i]);d.remove();addLinks(s)})}async function addLinks(l){try{showNotif('正在添加到队列...','info');const r=await fetchTimeout(`${c.serverUrl}/add-urls`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({urls:l.map(v=>({url:v.url,title:v.title}))})},c.timeout);const d=await r.json();const s=d.summary;showNotif(`已添加 ${s.queued} 个视频\n重复: ${s.duplicates} | 错误: ${s.errors}`,s.errors>0?'warning':'success');setTimeout(async()=>{const q=await getStatus();if(q)showNotif(`队列: ${q.queue.pending} 待处理, ${q.queue.completed} 已完成`,'info')},1500)}catch(e){handleErr(e)}}async function addSingle(u,t){try{showNotif('正在添加到队列...','info');const r=await fetchTimeout(`${c.serverUrl}/add-url`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:u,title:t,timestamp:new Date().toISOString()})},c.timeout);const d=await r.json();if(d.status==='queued'){showNotif(`已添加: ${t}\n队列位置: ${d.position}`,'success');setTimeout(async()=>{const q=await getStatus();if(q)showNotif(`队列: ${q.queue.pending} 待处理, ${q.queue.completed} 已完成`,'info')},1500)}else if(d.status==='duplicate'){showNotif(`已在队列中: ${d.existing_status}\n${t}`,'warning')}else{showNotif(`错误: ${d.message}`,'error')}}catch(e){handleErr(e)}}async function getStatus(){try{const r=await fetchTimeout(`${c.serverUrl}/status`,{method:'GET'},c.timeout);return await r.json()}catch(e){return null}}function showNotif(m,t='success'){const e=document.getElementById('flowscribe-notification');if(e)e.remove();const n=document.createElement('div');n.id='flowscribe-notification';const bg={'success':'linear-gradient(135deg,#667eea 0%,#764ba2 100%)','error':'linear-gradient(135deg,#f093fb 0%,#f5576c 100%)','warning':'linear-gradient(135deg,#ffa751 0%,#ffe259 100%)','info':'linear-gradient(135deg,#4facfe 0%,#00f2fe 100%)'}[t];const ic={'success':'✓','error':'✗','warning':'⚠','info':'ℹ'}[t];n.innerHTML=`<div style="position:fixed;top:20px;right:20px;z-index:999999;background:${bg};color:white;padding:16px 20px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Microsoft YaHei',sans-serif;font-size:14px;line-height:1.5;max-width:400px;animation:fs-slide-in 0.3s ease-out"><div style="display:flex;align-items:center;gap:12px"><div style="font-size:24px;flex-shrink:0">${ic}</div><div style="flex:1"><div style="font-weight:600;margin-bottom:4px">FlowScribe</div><div style="opacity:0.95;white-space:pre-line">${m}</div></div></div></div>`;if(!document.getElementById('fs-styles')){const s=document.createElement('style');s.id='fs-styles';s.textContent='@keyframes fs-slide-in{from{transform:translateX(400px);opacity:0}to{transform:translateX(0);opacity:1}}@keyframes fs-fade-out{from{opacity:1}to{opacity:0;transform:translateX(400px)}}';document.head.appendChild(s)}document.body.appendChild(n);setTimeout(()=>{n.firstElementChild.style.animation='fs-fade-out 0.3s ease-out';setTimeout(()=>n.remove(),300)},c.notificationDuration)}function fetchTimeout(u,o,t){return Promise.race([fetch(u,o),new Promise((_,r)=>setTimeout(()=>r(new Error('Request timeout')),t))])}function handleErr(e){if(e.message==='Request timeout'){showNotif('连接超时 (5秒)\nFlowScribe 服务器是否正在运行?','error')}else if(e.message.includes('Failed to fetch')){showNotif('无法连接到 FlowScribe\n请先启动服务器','error')}else{showNotif(`意外错误: ${e.message}`,'error')}}async function main(){if(p)return;p=true;try{const l=detectLinks();if(l.length>0){showDialog(l)}else{const u=extractUrl(),t=extractTitle();if(!u||!u.startsWith('http')){showNotif('无效的 URL 格式','error');return}await addSingle(u,t)}}catch(e){handleErr(e)}finally{p=false}}document.addEventListener('keydown',e=>{if(e.altKey&&e.key.toLowerCase()==='f'){e.preventDefault();main()}});main()})();
+```
+
+---
+
+## 🚀 使用方法
+
+### 1. 启动 FlowScribe 服务器
+```powershell
+flowscribe serve
+```
+
+### 2. 使用 Bookmarklet
+- **方式 1**：点击书签栏的 "FlowScribe" 按钮
+- **方式 2**：按 **Alt+F** 快捷键
+
+### 3. 选择视频
+- 如果页面有多个视频，会弹出选择对话框
+- 勾选要添加的视频
+- 点击"添加选中项"
+
+### 4. 查看队列
+```powershell
+flowscribe gui
+```
+在 GUI 的"队列"标签页查看任务
+
+---
+
+## 📱 支持的网站
+
+- ✅ **Bilibili**（哔哩哔哩）- 搜索结果、用户空间
+- ✅ **YouTube** - 搜索结果、播放列表
+- ✅ **Xiaohongshu**（小红书）- 探索页面
+- ✅ **Bing Video** - 视频搜索结果
+- ✅ **Vimeo、Dailymotion、Twitch、TikTok**
+- ✅ **抖音、爱奇艺、腾讯视频、优酷、AcFun**
+- ✅ **任何包含视频链接的网页**
+
+---
+
+## ⚙️ 配置
+
+### 修改服务器地址
+如果服务器不在默认地址，需要修改代码中的：
+```javascript
+serverUrl: 'http://127.0.0.1:8765'
+```
+改为你的服务器地址。
+
+### 修改快捷键
+默认是 **Alt+F**，如果想改为其他快捷键，需要修改源代码。
+
+---
+
+## 🐛 故障排查
+
+### 问题 1: 点击书签无反应
+- 检查服务器是否运行：`flowscribe serve`
+- 检查浏览器控制台是否有错误
+
+### 问题 2: 没有检测到视频
+- 某些网站使用非标准结构
+- 尝试在单个视频页面使用
+- 会自动添加当前页面 URL
+
+### 问题 3: 快捷键不生效
+- 某些网站可能拦截快捷键
+- 尝试点击书签按钮
+- 刷新页面后再试
+
+---
+
+## 📄 文件说明
+
+```
+bookmarklet/
+├── flowscribe-bookmarklet-universal.js      # 完整版源代码
+├── flowscribe-bookmarklet-universal.min.js  # 压缩版（用于书签）
+├── UNIVERSAL_VERSION.md                     # 详细文档
+└── INSTALL.md                               # 本文档
+```
+
+---
+
+## 💡 提示
+
+- 队列中的任务会以**页面标题**显示，而不是 URL
+- 支持批量添加，一次可以添加多个视频
+- 自动去重，不会重复添加相同的 URL
+- 添加后会自动显示队列状态
+
+---
+
+## 📞 反馈
+
+如有问题或建议，请在 GitHub 提交 Issue。
+
+---
+
+**享受使用 FlowScribe Bookmarklet！** 🎉

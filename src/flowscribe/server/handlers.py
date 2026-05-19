@@ -97,6 +97,7 @@ class AddUrlHandler:
             output_strategy=output_strategy,
             status="pending",
             created_at=datetime.now(),
+            title=title if title else None,
         )
 
         # Check for duplicates and enqueue

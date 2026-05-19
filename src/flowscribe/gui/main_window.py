@@ -1240,6 +1240,12 @@ class MainWindow(
         self._help_dialog.raise_()
         self._help_dialog.activateWindow()
 
+    def _show_recent_work(self) -> None:
+        """Show recent work by switching to the library view."""
+        self._refresh_transcript_library_list()
+        self._select_view_tab("library")
+        self.status_label.setText("Showing recent work in Library.")
+
     def _show_state_preview(self) -> None:
         selection_error = self._local_selection_error()
         if selection_error:

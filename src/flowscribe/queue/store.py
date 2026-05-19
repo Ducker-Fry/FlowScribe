@@ -191,6 +191,7 @@ def _item_to_payload(item: QueueItem) -> dict:
         "created_at": item.created_at.isoformat(),
         "started_at": item.started_at.isoformat() if item.started_at else None,
         "finished_at": item.finished_at.isoformat() if item.finished_at else None,
+        "title": item.title,
     }
 
 
@@ -263,6 +264,7 @@ def _item_from_payload(data: object) -> QueueItem | None:
             finished_at=datetime.fromisoformat(data["finished_at"])
             if data.get("finished_at")
             else None,
+            title=data.get("title"),
         )
     except (KeyError, TypeError, ValueError):
         return None

@@ -59,6 +59,7 @@ class QueueItem:
     created_at: datetime = field(default_factory=datetime.now)
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    title: str | None = None
 
     @property
     def can_retry(self) -> bool:
@@ -66,6 +67,8 @@ class QueueItem:
 
     @property
     def display_label(self) -> str:
+        if self.title:
+            return self.title
         if self.source.kind == "url":
             return self.source.value
         return Path(self.source.value).name
