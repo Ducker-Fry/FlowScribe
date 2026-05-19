@@ -87,13 +87,20 @@ def test_deduplicate_sources():
             settings=QueueItemSettings(),
             status="completed",
         ),
+        QueueItem(
+            item_id="id3",
+            source=SourceSpec(kind="url", value="https://a.com/4"),
+            settings=QueueItemSettings(),
+            status="failed",
+        ),
     ]
     new_sources = [
         SourceSpec(kind="url", value="https://a.com/1"),
         SourceSpec(kind="url", value="https://a.com/2"),
         SourceSpec(kind="url", value="https://a.com/3"),
+        SourceSpec(kind="url", value="https://a.com/4"),
     ]
     result = deduplicate_sources(new_sources, existing)
     assert len(result) == 2
-    assert result[0].value == "https://a.com/2"
-    assert result[1].value == "https://a.com/3"
+    assert result[0].value == "https://a.com/3"
+    assert result[1].value == "https://a.com/4"
