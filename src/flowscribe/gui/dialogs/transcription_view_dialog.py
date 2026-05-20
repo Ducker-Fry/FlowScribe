@@ -554,71 +554,72 @@ class TranscriptionViewDialog(QDialog):
 
     def _run_transcript_search(self) -> None:
         """Run transcript search."""
-        from flowscribe.search import search_transcript
+        from flowscribe.gui.transcript_viewer import search_transcript_view
+        from flowscribe.core.errors import SearchError
 
-        if not self._transcript_path:
+        if self._transcript_path is None or self._transcript_view is None:
             self.search_results.clear()
-            self.search_results.addItem("No transcript loaded")
+            self.search_results.addItem("Open a transcript JSON file before searching.")
             return
 
         query = self.search_input.text().strip()
         if not query:
             self.search_results.clear()
+            self._search_hits = ()
             return
 
         try:
-            # Use the search module to search transcript
-            hits = search_transcript(self._transcript_path, query)
-            self._search_hits = hits
-
+            hits = search_transcript_view(
+                self._transcript_path,
+                self._transcript_view,
+                query,
+            )
+        except SearchError as exc:
             self.search_results.clear()
-            if not hits:
-                self.search_results.addItem("No results found")
-                return
+            self.search_results.addItem(f"Search error: {exc}")
+            self._search_hits = ()
+            return
 
-            # Display all search results with context
-            for hit in hits:
-                # Format: [time] context with matched text
-                time_str = f"[{hit.start:.1f}s - {hit.end:.1f}s]"
-                # Show context around the match (up to 100 chars)
-                context = hit.text[:100] + ("..." if len(hit.text) > 100 else "")
-                display_text = f"{time_str} {context}"
-                self.search_results.addItem(display_text)
+        self._search_hits = hits
+        self.search_results.clear()
+        if not hits:
+            self.search_results.addItem(f'No matches found for "{query}".')
+            return
 
-            # Select first result
-            if hits:
-                self.search_results.setCurrentRow(0)
+        for hit in hits:
+            self.search_results.addItem(
+                f"[{hit.start:.1f}s] {hit.matched_text}"
+            )
 
-        except Exception as e:
-            self.search_results.clear()
-            self.search_results.addItem(f"Search error: {e}")
+        if hits:
+            self.search_results.setCurrentRow(0)
 
     def _jump_to_selected_hit(self) -> None:
         """Jump to selected search hit."""
+        from flowscribe.gui.transcript_viewer import transcript_search_hit_seek_seconds
+
         row = self.search_results.currentRow()
         if row < 0 or row >= len(self._search_hits):
             return
 
         hit = self._search_hits[row]
+        if self._transcript_view is None:
+            return
 
-        # Seek media player to the hit time
-        if self._media_player.source().isValid():
-            position_ms = int(hit.start * 1000)
-            self._media_player.setPosition(position_ms)
+        if hit.segment_index >= len(self._transcript_view.segments):
+            return
 
-        # Find and select the corresponding segment
-        if self._editable_transcript:
-            for idx, segment in enumerate(self._editable_transcript.segments):
-                if (segment.start_seconds is not None and
-                    segment.end_seconds is not None and
-                    segment.start_seconds <= hit.start <= segment.end_seconds):
-                    self.transcript_segments.setCurrentRow(idx)
-                    self._activate_selected_segment()
-                    break
+        # Select the segment
+        self.transcript_segments.setCurrentRow(hit.segment_index)
+        self._activate_selected_segment()
+
+        # Seek media to the hit position
+        seek_seconds = transcript_search_hit_seek_seconds(hit)
+        self._seek_media_seconds(seek_seconds, autoplay=True)
 
     def _activate_selected_segment(self) -> None:
         """Activate selected segment."""
-        from flowscribe.transcript.editing import render_editable_segment_line
+        from flowscribe.gui.transcript_viewer import transcript_segment_seek_seconds
 
         row = self.transcript_segments.currentRow()
         if row < 0 or not self._editable_transcript:
@@ -631,9 +632,10 @@ class TranscriptionViewDialog(QDialog):
         self._current_segment_index = row
 
         # Seek media player to segment start time
-        if segment.start_seconds is not None and self._media_player.source().isValid():
-            position_ms = int(segment.start_seconds * 1000)
-            self._media_player.setPosition(position_ms)
+        if self._transcript_view and row < len(self._transcript_view.segments):
+            view_segment = self._transcript_view.segments[row]
+            seek_seconds = transcript_segment_seek_seconds(view_segment)
+            self._seek_media_seconds(seek_seconds, autoplay=False)
 
         # Update editor
         self.segment_editor.blockSignals(True)
@@ -642,9 +644,11 @@ class TranscriptionViewDialog(QDialog):
         self.segment_editor.setEnabled(True)
 
         # Update status
+        start_str = f"{segment.start_seconds:.2f}" if segment.start_seconds is not None else "?"
+        end_str = f"{segment.end_seconds:.2f}" if segment.end_seconds is not None else "?"
         self.transcript_edit_status_label.setText(
             f"Editing segment {row + 1} of {len(self._editable_transcript.segments)} | "
-            f"[{segment.start_seconds:.2f}s - {segment.end_seconds:.2f}s]"
+            f"[{start_str}s - {end_str}s]"
         )
 
         # Enable buttons
@@ -652,6 +656,15 @@ class TranscriptionViewDialog(QDialog):
         self.save_transcript_button.setEnabled(True)
         self.save_transcript_copy_button.setEnabled(True)
         self.reexport_transcript_button.setEnabled(True)
+
+    def _seek_media_seconds(self, seconds: float, *, autoplay: bool) -> None:
+        """Seek media to specified time in seconds."""
+        if not self._media_player.source().isValid():
+            return
+
+        self._media_player.setPosition(int(max(0.0, seconds) * 1000))
+        if autoplay:
+            self._media_player.play()
 
     def _on_segment_editor_text_changed(self) -> None:
         """Handle segment editor text change."""
