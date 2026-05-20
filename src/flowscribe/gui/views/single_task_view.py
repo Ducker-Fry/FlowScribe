@@ -467,25 +467,20 @@ class SingleTaskView(QWidget):
                 with open(path, 'r', encoding='utf-8') as f:
                     transcript_data = json.load(f)
 
-                # Format transcript for display
-                if 'segments' in transcript_data:
-                    segments = transcript_data['segments']
-                    display_text = f"Transcript: {path.name}\n"
-                    display_text += f"Segments: {len(segments)}\n"
-                    display_text += "=" * 80 + "\n\n"
+                # Verify it's a valid transcript JSON
+                if 'segments' not in transcript_data:
+                    self.status_label.setText("Invalid transcript format - missing segments")
+                    return
 
-                    for seg in segments:
-                        start = seg.get('start', 0)
-                        end = seg.get('end', 0)
-                        text = seg.get('text', '').strip()
-                        display_text += f"[{start:.2f}s - {end:.2f}s] {text}\n"
+                # Set as current transcript and open View
+                self._last_transcript_path = path
+                self._current_run_output = f"Opened existing transcript: {path.name}\n"
+                self.open_view_button.setEnabled(True)
 
-                    self.transcript_viewer.setPlainText(display_text)
-                    self.tabs.setCurrentIndex(1)  # Switch to Workspace tab
-                    self.status_label.setText(f"Loaded: {path.name}")
-                    self.transcript_loaded.emit(path)
-                else:
-                    self.status_label.setText("Invalid transcript format")
+                # Automatically open the View dialog
+                self._open_view()
+
+                self.transcript_loaded.emit(path)
             except Exception as e:
                 self.status_label.setText(f"Error loading transcript: {e}")
 
