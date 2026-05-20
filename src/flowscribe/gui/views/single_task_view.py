@@ -47,6 +47,9 @@ class SingleTaskView(QWidget):
         self._thread: QThread | None = None
         self._cancel_requested = False
         self._last_output_dir: Path | None = None
+        self._last_transcript_path: Path | None = None
+        self._current_run_output: str = ""
+        self._view_dialog = None
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -129,6 +132,12 @@ class SingleTaskView(QWidget):
         controls_layout.addWidget(self.cancel_button)
         controls_layout.addWidget(self.settings_button)
         controls_layout.addWidget(self.open_transcript_button)
+
+        self.open_view_button = QPushButton("Open View")
+        self.open_view_button.clicked.connect(self._open_view)
+        self.open_view_button.setEnabled(False)
+        controls_layout.addWidget(self.open_view_button)
+
         controls_layout.addStretch(1)
         layout.addLayout(controls_layout)
 
@@ -153,38 +162,8 @@ class SingleTaskView(QWidget):
 
         self.tabs.addTab(run_details_widget, "Run Details")
 
-        # Workspace tab
-        workspace_widget = QWidget()
-        workspace_layout = QVBoxLayout(workspace_widget)
-        workspace_layout.setContentsMargins(12, 12, 12, 12)
-        workspace_layout.setSpacing(10)
-
-        # Info message
-        workspace_info = QLabel(
-            "<b>Workspace Migration In Progress</b><br><br>"
-            "The full workspace with the following features is being migrated to the new architecture:<br>"
-            "• Media sync (video player, bind media, playback controls)<br>"
-            "• Transcript search with keyword highlighting<br>"
-            "• Transcript segments list with navigation<br>"
-            "• Transcript editing with save/revert<br>"
-            "• Transcript artifacts viewer (JSON, SRT, VTT, Markdown, Text)<br><br>"
-            "<b>Temporary Workaround:</b><br>"
-            "Use the legacy MainWindow which has all workspace features intact.<br>"
-            "Run: <code>python -m flowscribe.gui.main_window</code><br><br>"
-            "Or click the button below to open the legacy interface:"
-        )
-        workspace_info.setWordWrap(True)
-        workspace_info.setTextFormat(Qt.TextFormat.RichText)
-        workspace_layout.addWidget(workspace_info)
-
-        open_legacy_btn = QPushButton("Open Legacy MainWindow (Full Features)")
-        open_legacy_btn.clicked.connect(self._open_legacy_mainwindow)
-        open_legacy_btn.setMinimumHeight(40)
-        workspace_layout.addWidget(open_legacy_btn)
-
-        workspace_layout.addStretch()
-
-        self.tabs.addTab(workspace_widget, "Workspace")
+        # Note: Workspace tab removed - full workspace is now in the View dialog
+        # Access via "Open View" button after transcription completes
 
         layout.addWidget(self.tabs, 1)
 
@@ -373,6 +352,10 @@ class SingleTaskView(QWidget):
         """Handle progress updates."""
         if event.message:
             self.preview_output.appendPlainText(event.message)
+            self._current_run_output += event.message + "\n"
+            # Update view dialog if open
+            if self._view_dialog is not None:
+                self._view_dialog.update_run_output(self._current_run_output)
 
         if event.total_duration_seconds is not None:
             self.progress_bar.setRange(0, 1000)
@@ -422,6 +405,13 @@ class SingleTaskView(QWidget):
             for artifacts in result.outputs:
                 for path in artifacts.paths:
                     self.preview_output.appendPlainText(f"  {path}")
+                    # Track transcript JSON path
+                    if path.suffix.lower() == ".json" and self._last_transcript_path is None:
+                        self._last_transcript_path = path
+
+        # Enable View button if we have a transcript
+        if self._last_transcript_path is not None:
+            self.open_view_button.setEnabled(True)
 
         self.transcription_finished.emit(result)
 
@@ -499,23 +489,27 @@ class SingleTaskView(QWidget):
             except Exception as e:
                 self.status_label.setText(f"Error loading transcript: {e}")
 
-    def _open_legacy_mainwindow(self) -> None:
-        """Open the legacy MainWindow with full workspace functionality."""
-        from flowscribe.gui.main_window import MainWindow
+    def _open_view(self) -> None:
+        """Open transcription view dialog."""
+        from flowscribe.gui.dialogs import TranscriptionViewDialog
 
-        # Create the legacy MainWindow
-        legacy_window = MainWindow()
-        legacy_window.setWindowTitle("FlowScribe (Legacy - Full Features)")
-        legacy_window.resize(1200, 800)
-        legacy_window.show()
-        legacy_window.raise_()
-        legacy_window.activateWindow()
+        if self._last_transcript_path is None:
+            self.status_label.setText("No transcript available. Complete a transcription first.")
+            return
 
-        # Store reference to prevent garbage collection
-        if not hasattr(self, '_legacy_windows'):
-            self._legacy_windows = []
-        self._legacy_windows.append(legacy_window)
+        # Create or show existing view dialog
+        if self._view_dialog is None or not self._view_dialog.isVisible():
+            self._view_dialog = TranscriptionViewDialog(
+                self,
+                transcript_path=self._last_transcript_path,
+                run_output=self._current_run_output,
+            )
+            self._view_dialog.show()
+        else:
+            self._view_dialog.raise_()
+            self._view_dialog.activateWindow()
 
-        self.status_label.setText("Opened legacy MainWindow with full workspace features")
+        self.status_label.setText(f"Opened view for {self._last_transcript_path.name}")
+
 
 
