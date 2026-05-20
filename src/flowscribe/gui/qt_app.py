@@ -27,9 +27,9 @@ def run_gui(argv: list[str] | None = None) -> int:
     app.setApplicationName("FlowScribe")
     app.setApplicationVersion(__version__)
     LOGGER.debug("Starting GUI in %s mode.", log_mode)
-    from flowscribe.gui.main_window import MainWindow
+    from flowscribe.gui.new_main_window import NewMainWindow
 
-    window = MainWindow()
+    window = NewMainWindow()
     window.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
     window.show()
     return app.exec()
@@ -39,10 +39,10 @@ class FlowScribeMainWindow:
     """Thin wrapper for backward compatibility.
 
     Previously used a __new__ pattern to defer PySide6 imports.
-    Now delegates directly to MainWindow.
+    Now delegates directly to NewMainWindow.
     """
 
     def __new__(cls):
-        from flowscribe.gui.main_window import MainWindow
+        from flowscribe.gui.new_main_window import NewMainWindow
 
-        return MainWindow()
+        return NewMainWindow()

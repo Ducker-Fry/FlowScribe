@@ -26,6 +26,7 @@ class BatchOutputStrategy:
 @dataclass(frozen=True)
 class QueueItemSettings:
     output_dir: Path = field(default_factory=lambda: Path("outputs"))
+    output_name_base: str = ""
     model_name: str = "small"
     language: str | None = None
     preset: str | None = None

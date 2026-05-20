@@ -1,42 +1,52 @@
-"""Transcription view dialog for reviewing individual transcription results."""
+"""Transcription view dialog with Run Details and Workspace tabs.
+
+This dialog is a direct extraction of the old MainWindow's Views dialog,
+keeping only Run Details and Workspace tabs (Library and Queue are now top-level).
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import Qt, QSize
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import (
+    QComboBox,
     QDialog,
-    QVBoxLayout,
-    QHBoxLayout,
-    QTabWidget,
-    QWidget,
-    QLabel,
-    QPushButton,
-    QToolButton,
+    QFileDialog,
     QGroupBox,
-    QSplitter,
-    QTextEdit,
-    QTextBrowser,
+    QHBoxLayout,
+    QLabel,
     QLineEdit,
     QListWidget,
-    QComboBox,
     QPlainTextEdit,
+    QPushButton,
+    QSplitter,
     QStackedWidget,
-    QSlider,
-    QSizePolicy,
-    QMenu,
+    QTabWidget,
+    QTextBrowser,
+    QTextEdit,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
 )
+
+# Import the mixins that contain all the workspace logic
+from flowscribe.gui.windows.transcript_viewer_controls import TranscriptViewerControlsMixin
+from flowscribe.gui.windows.workspace_controls import WorkspaceControlsMixin
 
 if TYPE_CHECKING:
     from PySide6.QtWidgets import QWidget as QWidgetType
 
 
-class TranscriptionViewDialog(QDialog):
-    """Dialog for viewing transcription run details, workspace, and artifacts."""
+class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceControlsMixin):
+    """View dialog for transcription with Run Details and Workspace tabs.
+
+    This is a direct extraction of the old MainWindow's _create_views_window() method,
+    reusing the proven TranscriptViewerControlsMixin and WorkspaceControlsMixin.
+    """
 
     def __init__(
         self,
@@ -46,8 +56,19 @@ class TranscriptionViewDialog(QDialog):
         run_output: str = "",
     ):
         super().__init__(parent)
-        self.setWindowTitle("Transcription View")
-        self.resize(1100, 800)
+        self._transcript_path = transcript_path
+        self._run_output = run_output
+
+        # Initialize mixin state (copied from MainWindow.__init__)
+        self._transcript_view = None
+        self._editable_transcript = None
+        self._search_hits = ()
+        self._workspace_artifacts = ()
+        self._workspace_artifact_paths = ()
+
+        self._setup_ui()
+        if transcript_path:
+            self._load_transcript_json(transcript_path, allow_unsaved_prompt=False)
         self.setWindowFlag(Qt.WindowType.Window, True)
         self.setWindowFlag(Qt.WindowType.WindowMinimizeButtonHint, True)
         self.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint, True)

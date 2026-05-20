@@ -48,11 +48,13 @@ src/flowscribe/
 ├── config/         Runtime settings, presets
 ├── core/           Domain models, pipeline orchestration, progressive chunking, ports, errors
 │   └── progressive/  Modular progressive transcription (planner, merger, executor)
-├── gui/            PySide6 — main_window.py, qt_app.py (entry), state.py
+├── gui/            PySide6 — new_main_window.py, qt_app.py (entry), state.py
+│   ├── dialogs/    Settings dialog, queue item settings dialog
+│   ├── views/      SingleTaskView, LibraryView, QueueView (QStackedWidget architecture)
 │   ├── utils/      Modular utility functions (formatting, state, library, artifacts)
-│   ├── windows/    MainWindow mixins (transcription, viewer, library, workspace, capture, settings, queue)
-│   ├── widgets/    Queue tab, source list, custom UI components
-│   └── workers/    QThread workers (transcription, queue runner)
+│   ├── windows/    Legacy MainWindow mixins (deprecated, kept for reference)
+│   ├── widgets/    Source list, custom UI components
+│   └── workers/    QThread workers (transcription, queue runner, bookmarklet server)
 ├── input/          Local file discovery, URL download/inspection, URL security validation
 ├── library/        Transcript library (JSON-backed persistent index)
 ├── media/          ffmpeg extraction, WASAPI capture, audio cache
@@ -66,7 +68,7 @@ src/flowscribe/
 tests/              41 test files matching source modules
 scripts/            build_exe.ps1, build_gui_exe.ps1, build_wasapi_helper.ps1
 tools/              wasapi-capture-helper/ (.NET 8 C# WASAPI loopback capture)
-docs/               Developer handoff, dev-state, packaging, release-automation, roadmap
+docs/               Developer handoff, dev-state, packaging, release-automation, roadmap, ui-refactor docs
 ```
 
 ## Core Architecture
@@ -78,13 +80,14 @@ Key files by layer:
 - **`core/progressive/`** — modular progressive transcription: `planner.py` (chunk planning), `merger.py` (merge policy), `executor.py` (execution & cache)
 - **`core/deduplication.py`** — `TranscriptDeduplicator` (post-processing duplicate removal at chunk boundaries)
 - **`app/service.py`** — `TranscriptionService.run(job)` entry point, wires pipeline, emits progress
-- **`gui/main_window.py`** — `MainWindow(QMainWindow)` (1198 lines), core UI logic with mixin inheritance
-- **`gui/windows/`** — MainWindow mixins: `transcription_controls.py`, `transcript_viewer_controls.py`, `library_controls.py`, `workspace_controls.py`, `capture_controls.py`, `settings_controls.py`, `queue_controls.py`
+- **`gui/new_main_window.py`** — `NewMainWindow(QMainWindow)` (375 lines), simplified QStackedWidget architecture
+- **`gui/views/`** — Standalone views: `SingleTaskView` (350 lines), `LibraryView` (230 lines), `QueueView` (450 lines)
+- **`gui/dialogs/`** — `SettingsDialog` (240 lines), `QueueItemSettingsDialog`
 - **`gui/utils/`** — modular utility functions: `formatting.py`, `state.py`, `library.py`, `artifacts.py`
 - **`gui/qt_app.py`** — `run_gui()` entry point, `FlowScribeMainWindow` compat wrapper
 - **`gui/workers/transcription_worker.py`** — `TranscriptionWorker` (QThread wrapper)
 - **`gui/workers/queue_runner.py`** — `QueueRunner` (sequential batch processor)
-- **`gui/widgets/queue_tab_widget.py`** — Queue tab UI (URL paste, import, drag-reorder)
+- **`gui/workers/bookmarklet_server_worker.py`** — `BookmarkletServerWorker` (QThread wrapper for HTTP server)
 - **`gui/widgets/source_list_widget.py`** — `SourceListWidget` (drag-drop media list)
 - **`queue/models.py`** — `QueueItem`, `QueueItemSettings`, `BatchOutputStrategy`
 - **`queue/store.py`** — `BatchQueueStore` (JSON persistence at `{AppData}/FlowScribe/batch-queue.json`)
@@ -103,24 +106,53 @@ Detailed class table → [CLAUDE_CLASSES.md](CLAUDE_CLASSES.md) (read on demand)
 
 ```
 CLI:        flowscribe transcribe → app/service.py → pipeline.process[_progressive]()
-GUI:        Start click → state.to_job() → _TranscriptionWorker → service.run(progress=...) → Qt signal
-Queue:      Add URLs → QueueItem → QueueRunner.run() → dequeue → service.run() → mark completed
+GUI:        Start click → SingleTaskView._start_transcription() → TranscriptionWorker → service.run(progress=...) → Qt signal
+Queue:      Add items → QueueItem → QueueRunner.run() → dequeue → service.run() → mark completed
 Bookmarklet: Browser click → POST /add-url → AddUrlHandler → BatchQueueStore.enqueue() → GUI auto-refresh
 URL:        SourceSpec(url) → _run_url_source() → UrlAudioDownloader → pipeline → optional media preserve
 Chunk flow: transcribe_clip() → FixedDurationChunkPlanner [30s+3s overlap] → Executor [serial/parallel, retry×1] → MergePolicy → ConsistencyChecker → Deduplicator → Cache.persist()
 ```
+
+## GUI Architecture (v0.3.0+)
+
+**New QStackedWidget Architecture**: Single main window with toolbar navigation between views.
+
+```
+NewMainWindow (QMainWindow)
+├── Toolbar: Settings | Single Task | Library | Queue
+└── QStackedWidget
+    ├── [0] SingleTaskView — Source selection, transcription controls, Run Details, Workspace
+    ├── [1] LibraryView — Transcript library with filters, sorting, and actions
+    └── [2] QueueView — Batch queue with local file + URL support, bookmarklet server
+```
+
+**Key Features**:
+- **Settings Dialog**: Standalone dialog (not embedded), saves space
+- **Single Task View**: Local files, URLs, system audio capture in one view
+- **Library View**: Full filtering (source, status, opened), sorting, actions
+- **Queue View**: Supports both local files and URLs, bookmarklet server integration
+- **Signal-based communication**: Loose coupling between views and main window
+- **Auto-indexing**: Completed transcriptions automatically added to library
+- **Queue file watcher**: Auto-refresh when queue changes externally
+
+**Migration from v0.2.x**:
+- Old `MainWindow` (1198 lines) → New `NewMainWindow` (375 lines)
+- Embedded settings → `SettingsDialog` (240 lines)
+- Views dialog tabs → Standalone views (SingleTaskView 350, LibraryView 230, QueueView 450 lines)
+- Queue URL-only → Queue supports local files + URLs
 
 ## Batch Queue System
 
 **Architecture**: Sequential processor with persistent JSON queue, auto-retry, and drag-reorder UI.
 
 **Key components**:
-- `QueueItem` — frozen dataclass with source, settings snapshot, output strategy, status, retry count
+- `QueueItem` — frozen dataclass with source (local or URL), settings snapshot, output strategy, status, retry count
 - `BatchQueueStore` — JSON persistence at `{AppData}/FlowScribe/batch-queue.json`, full-rewrite on mutation
 - `QueueRunner` — QObject on QThread, dequeues items one by one, calls `TranscriptionService.run()` per item
-- `QueueTabWidget` — UI in Views dialog with URL paste, file import (.txt/.csv/.xlsx), drag-reorder list
+- `QueueView` — UI with local file + URL support, file import (.txt/.csv/.xlsx), drag-reorder list
 
 **Features**:
+- **Local file support**: Add local media files directly to queue (v0.3.0+)
 - Multi-URL import from text/CSV/Excel with deduplication (blocks pending/running/completed, allows failed)
 - Smart URL extraction from rich text clipboard (HTML href parsing)
 - Batch output strategies: unified directory, per-source subdirs, template naming
@@ -128,6 +160,7 @@ Chunk flow: transcribe_clip() → FixedDurationChunkPlanner [30s+3s overlap] →
 - Settings snapshot at enqueue time (output dir, formats, model, language, etc.)
 - Queue persistence across GUI restarts
 - **File watcher integration**: GUI auto-refreshes when queue file changes (e.g., from Bookmarklet server)
+- **Bookmarklet server**: Integrated HTTP server for browser-based URL addition
 - Completion notification with sound (planned)
 
 **Important notes**:

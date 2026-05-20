@@ -66,6 +66,9 @@ class QueueItemSettingsDialog(QDialog):
         output_dir_row.addWidget(self.output_dir_input)
         output_dir_row.addWidget(output_dir_button)
 
+        self.output_name_input = QLineEdit()
+        self.output_name_input.setPlaceholderText("Optional custom output name")
+
         self.format_checks: dict[str, QCheckBox] = {}
         format_row = QHBoxLayout()
         for fmt in SUPPORTED_GUI_FORMATS:
@@ -78,9 +81,11 @@ class QueueItemSettingsDialog(QDialog):
 
         output_layout.addWidget(QLabel("Output directory"), 0, 0)
         output_layout.addLayout(output_dir_row, 0, 1)
-        output_layout.addWidget(QLabel("Output formats"), 1, 0)
-        output_layout.addLayout(format_row, 1, 1)
-        output_layout.addWidget(self.overwrite_check, 2, 1)
+        output_layout.addWidget(QLabel("Output name"), 1, 0)
+        output_layout.addWidget(self.output_name_input, 1, 1)
+        output_layout.addWidget(QLabel("Output formats"), 2, 0)
+        output_layout.addLayout(format_row, 2, 1)
+        output_layout.addWidget(self.overwrite_check, 3, 1)
 
         # Model Settings
         model_group = QGroupBox("Model Settings")
@@ -209,6 +214,7 @@ class QueueItemSettingsDialog(QDialog):
     def _load_settings(self, settings: QueueItemSettings) -> None:
         """Load settings into UI controls."""
         self.output_dir_input.setText(str(settings.output_dir))
+        self.output_name_input.setText(settings.output_name_base)
 
         for fmt in SUPPORTED_GUI_FORMATS:
             self.format_checks[fmt].setChecked(fmt in settings.output_formats)
@@ -287,6 +293,7 @@ class QueueItemSettingsDialog(QDialog):
 
         return QueueItemSettings(
             output_dir=Path(self.output_dir_input.text().strip() or "outputs"),
+            output_name_base=self.output_name_input.text().strip(),
             model_name=self.model_combo.currentText().strip() or "small",
             language=language,
             preset=preset,
