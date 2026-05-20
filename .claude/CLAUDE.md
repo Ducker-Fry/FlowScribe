@@ -199,6 +199,8 @@ NewMainWindow (QMainWindow)
 
 ## Testing Patterns
 
+**CRITICAL: AI writes tests, user executes complex tests. AI MUST NOT run tests with large I/O or output.**
+
 - pytest with `testpaths = ["tests"]`; Ruff lint (line-length 100)
 - Mock-based testing for service, URL downloader, progressive executor, queue system, deduplication
 - 41 test files covering core, queue, GUI utilities, and integration scenarios
@@ -226,10 +228,12 @@ NewMainWindow (QMainWindow)
 - Check CLAUDE_CLASSES.md reference table before reading implementation files
 
 **Testing Strategy**:
-- Run **targeted tests only** — specify exact test file/function (e.g., `pytest tests/test_queue_store.py::test_enqueue`)
+- **AI writes test files, user executes complex tests** — AI creates/modifies test files, provides execution commands, user runs and shares results
+- **AI only runs simple, low-token tests** — quick unit tests with minimal output (e.g., single test function, small test files)
+- **Complex tests → provide implementation plan** — for integration tests, full test suites, or tests with large I/O, provide detailed test plan and commands for user execution
+- Run **targeted tests only** when AI executes — specify exact test file/function (e.g., `pytest tests/test_queue_store.py::test_enqueue`)
 - Redirect output and show summary: `python -m pytest tests/test_file.py > test.log 2>&1; Get-Content test.log -Tail 10`
 - Skip full test suite unless explicitly requested or in wrap-up mode
-- User runs tests and shares relevant output — don't run tests proactively
 - Avoid `--verbose` flag — use default output or `-q` for quieter output
 
 **Command Execution**:
@@ -265,6 +269,8 @@ NewMainWindow (QMainWindow)
 **Anti-Patterns to Avoid**:
 - ❌ Reading entire file to verify a small edit
 - ❌ Running full test suite for a single-function change
+- ❌ Running complex tests with large I/O or output (user executes these)
+- ❌ Reading test output files that exceed 100 lines
 - ❌ Reading multiple files to understand context before making a targeted fix
 - ❌ Re-reading files already read in the same conversation
 - ❌ Verbose command output without filtering
@@ -275,17 +281,23 @@ NewMainWindow (QMainWindow)
 **Preferred Patterns**:
 - ✅ Grep → targeted read → edit → done
 - ✅ User provides error → direct fix → user verifies
+- ✅ Write test file → provide execution command → user runs and shares results
+- ✅ Simple test (< 5 functions, minimal I/O) → AI runs directly
+- ✅ Complex test → provide detailed test plan and commands for user
 - ✅ Glob to find files → read only relevant ones
 - ✅ Redirect output → show summary only
 - ✅ Trust edit succeeded → move to next task
 
 ## Code Organization Guidelines
 
+**CRITICAL: Maximum 500 lines per file. MUST split files that exceed this limit.**
+
 **File Size Limits**: To maintain readability and avoid context overflow:
-- **Maximum file size**: 500 lines per file (strict limit)
+- **Maximum file size**: 500 lines per file (STRICT LIMIT - NO EXCEPTIONS)
 - **Target file size**: 200-300 lines per file (recommended)
-- **When creating new files**: Always check line count before writing
-- **When modifying files**: If a file exceeds 500 lines after changes, split it into focused modules
+- **When creating new files**: MUST check line count before writing
+- **When modifying files**: If a file exceeds 500 lines after changes, MUST split it into focused modules
+- **Before any Write operation**: Count lines in new content, refuse to write if > 500 lines
 
 **Refactoring Strategy**:
 - Use **Mixin pattern** for large classes (see `gui/main_window.py` → `gui/windows/*.py`)
