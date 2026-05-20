@@ -229,10 +229,51 @@ def test_transcript_library_store_can_cleanup_missing_transcript_entries(tmp_pat
 
     missing_transcript.unlink()
 
+    store.refresh_missing_statuses()
     removed = store.remove_missing_entries()
 
     assert len(removed) == 1
     assert removed[0].display_label == "Missing"
+    remaining = store.list_entries()
+    assert len(remaining) == 1
+    assert remaining[0].display_label == "Keep"
+
+
+def test_transcript_library_store_can_cleanup_entries_with_missing_outputs(tmp_path: Path) -> None:
+    from flowscribe.library import LibraryOutputRecord
+
+    output_dir = tmp_path / "outputs"
+    output_dir.mkdir()
+    keep_transcript = output_dir / "keep.json"
+    keep_transcript.write_text('{"segments": []}', encoding="utf-8")
+    keep_txt = output_dir / "keep.txt"
+    keep_txt.write_text("transcript text", encoding="utf-8")
+
+    missing_outputs_transcript = output_dir / "missing_outputs.json"
+    missing_outputs_transcript.write_text('{"segments": []}', encoding="utf-8")
+    missing_txt = output_dir / "missing_outputs.txt"
+
+    store = TranscriptLibraryStore(tmp_path / "library.json")
+
+    keep_entry = TranscriptLibraryEntry.create(
+        transcript_path=keep_transcript,
+        output_dir=output_dir,
+        display_label="Keep",
+        outputs=(LibraryOutputRecord.from_path(keep_txt),),
+    )
+    missing_outputs_entry = TranscriptLibraryEntry.create(
+        transcript_path=missing_outputs_transcript,
+        output_dir=output_dir,
+        display_label="MissingOutputs",
+        outputs=(LibraryOutputRecord.from_path(missing_txt),),
+    )
+    store.save_entries((keep_entry, missing_outputs_entry))
+
+    store.refresh_missing_statuses()
+    removed = store.remove_missing_entries()
+
+    assert len(removed) == 1
+    assert removed[0].display_label == "MissingOutputs"
     remaining = store.list_entries()
     assert len(remaining) == 1
     assert remaining[0].display_label == "Keep"

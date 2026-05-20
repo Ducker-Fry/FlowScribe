@@ -109,18 +109,10 @@ class TranscriptLibraryStore:
 
     def remove_missing_entries(self) -> tuple[TranscriptLibraryEntry, ...]:
         entries = list(self.list_entries())
-        removed = tuple(
-            entry
-            for entry in entries
-            if "transcript" in entry.missing_paths
-        )
+        removed = tuple(entry for entry in entries if entry.missing)
         if not removed:
             return ()
-        remaining = tuple(
-            entry
-            for entry in entries
-            if "transcript" not in entry.missing_paths
-        )
+        remaining = tuple(entry for entry in entries if not entry.missing)
         self.save_entries(remaining)
         return removed
 
