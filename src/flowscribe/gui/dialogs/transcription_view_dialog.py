@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import Qt, QSize, QUrl
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import (
@@ -604,8 +604,9 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
             return
 
         for hit in hits:
+            start_time = f"{hit.start_seconds:.1f}s" if hit.start_seconds is not None else "?s"
             self.search_results.addItem(
-                f"[{hit.start:.1f}s] {hit.matched_text}"
+                f"[{start_time}] {hit.matched_text}"
             )
 
         if hits:
