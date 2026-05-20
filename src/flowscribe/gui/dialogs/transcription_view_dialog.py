@@ -59,6 +59,8 @@ class TranscriptionViewDialog(QDialog):
         self._search_hits: tuple = ()
         self._workspace_artifact_paths: tuple[Path, ...] = ()
         self._workspace_artifact_quick_buttons: dict[str, QPushButton] = {}
+        self._current_segment_index: int = -1
+        self._segment_modified: bool = False
 
         self._setup_ui(run_output)
 
@@ -373,17 +375,99 @@ class TranscriptionViewDialog(QDialog):
 
     def _load_transcript(self, path: Path) -> None:
         """Load transcript and discover artifacts."""
+        from flowscribe.gui.transcript_viewer import (
+            load_transcript_view,
+            render_transcript_summary,
+        )
+        from flowscribe.transcript.editing import load_editable_transcript
+        from flowscribe.gui.utils.library import _discover_transcript_output_paths
+
         self._transcript_path = path
         self.setWindowTitle(f"Transcription View - {path.name}")
 
-        # TODO: Implement full transcript loading with:
-        # - load_transcript_view()
-        # - load_editable_transcript()
-        # - discover artifacts
-        # - populate segments list
-        # - enable editing controls
+        try:
+            # Load transcript view
+            self._transcript_view = load_transcript_view(path)
 
-        self.open_media_button.setEnabled(True)
+            # Load editable transcript
+            self._editable_transcript = load_editable_transcript(path)
+
+            # Update summary
+            summary_html = render_transcript_summary(self._transcript_view)
+            self.transcript_summary.setHtml(summary_html)
+
+            # Populate segments list
+            self._populate_segments()
+
+            # Discover and load artifacts
+            artifact_paths = _discover_transcript_output_paths(path)
+            self._load_artifacts(tuple(artifact_paths))
+
+            # Enable controls
+            self.open_media_button.setEnabled(True)
+            self.search_button.setEnabled(True)
+            self.search_input.setEnabled(True)
+
+            self.media_status_label.setText(
+                "Transcript loaded. Click 'Bind Media To Transcript' to sync with media file."
+            )
+
+        except Exception as e:
+            self.transcript_summary.setPlainText(f"Error loading transcript: {e}")
+            self.media_status_label.setText(f"Failed to load transcript: {e}")
+
+    def _populate_segments(self) -> None:
+        """Populate transcript segments list."""
+        from flowscribe.transcript.editing import render_editable_segment_line
+
+        if not self._editable_transcript:
+            return
+
+        self.transcript_segments.clear()
+        for segment in self._editable_transcript.segments:
+            line = render_editable_segment_line(segment)
+            self.transcript_segments.addItem(line)
+
+    def _load_artifacts(self, paths: tuple[Path, ...]) -> None:
+        """Load artifact files for viewing."""
+        from flowscribe.gui.utils.artifacts import (
+            _normalize_viewable_artifact_paths,
+            _sort_workspace_artifact_paths,
+            _artifact_selector_label,
+        )
+
+        normalized = _sort_workspace_artifact_paths(
+            _normalize_viewable_artifact_paths(paths)
+        )
+        self._workspace_artifact_paths = normalized
+
+        self.artifact_selector.blockSignals(True)
+        try:
+            self.artifact_selector.clear()
+            for path in normalized:
+                self.artifact_selector.addItem(_artifact_selector_label(path), str(path))
+        finally:
+            self.artifact_selector.blockSignals(False)
+
+        if normalized:
+            self._show_workspace_artifact(normalized[0])
+            self._refresh_workspace_artifact_buttons()
+        else:
+            self.artifact_status_label.setText(
+                "No artifacts found. Generate output files to view them here."
+            )
+
+    def _refresh_workspace_artifact_buttons(self) -> None:
+        """Update artifact quick switch buttons."""
+        from flowscribe.gui.utils.artifacts import _artifact_compare_group
+
+        for group, button in self._workspace_artifact_quick_buttons.items():
+            button.setEnabled(
+                any(
+                    _artifact_compare_group(path) == group
+                    for path in self._workspace_artifact_paths
+                )
+            )
 
     # Placeholder methods (to be implemented with full functionality)
     def _bind_media_to_transcript(self) -> None:
@@ -412,43 +496,234 @@ class TranscriptionViewDialog(QDialog):
 
     def _run_transcript_search(self) -> None:
         """Run transcript search."""
-        pass
+        from flowscribe.gui.transcript_viewer import search_transcript_view
+
+        if not self._transcript_view:
+            return
+
+        query = self.search_input.text().strip()
+        if not query:
+            self.search_results.clear()
+            return
+
+        try:
+            hits = search_transcript_view(self._transcript_view, query)
+            self._search_hits = hits
+
+            self.search_results.clear()
+            for hit in hits:
+                self.search_results.addItem(
+                    f"[{hit.start:.1f}s] {hit.matched_text[:80]}..."
+                )
+
+            if hits:
+                self.search_results.setCurrentRow(0)
+            else:
+                self.search_results.addItem("No results found")
+
+        except Exception as e:
+            self.search_results.clear()
+            self.search_results.addItem(f"Search error: {e}")
 
     def _jump_to_selected_hit(self) -> None:
         """Jump to selected search hit."""
-        pass
+        from flowscribe.gui.transcript_viewer import transcript_segment_index_for_seconds
+
+        row = self.search_results.currentRow()
+        if row < 0 or row >= len(self._search_hits):
+            return
+
+        hit = self._search_hits[row]
+        if not self._transcript_view:
+            return
+
+        # Find segment containing this hit
+        segment_index = transcript_segment_index_for_seconds(
+            self._transcript_view, hit.start
+        )
+        if segment_index >= 0:
+            self.transcript_segments.setCurrentRow(segment_index)
+            self._activate_selected_segment()
 
     def _activate_selected_segment(self) -> None:
         """Activate selected segment."""
-        pass
+        from flowscribe.transcript.editing import render_editable_segment_line
+
+        row = self.transcript_segments.currentRow()
+        if row < 0 or not self._editable_transcript:
+            return
+
+        if row >= len(self._editable_transcript.segments):
+            return
+
+        segment = self._editable_transcript.segments[row]
+        self._current_segment_index = row
+
+        # Update editor
+        self.segment_editor.blockSignals(True)
+        self.segment_editor.setPlainText(segment.text)
+        self.segment_editor.blockSignals(False)
+        self.segment_editor.setEnabled(True)
+
+        # Update status
+        self.transcript_edit_status_label.setText(
+            f"Editing segment {row + 1} of {len(self._editable_transcript.segments)} | "
+            f"[{segment.start:.2f}s - {segment.end:.2f}s]"
+        )
+
+        # Enable buttons
+        self.segment_revert_button.setEnabled(True)
+        self.save_transcript_button.setEnabled(True)
+        self.save_transcript_copy_button.setEnabled(True)
+        self.reexport_transcript_button.setEnabled(True)
 
     def _on_segment_editor_text_changed(self) -> None:
         """Handle segment editor text change."""
-        pass
+        if not hasattr(self, '_current_segment_index'):
+            return
+
+        # Mark as modified
+        if hasattr(self, '_segment_modified'):
+            self._segment_modified = True
 
     def _revert_selected_segment_edit(self) -> None:
         """Revert selected segment edit."""
-        pass
+        if not hasattr(self, '_current_segment_index') or not self._editable_transcript:
+            return
+
+        row = self._current_segment_index
+        if row >= len(self._editable_transcript.segments):
+            return
+
+        segment = self._editable_transcript.segments[row]
+        self.segment_editor.blockSignals(True)
+        self.segment_editor.setPlainText(segment.text)
+        self.segment_editor.blockSignals(False)
+
+        self.transcript_edit_status_label.setText("Segment reverted to original text")
 
     def _save_transcript_edits(self, force_save_as: bool = False) -> None:
         """Save transcript edits."""
-        pass
+        from flowscribe.transcript.editing import (
+            save_editable_transcript,
+            update_editable_transcript_segment,
+        )
+
+        if not self._editable_transcript or not self._transcript_path:
+            return
+
+        # Update current segment if modified
+        if hasattr(self, '_current_segment_index'):
+            row = self._current_segment_index
+            if row < len(self._editable_transcript.segments):
+                new_text = self.segment_editor.toPlainText()
+                self._editable_transcript = update_editable_transcript_segment(
+                    self._editable_transcript, row, new_text
+                )
+
+        try:
+            if force_save_as:
+                from PySide6.QtWidgets import QFileDialog
+                save_path, _ = QFileDialog.getSaveFileName(
+                    self,
+                    "Save Transcript As",
+                    str(self._transcript_path.with_stem(self._transcript_path.stem + "_edited")),
+                    "JSON files (*.json)"
+                )
+                if not save_path:
+                    return
+                save_editable_transcript(self._editable_transcript, Path(save_path))
+                self.transcript_edit_status_label.setText(f"Saved as: {Path(save_path).name}")
+            else:
+                save_editable_transcript(self._editable_transcript, self._transcript_path)
+                self.transcript_edit_status_label.setText("Transcript saved successfully")
+
+            # Refresh segments list
+            self._populate_segments()
+
+        except Exception as e:
+            self.transcript_edit_status_label.setText(f"Error saving transcript: {e}")
 
     def _reexport_current_transcript(self) -> None:
         """Re-export current transcript."""
-        pass
+        from flowscribe.transcript.reexport import reexport_transcript_json
+
+        if not self._transcript_path:
+            return
+
+        try:
+            output_paths = reexport_transcript_json(self._transcript_path)
+            self.transcript_edit_status_label.setText(
+                f"Re-exported {len(output_paths)} files successfully"
+            )
+            # Reload artifacts
+            artifact_paths = list(self._workspace_artifact_paths) + list(output_paths)
+            self._load_artifacts(tuple(artifact_paths))
+        except Exception as e:
+            self.transcript_edit_status_label.setText(f"Error re-exporting: {e}")
 
     def _show_selected_workspace_artifact(self, index: int) -> None:
         """Show selected workspace artifact."""
-        pass
+        if index < 0 or index >= len(self._workspace_artifact_paths):
+            return
+        self._show_workspace_artifact(self._workspace_artifact_paths[index])
 
-    def _open_selected_workspace_artifact_tab(self) -> None:
-        """Open selected workspace artifact in tab."""
-        pass
+    def _show_workspace_artifact(self, path: Path) -> None:
+        """Show workspace artifact."""
+        from flowscribe.gui.utils.artifacts import (
+            _read_viewable_artifact_text,
+            _render_json_artifact_html,
+            _artifact_format_label,
+            _artifact_summary,
+        )
+
+        if not path.is_file():
+            self.artifact_viewer.clear()
+            self.artifact_markdown_viewer.clear()
+            self.artifact_format_label.setText("Missing artifact")
+            self.artifact_status_label.setText(f"Artifact is missing: {path}")
+            self._refresh_workspace_artifact_buttons()
+            return
+
+        rendered = _read_viewable_artifact_text(path)
+        if path.suffix.lower() == ".json":
+            self.artifact_markdown_viewer.setHtml(_render_json_artifact_html(path, rendered))
+            self._workspace_artifact_viewer_stack.setCurrentWidget(self.artifact_markdown_viewer)
+        elif path.suffix.lower() == ".md":
+            self.artifact_markdown_viewer.setMarkdown(rendered)
+            self._workspace_artifact_viewer_stack.setCurrentWidget(self.artifact_markdown_viewer)
+        else:
+            self.artifact_viewer.setPlainText(rendered)
+            self._workspace_artifact_viewer_stack.setCurrentWidget(self.artifact_viewer)
+
+        self.artifact_format_label.setText(_artifact_format_label(path))
+        self.artifact_status_label.setText(
+            f"{_artifact_summary(path, rendered)} | Inspecting {path.name}"
+        )
+        self._refresh_workspace_artifact_buttons()
 
     def _show_workspace_artifact_group(self, group: str) -> None:
         """Show workspace artifact by group."""
-        pass
+        from flowscribe.gui.utils.artifacts import _artifact_compare_group
+
+        for index, path in enumerate(self._workspace_artifact_paths):
+            if _artifact_compare_group(path) != group:
+                continue
+            self.artifact_selector.setCurrentIndex(index)
+            self._show_workspace_artifact(path)
+            return
+        self.artifact_status_label.setText(f"No {group.replace('_', ' ')} artifact is available yet.")
+
+    def _open_selected_workspace_artifact_tab(self) -> None:
+        """Open selected workspace artifact in tab."""
+        # TODO: Implement opening artifact in new tab
+        # For now, just show a message
+        index = self.artifact_selector.currentIndex()
+        if index >= 0 and index < len(self._workspace_artifact_paths):
+            path = self._workspace_artifact_paths[index]
+            self.artifact_status_label.setText(
+                f"Tab view not yet implemented. Viewing {path.name} in current view."
+            )
 
     def update_run_output(self, output: str) -> None:
         """Update run details output."""
