@@ -59,6 +59,7 @@ class QueueView(QWidget):
         super().__init__(parent)
         self._settings = settings
         self._item_ids: list[str] = []
+        self._items_cache: dict[str, QueueItem] = {}  # Cache items by ID
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -305,45 +306,61 @@ class QueueView(QWidget):
 
         selected = self._get_selected_item_ids()
         if not selected:
-            self._status_label.setText("Select a queue item first")
+            self._status_label.setText("Please select a queue item first")
             return
 
         if len(selected) > 1:
-            self._status_label.setText("Select only one item to open its view")
+            self._status_label.setText("Please select only one item to open its view")
             return
 
         item_id = selected[0]
-        item = self._items_by_id.get(item_id)
+        item = self._items_cache.get(item_id)
         if not item:
-            self._status_label.setText("Item not found")
+            self._status_label.setText("Selected item not found in queue")
             return
 
-        # Check if item has completed and has a transcript
+        # Check if item has completed
         if item.status != "completed":
-            self._status_label.setText("Item must be completed to open view")
+            status_msg = {
+                "pending": "This item hasn't been transcribed yet. Start the queue to process it.",
+                "running": "This item is currently being transcribed. Wait for it to complete.",
+                "failed": "This item failed to transcribe. Try retrying it first.",
+            }.get(item.status, f"Cannot open view for item with status: {item.status}")
+            self._status_label.setText(status_msg)
             return
 
         # Find transcript JSON in output directory
         output_dir = item.settings.output_dir
+        if not output_dir or not output_dir.is_dir():
+            self._status_label.setText(
+                "Output directory not found. The transcription may have been moved or deleted."
+            )
+            return
+
+        # Look for JSON files in output directory
         transcript_path = None
-        if output_dir and output_dir.is_dir():
-            # Look for JSON files in output directory
-            for json_file in output_dir.glob("*.json"):
-                transcript_path = json_file
-                break
+        for json_file in output_dir.glob("*.json"):
+            transcript_path = json_file
+            break
 
         if not transcript_path or not transcript_path.is_file():
-            self._status_label.setText("No transcript found for this item")
+            self._status_label.setText(
+                "Transcript file not found in output directory. "
+                "The file may have been moved or deleted."
+            )
             return
 
         # Create and show view dialog
-        view_dialog = TranscriptionViewDialog(
-            self,
-            transcript_path=transcript_path,
-            run_output="",  # Queue items don't have run output stored
-        )
-        view_dialog.show()
-        self._status_label.setText(f"Opened view for {item_id}")
+        try:
+            view_dialog = TranscriptionViewDialog(
+                self,
+                transcript_path=transcript_path,
+                run_output="",  # Queue items don't have run output stored
+            )
+            view_dialog.show()
+            self._status_label.setText(f"Opened view for: {item.source.value}")
+        except Exception as e:
+            self._status_label.setText(f"Error opening view: {e}")
 
     def _on_clear_completed(self) -> None:
         """Clear completed items."""
@@ -394,9 +411,11 @@ class QueueView(QWidget):
         """Refresh queue display with current items."""
         self._queue_list.clear()
         self._item_ids.clear()
+        self._items_cache.clear()
 
         for item in items:
             self._item_ids.append(item.item_id)
+            self._items_cache[item.item_id] = item  # Cache item for later access
             display_text = self._format_item_display(item)
             list_item = QListWidgetItem(display_text)
             list_item.setFlags(
