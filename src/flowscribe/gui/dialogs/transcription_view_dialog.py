@@ -378,6 +378,7 @@ class TranscriptionViewDialog(QDialog):
         from flowscribe.gui.transcript_viewer import (
             load_transcript_view,
             render_transcript_summary,
+            resolve_transcript_media_path,
         )
         from flowscribe.transcript.editing import load_editable_transcript
         from flowscribe.gui.utils.library import _discover_transcript_output_paths
@@ -403,14 +404,20 @@ class TranscriptionViewDialog(QDialog):
             artifact_paths = _discover_transcript_output_paths(path)
             self._load_artifacts(tuple(artifact_paths))
 
+            # Try to auto-bind media from transcript source
+            media_path = resolve_transcript_media_path(self._transcript_view)
+            if media_path and media_path.is_file():
+                self._bind_media(media_path)
+            else:
+                self.media_status_label.setText(
+                    "Media file not found. Click 'Bind Media To Transcript' to select manually."
+                )
+                self.media_binding_label.setText("Binding: Unbound")
+
             # Enable controls
             self.open_media_button.setEnabled(True)
             self.search_button.setEnabled(True)
             self.search_input.setEnabled(True)
-
-            self.media_status_label.setText(
-                "Transcript loaded. Click 'Bind Media To Transcript' to sync with media file."
-            )
 
         except Exception as e:
             self.transcript_summary.setPlainText(f"Error loading transcript: {e}")
@@ -469,30 +476,81 @@ class TranscriptionViewDialog(QDialog):
                 )
             )
 
-    # Placeholder methods (to be implemented with full functionality)
+    # Media playback methods
     def _bind_media_to_transcript(self) -> None:
+        """Bind media file to transcript (manual selection)."""
+        from PySide6.QtWidgets import QFileDialog
+
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Media File",
+            "",
+            "Media files (*.mp4 *.mp3 *.wav *.m4a *.mkv *.avi *.flac *.ogg *.webm);;All files (*.*)"
+        )
+        if file_path:
+            self._bind_media(Path(file_path))
+
+    def _bind_media(self, media_path: Path) -> None:
         """Bind media file to transcript."""
-        pass
+        if not media_path.is_file():
+            self.media_status_label.setText(f"Media file not found: {media_path}")
+            self.media_binding_label.setText("Binding: Failed")
+            return
+
+        try:
+            # Load media into player
+            self._media_player.setSource(QUrl.fromLocalFile(str(media_path)))
+
+            # Update UI
+            self.media_binding_label.setText(f"Binding: {media_path.name}")
+            self.media_status_label.setText(
+                f"Media bound successfully. Duration will appear when ready."
+            )
+
+            # Enable playback controls
+            self.play_media_button.setEnabled(True)
+            self.media_position_slider.setEnabled(True)
+
+        except Exception as e:
+            self.media_status_label.setText(f"Error binding media: {e}")
+            self.media_binding_label.setText("Binding: Error")
 
     def _toggle_media_playback(self) -> None:
         """Toggle media playback."""
-        pass
+        if self._media_player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+            self._media_player.pause()
+            self.play_media_button.setText("Play")
+        else:
+            self._media_player.play()
+            self.play_media_button.setText("Pause")
 
     def _seek_media_milliseconds(self, position: int) -> None:
         """Seek media to position."""
-        pass
+        self._media_player.setPosition(position)
 
     def _on_media_position_changed(self, position: int) -> None:
         """Handle media position change."""
-        pass
+        self.media_position_slider.blockSignals(True)
+        self.media_position_slider.setValue(position)
+        self.media_position_slider.blockSignals(False)
 
     def _on_media_duration_changed(self, duration: int) -> None:
         """Handle media duration change."""
-        pass
+        self.media_position_slider.setRange(0, duration)
+        # Update status with duration
+        duration_seconds = duration / 1000.0
+        minutes = int(duration_seconds // 60)
+        seconds = int(duration_seconds % 60)
+        self.media_status_label.setText(
+            f"Media ready. Duration: {minutes}:{seconds:02d}"
+        )
 
     def _on_media_playback_state_changed(self, state) -> None:
         """Handle media playback state change."""
-        pass
+        if state == QMediaPlayer.PlaybackState.PlayingState:
+            self.play_media_button.setText("Pause")
+        else:
+            self.play_media_button.setText("Play")
 
     def _run_transcript_search(self) -> None:
         """Run transcript search."""
