@@ -433,8 +433,8 @@ class TranscriptionViewDialog(QDialog):
         from flowscribe.gui.utils.artifacts import (
             _normalize_viewable_artifact_paths,
             _sort_workspace_artifact_paths,
-            _artifact_selector_label,
         )
+        from flowscribe.gui.utils.formatting import _artifact_selector_label
 
         normalized = _sort_workspace_artifact_paths(
             _normalize_viewable_artifact_paths(paths)
@@ -459,7 +459,7 @@ class TranscriptionViewDialog(QDialog):
 
     def _refresh_workspace_artifact_buttons(self) -> None:
         """Update artifact quick switch buttons."""
-        from flowscribe.gui.utils.artifacts import _artifact_compare_group
+        from flowscribe.gui.utils.formatting import _artifact_compare_group
 
         for group, button in self._workspace_artifact_quick_buttons.items():
             button.setEnabled(
@@ -568,7 +568,7 @@ class TranscriptionViewDialog(QDialog):
         # Update status
         self.transcript_edit_status_label.setText(
             f"Editing segment {row + 1} of {len(self._editable_transcript.segments)} | "
-            f"[{segment.start:.2f}s - {segment.end:.2f}s]"
+            f"[{segment.start_seconds:.2f}s - {segment.end_seconds:.2f}s]"
         )
 
         # Enable buttons
@@ -670,8 +670,8 @@ class TranscriptionViewDialog(QDialog):
 
     def _show_workspace_artifact(self, path: Path) -> None:
         """Show workspace artifact."""
-        from flowscribe.gui.utils.artifacts import (
-            _read_viewable_artifact_text,
+        from flowscribe.gui.utils.artifacts import _read_viewable_artifact_text
+        from flowscribe.gui.utils.formatting import (
             _render_json_artifact_html,
             _artifact_format_label,
             _artifact_summary,
@@ -704,7 +704,7 @@ class TranscriptionViewDialog(QDialog):
 
     def _show_workspace_artifact_group(self, group: str) -> None:
         """Show workspace artifact by group."""
-        from flowscribe.gui.utils.artifacts import _artifact_compare_group
+        from flowscribe.gui.utils.formatting import _artifact_compare_group
 
         for index, path in enumerate(self._workspace_artifact_paths):
             if _artifact_compare_group(path) != group:
