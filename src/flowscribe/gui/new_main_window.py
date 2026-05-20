@@ -162,8 +162,32 @@ class NewMainWindow(QMainWindow):
             for artifacts in result.outputs:
                 for path in artifacts.paths:
                     if path.suffix.lower() == ".json":
-                        self._library_store.upsert_entry_from_transcript(path)
+                        self._add_transcript_to_library(path)
             self._library_view.refresh_library()
+
+    def _add_transcript_to_library(self, transcript_path: Path) -> None:
+        """Add transcript to library."""
+        from flowscribe.library import TranscriptLibraryEntry, LibraryOutputRecord
+        from flowscribe.gui.utils.library import _discover_transcript_output_paths
+
+        try:
+            # Discover output files
+            output_paths = _discover_transcript_output_paths(transcript_path)
+            outputs = tuple(LibraryOutputRecord.from_path(p) for p in output_paths)
+
+            # Create entry
+            entry = TranscriptLibraryEntry.create(
+                transcript_path=transcript_path,
+                output_dir=transcript_path.parent,
+                display_label=transcript_path.stem,
+                source_kind="local",  # Default to local
+                outputs=outputs,
+            )
+
+            # Upsert to store
+            self._library_store.upsert_entry(entry)
+        except Exception as e:
+            self.statusBar().showMessage(f"Failed to add to library: {e}")
 
     def _on_transcription_error(self, error: str) -> None:
         """Handle transcription error."""
