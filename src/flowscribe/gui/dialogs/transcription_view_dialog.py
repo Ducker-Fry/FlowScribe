@@ -23,6 +23,8 @@ from PySide6.QtWidgets import (
     QListWidget,
     QPlainTextEdit,
     QPushButton,
+    QSizePolicy,
+    QSlider,
     QSplitter,
     QStackedWidget,
     QTabWidget,
@@ -65,30 +67,24 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
         self._search_hits = ()
         self._workspace_artifacts = ()
         self._workspace_artifact_paths = ()
+        self._workspace_artifact_quick_buttons = {}
 
-        self._setup_ui()
-        if transcript_path:
-            self._load_transcript_json(transcript_path, allow_unsaved_prompt=False)
+        self.setWindowTitle("Transcription View")
+        self.resize(980, 760)
         self.setWindowFlag(Qt.WindowType.Window, True)
         self.setWindowFlag(Qt.WindowType.WindowMinimizeButtonHint, True)
         self.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint, True)
         self.setWindowFlag(Qt.WindowType.WindowContextHelpButtonHint, False)
 
-        self._transcript_path = transcript_path
-        self._transcript_view = None
-        self._editable_transcript = None
-        self._search_hits: tuple = ()
-        self._workspace_artifact_paths: tuple[Path, ...] = ()
-        self._workspace_artifact_quick_buttons: dict[str, QPushButton] = {}
         self._current_segment_index: int = -1
         self._segment_modified: bool = False
 
-        self._setup_ui(run_output)
+        self._setup_ui()
 
         if transcript_path and transcript_path.is_file():
             self._load_transcript(transcript_path)
 
-    def _setup_ui(self, run_output: str) -> None:
+    def _setup_ui(self) -> None:
         """Initialize UI components."""
         layout = QVBoxLayout(self)
 
@@ -110,12 +106,12 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
         layout.addWidget(self.tabs)
 
         # Run Details tab
-        self._create_run_details_tab(run_output)
+        self._create_run_details_tab()
 
         # Workspace tab
         self._create_workspace_tab()
 
-    def _create_run_details_tab(self, run_output: str) -> None:
+    def _create_run_details_tab(self) -> None:
         """Create run details tab."""
         run_details_page = QWidget(self)
         run_details_layout = QVBoxLayout(run_details_page)
@@ -123,7 +119,7 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
 
         self.preview_output = QTextEdit()
         self.preview_output.setReadOnly(True)
-        self.preview_output.setPlainText(run_output)
+        self.preview_output.setPlainText(self._run_output)
         self.preview_output.setPlaceholderText("Transcription progress and output will appear here.")
         run_details_layout.addWidget(self.preview_output)
 
