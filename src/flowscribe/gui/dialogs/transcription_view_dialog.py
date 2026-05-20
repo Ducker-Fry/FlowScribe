@@ -554,9 +554,11 @@ class TranscriptionViewDialog(QDialog):
 
     def _run_transcript_search(self) -> None:
         """Run transcript search."""
-        from flowscribe.gui.transcript_viewer import search_transcript_view
+        from flowscribe.search import search_transcript
 
-        if not self._transcript_view:
+        if not self._transcript_path:
+            self.search_results.clear()
+            self.search_results.addItem("No transcript loaded")
             return
 
         query = self.search_input.text().strip()
@@ -565,19 +567,27 @@ class TranscriptionViewDialog(QDialog):
             return
 
         try:
-            hits = search_transcript_view(self._transcript_view, query)
+            # Use the search module to search transcript
+            hits = search_transcript(self._transcript_path, query)
             self._search_hits = hits
 
             self.search_results.clear()
-            for hit in hits:
-                self.search_results.addItem(
-                    f"[{hit.start:.1f}s] {hit.matched_text[:80]}..."
-                )
+            if not hits:
+                self.search_results.addItem("No results found")
+                return
 
+            # Display all search results with context
+            for hit in hits:
+                # Format: [time] context with matched text
+                time_str = f"[{hit.start:.1f}s - {hit.end:.1f}s]"
+                # Show context around the match (up to 100 chars)
+                context = hit.text[:100] + ("..." if len(hit.text) > 100 else "")
+                display_text = f"{time_str} {context}"
+                self.search_results.addItem(display_text)
+
+            # Select first result
             if hits:
                 self.search_results.setCurrentRow(0)
-            else:
-                self.search_results.addItem("No results found")
 
         except Exception as e:
             self.search_results.clear()
@@ -585,23 +595,26 @@ class TranscriptionViewDialog(QDialog):
 
     def _jump_to_selected_hit(self) -> None:
         """Jump to selected search hit."""
-        from flowscribe.gui.transcript_viewer import transcript_segment_index_for_seconds
-
         row = self.search_results.currentRow()
         if row < 0 or row >= len(self._search_hits):
             return
 
         hit = self._search_hits[row]
-        if not self._transcript_view:
-            return
 
-        # Find segment containing this hit
-        segment_index = transcript_segment_index_for_seconds(
-            self._transcript_view, hit.start
-        )
-        if segment_index >= 0:
-            self.transcript_segments.setCurrentRow(segment_index)
-            self._activate_selected_segment()
+        # Seek media player to the hit time
+        if self._media_player.source().isValid():
+            position_ms = int(hit.start * 1000)
+            self._media_player.setPosition(position_ms)
+
+        # Find and select the corresponding segment
+        if self._editable_transcript:
+            for idx, segment in enumerate(self._editable_transcript.segments):
+                if (segment.start_seconds is not None and
+                    segment.end_seconds is not None and
+                    segment.start_seconds <= hit.start <= segment.end_seconds):
+                    self.transcript_segments.setCurrentRow(idx)
+                    self._activate_selected_segment()
+                    break
 
     def _activate_selected_segment(self) -> None:
         """Activate selected segment."""
@@ -616,6 +629,11 @@ class TranscriptionViewDialog(QDialog):
 
         segment = self._editable_transcript.segments[row]
         self._current_segment_index = row
+
+        # Seek media player to segment start time
+        if segment.start_seconds is not None and self._media_player.source().isValid():
+            position_ms = int(segment.start_seconds * 1000)
+            self._media_player.setPosition(position_ms)
 
         # Update editor
         self.segment_editor.blockSignals(True)
