@@ -281,9 +281,21 @@ class TranscriptionService:
             )
         )
         self._ensure_not_canceled(should_cancel)
+
+        from flowscribe.input.url_downloader import DownloadOptions as UrlDownloadOptions
+
+        url_download_opts = None
+        if source.download_options:
+            url_download_opts = UrlDownloadOptions(
+                media_kind=source.url_media_kind if source.keep_media else "audio",
+                quality=source.download_options.quality,
+                prefer_format=source.download_options.prefer_format,
+            )
+
         download = downloader.download_audio(
             source.value,
             saved_media_kind=source.url_media_kind if source.keep_media else "audio",
+            download_options=url_download_opts,
         )
         try:
             self._emit_progress(
@@ -348,6 +360,11 @@ class TranscriptionService:
                 source_value=source.value,
                 auto_bind_media=source.auto_bind_media,
             )
+
+            # Update JSON files with media binding info
+            if preserved_media_path is not None and source.auto_bind_media:
+                self._update_json_media_binding(artifacts, preserved_media_path, download.saved_media_kind)
+
             for path in artifacts.paths:
                 self._emit_progress(
                     progress,
@@ -495,6 +512,34 @@ class TranscriptionService:
                 resumed=update.resumed,
             ),
         )
+
+    def _update_json_media_binding(
+        self,
+        artifacts: OutputArtifacts,
+        media_path: Path,
+        media_kind: str,
+    ) -> None:
+        """Update JSON transcript files with media binding information."""
+        import json
+
+        for path in artifacts.paths:
+            if path.suffix.lower() == ".json":
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+
+                    data["media_binding"] = {
+                        "path": str(media_path),
+                        "kind": media_kind,
+                    }
+
+                    with open(path, "w", encoding="utf-8") as f:
+                        json.dump(data, f, ensure_ascii=False, indent=2)
+                        f.write("\n")
+                except (OSError, json.JSONDecodeError) as e:
+                    # Log error but don't fail the transcription
+                    import warnings
+                    warnings.warn(f"Failed to update media binding in {path}: {e}", UserWarning)
 
 
 def _settings_from_job(job: TranscriptionJob, *, recursive: bool) -> AppSettings:

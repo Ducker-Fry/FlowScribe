@@ -30,7 +30,13 @@ class TranscriptArtifactWriter:
         self._srt_writer = srt_writer or SrtTranscriptWriter()
         self._vtt_writer = vtt_writer or VttTranscriptWriter()
 
-    def write_all(self, transcript: Transcript, output_dir: Path) -> OutputArtifacts:
+    def write_all(
+        self,
+        transcript: Transcript,
+        output_dir: Path,
+        media_path: Path | None = None,
+        media_kind: str | None = None,
+    ) -> OutputArtifacts:
         paths = []
         for output_format in self._formats:
             if output_format == "txt":
@@ -38,7 +44,13 @@ class TranscriptArtifactWriter:
             elif output_format == "md":
                 paths.append(self._md_writer.write(transcript, output_dir))
             elif output_format == "json":
-                paths.append(self._json_writer.write(transcript, output_dir))
+                # Create JSON writer with media binding info
+                json_writer = JsonTranscriptWriter(
+                    path_builder=self._json_writer._path_builder,
+                    media_path=media_path,
+                    media_kind=media_kind,
+                )
+                paths.append(json_writer.write(transcript, output_dir))
             elif output_format == "srt":
                 paths.append(self._srt_writer.write(transcript, output_dir))
             elif output_format == "vtt":

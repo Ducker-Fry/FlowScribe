@@ -323,11 +323,27 @@ def _job_from_transcribe_options(options) -> TranscriptionJob:
 
 
 def _job_from_url_options(options) -> TranscriptionJob:
+    from flowscribe.app.models import DownloadOptions
+
     progressive_enabled, progressive_note = _resolve_cli_progressive_mode_for_url(options)
     if progressive_note:
         print(progressive_note)
+
+    download_opts = DownloadOptions(
+        quality=options.download_quality,
+        prefer_format=options.download_format,
+    )
+
+    source = SourceSpec(
+        kind="url",
+        value=options.url,
+        keep_media=options.keep_media,
+        url_media_kind="video" if options.keep_media else "audio",
+        download_options=download_opts,
+    )
+
     return TranscriptionJob(
-        sources=(SourceSpec(kind="url", value=options.url, keep_media=options.keep_media),),
+        sources=(source,),
         output_dir=options.output_dir,
         work_dir=options.work_dir,
         model_name=options.model_name,

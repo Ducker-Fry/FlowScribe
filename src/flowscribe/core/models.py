@@ -98,6 +98,10 @@ class OutputArtifacts:
     def md_path(self) -> Path | None:
         return self._find_by_suffix(".md")
 
+    @property
+    def json_path(self) -> Path | None:
+        return self._find_by_suffix(".json")
+
     def _find_by_suffix(self, suffix: str) -> Path | None:
         for path in self.paths:
             if path.suffix.lower() == suffix:

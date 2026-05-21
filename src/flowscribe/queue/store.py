@@ -219,6 +219,8 @@ def _item_to_payload(item: QueueItem) -> dict:
         "started_at": item.started_at.isoformat() if item.started_at else None,
         "finished_at": item.finished_at.isoformat() if item.finished_at else None,
         "title": item.title,
+        "transcript_path": str(item.transcript_path) if item.transcript_path else None,
+        "run_detail": item.run_detail,
     }
 
 
@@ -292,6 +294,8 @@ def _item_from_payload(data: object) -> QueueItem | None:
             if data.get("finished_at")
             else None,
             title=data.get("title"),
+            transcript_path=Path(data["transcript_path"]) if data.get("transcript_path") else None,
+            run_detail=data.get("run_detail"),
         )
     except (KeyError, TypeError, ValueError):
         return None

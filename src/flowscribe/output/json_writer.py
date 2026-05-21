@@ -15,8 +15,15 @@ JSON_SCHEMA_VERSION = TRANSCRIPT_JSON_SCHEMA_VERSION
 
 
 class JsonTranscriptWriter:
-    def __init__(self, path_builder: OutputPathBuilder | None = None) -> None:
+    def __init__(
+        self,
+        path_builder: OutputPathBuilder | None = None,
+        media_path: Path | None = None,
+        media_kind: str | None = None,
+    ) -> None:
         self._path_builder = path_builder or OutputPathBuilder()
+        self._media_path = media_path
+        self._media_kind = media_kind
 
     def write(self, transcript: Transcript, output_dir: Path) -> Path:
         path = self._path_builder.build(transcript.source, output_dir, ".json")
@@ -36,7 +43,7 @@ class JsonTranscriptWriter:
             self._segment_to_payload(index, segment)
             for index, segment in enumerate(transcript.segments, start=1)
         ]
-        return {
+        payload = {
             "schema_version": JSON_SCHEMA_VERSION,
             "generator": {
                 "name": "FlowScribe",
@@ -73,6 +80,15 @@ class JsonTranscriptWriter:
             "text": transcript.text,
             "segments": segments,
         }
+
+        # Add media binding information if available
+        if self._media_path is not None:
+            payload["media_binding"] = {
+                "path": str(self._media_path),
+                "kind": self._media_kind,
+            }
+
+        return payload
 
     def _segment_to_payload(self, index: int, segment: TranscriptSegment) -> dict:
         return {

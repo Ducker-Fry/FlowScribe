@@ -25,6 +25,16 @@ VIDEO_EXTENSIONS = SUPPORTED_MEDIA_EXTENSIONS - AUDIO_EXTENSIONS
 
 
 UrlSavedMediaKind = Literal["audio", "video"]
+DownloadQuality = Literal["best", "high", "medium", "low"]
+
+
+@dataclass(frozen=True)
+class DownloadOptions:
+    """Options for remote media download."""
+
+    media_kind: UrlSavedMediaKind = "audio"
+    quality: DownloadQuality = "best"
+    prefer_format: str | None = None
 
 
 @dataclass(frozen=True)
@@ -64,7 +74,11 @@ class UrlAudioDownloader:
         url: str,
         *,
         saved_media_kind: UrlSavedMediaKind = "audio",
+        download_options: DownloadOptions | None = None,
     ) -> UrlDownloadResult:
+        options = download_options or DownloadOptions()
+        effective_media_kind = options.media_kind if download_options else saved_media_kind
+
         validate_public_http_url(url, network_family=self._network_family)
         item_dir = self._download_dir / self._safe_id(url)
         if item_dir.exists():
@@ -73,13 +87,13 @@ class UrlAudioDownloader:
 
         suffix = Path(urlparse(url).path).suffix.lower()
         bindable_media_path: Path | None = None
-        actual_media_kind: UrlSavedMediaKind = saved_media_kind
+        actual_media_kind: UrlSavedMediaKind = effective_media_kind
         if suffix in AUDIO_EXTENSIONS:
             path = self._download_direct_audio(url, item_dir, suffix)
             bindable_media_path = path
             actual_media_kind = "audio"
         elif suffix in VIDEO_EXTENSIONS:
-            if saved_media_kind == "video":
+            if effective_media_kind == "video":
                 bindable_media_path = self._download_direct_video_copy(url, item_dir)
                 if bindable_media_path is not None:
                     actual_media_kind = "video"
@@ -91,7 +105,8 @@ class UrlAudioDownloader:
             path, bindable_media_path, actual_media_kind = self._download_page_audio(
                 url,
                 item_dir,
-                saved_media_kind=saved_media_kind,
+                saved_media_kind=effective_media_kind,
+                download_options=options,
             )
         return UrlDownloadResult(
             path=path,
@@ -179,6 +194,7 @@ class UrlAudioDownloader:
         item_dir: Path,
         *,
         saved_media_kind: UrlSavedMediaKind,
+        download_options: DownloadOptions,
     ) -> tuple[Path, Path | None, UrlSavedMediaKind]:
         try:
             from yt_dlp import YoutubeDL
@@ -223,7 +239,9 @@ class UrlAudioDownloader:
             saved_media_path = None
             actual_kind: UrlSavedMediaKind = "audio"
             if saved_media_kind == "video":
-                saved_media_path = self._download_page_video(url, item_dir, base_options)
+                saved_media_path = self._download_page_video(
+                    url, item_dir, base_options, download_options
+                )
                 if saved_media_path is not None:
                     actual_kind = "video"
             audio_path = self._extract_page_stream_audio(stream_url, item_dir)
@@ -233,10 +251,14 @@ class UrlAudioDownloader:
             return audio_path, saved_media_path, actual_kind
 
         output_template = str(item_dir / "remote-audio.%(ext)s")
+        format_selector = self._build_format_selector(
+            media_kind="audio",
+            quality=download_options.quality,
+            prefer_format=download_options.prefer_format,
+        )
         options = {
             **base_options,
-            # Strictly request audio-only media when the page provides it.
-            "format": "bestaudio",
+            "format": format_selector,
             "outtmpl": output_template,
             "max_filesize": self._max_bytes,
             "progress_hooks": [self._yt_dlp_progress_hook],
@@ -263,7 +285,7 @@ class UrlAudioDownloader:
         saved_media_path: Path | None = path
         actual_kind: UrlSavedMediaKind = "audio"
         if saved_media_kind == "video":
-            video_path = self._download_page_video(url, item_dir, base_options)
+            video_path = self._download_page_video(url, item_dir, base_options, download_options)
             if video_path is not None:
                 saved_media_path = video_path
                 actual_kind = "video"
@@ -274,17 +296,31 @@ class UrlAudioDownloader:
         url: str,
         item_dir: Path,
         base_options: dict,
+        download_options: DownloadOptions | None = None,
     ) -> Path | None:
         try:
             from yt_dlp import YoutubeDL
             from yt_dlp.utils import DownloadError as YtDlpDownloadError
         except ImportError:
+            import warnings
+            warnings.warn(
+                "yt-dlp is not installed. Cannot download video file. "
+                "Audio extraction will continue.",
+                UserWarning,
+                stacklevel=2,
+            )
             return None
 
         output_template = str(item_dir / "remote-media.%(ext)s")
+        options_obj = download_options or DownloadOptions(media_kind="video")
+        format_selector = self._build_format_selector(
+            media_kind="video",
+            quality=options_obj.quality,
+            prefer_format=options_obj.prefer_format,
+        )
         options = {
             **base_options,
-            "format": "best[acodec!=none][vcodec!=none]/best",
+            "format": format_selector,
             "outtmpl": output_template,
             "max_filesize": self._max_bytes,
             "progress_hooks": [self._yt_dlp_progress_hook],
@@ -292,7 +328,16 @@ class UrlAudioDownloader:
         try:
             with YoutubeDL(options) as ydl:
                 ydl.download([url])
-        except YtDlpDownloadError:
+        except YtDlpDownloadError as exc:
+            import warnings
+            warnings.warn(
+                f"Failed to download video file: {exc}\n"
+                f"Audio extraction will continue. "
+                f"Possible causes: video format not available, site restrictions, "
+                f"file size limit exceeded, or network issue.",
+                UserWarning,
+                stacklevel=2,
+            )
             return None
 
         candidates = [
@@ -301,9 +346,26 @@ class UrlAudioDownloader:
             if path.is_file() and path.name.startswith("remote-media.")
         ]
         if not candidates:
+            import warnings
+            warnings.warn(
+                "Video download completed but no video file was created. "
+                "Audio extraction will continue.",
+                UserWarning,
+                stacklevel=2,
+            )
             return None
         path = max(candidates, key=lambda candidate: candidate.stat().st_size)
-        self._ensure_size(path)
+        try:
+            self._ensure_size(path)
+        except DownloadError as exc:
+            import warnings
+            warnings.warn(
+                f"Downloaded video file exceeds size limit: {exc}\n"
+                f"Audio extraction will continue.",
+                UserWarning,
+                stacklevel=2,
+            )
+            return None
         return path
 
     def _download_direct_video_copy(self, url: str, item_dir: Path) -> Path | None:
@@ -327,7 +389,7 @@ class UrlAudioDownloader:
         ]
         try:
             process_timeout = self._max_duration_seconds + self._timeout_seconds
-            subprocess.run(
+            result = subprocess.run(
                 command,
                 capture_output=True,
                 text=True,
@@ -335,10 +397,52 @@ class UrlAudioDownloader:
                 check=True,
                 env=proxy_environment(self._proxy),
             )
-        except (FileNotFoundError, subprocess.TimeoutExpired, subprocess.CalledProcessError):
+        except FileNotFoundError:
+            import warnings
+            warnings.warn(
+                "ffmpeg not found. Cannot copy video file. Audio extraction will continue.",
+                UserWarning,
+                stacklevel=2,
+            )
+            return None
+        except subprocess.TimeoutExpired:
+            import warnings
+            warnings.warn(
+                "Timeout while copying video file. Audio extraction will continue.",
+                UserWarning,
+                stacklevel=2,
+            )
+            return None
+        except subprocess.CalledProcessError as exc:
+            import warnings
+            error_msg = exc.stderr.strip() if exc.stderr else str(exc)
+            warnings.warn(
+                f"Failed to copy video file: {error_msg}\n"
+                f"Audio extraction will continue.",
+                UserWarning,
+                stacklevel=2,
+            )
             return None
         if not path.exists():
+            import warnings
+            warnings.warn(
+                "Video copy completed but file was not created. Audio extraction will continue.",
+                UserWarning,
+                stacklevel=2,
+            )
             return None
+        try:
+            self._ensure_size(path)
+        except DownloadError as exc:
+            import warnings
+            warnings.warn(
+                f"Copied video file exceeds size limit: {exc}\n"
+                f"Audio extraction will continue.",
+                UserWarning,
+                stacklevel=2,
+            )
+            return None
+        return path
         self._ensure_size(path)
         return path
 
@@ -469,6 +573,37 @@ class UrlAudioDownloader:
             return float(size), float(bitrate), float(pixels)
 
         return str(min(candidates, key=sort_key)["url"])
+
+    @staticmethod
+    def _build_format_selector(
+        media_kind: UrlSavedMediaKind,
+        quality: DownloadQuality,
+        prefer_format: str | None = None,
+    ) -> str:
+        """Build yt-dlp format selector based on quality and format preferences."""
+        if media_kind == "audio":
+            quality_map = {
+                "best": "bestaudio",
+                "high": "bestaudio[abr>=128]",
+                "medium": "bestaudio[abr>=64][abr<128]",
+                "low": "worstaudio",
+            }
+            base_selector = quality_map.get(quality, "bestaudio")
+            if prefer_format:
+                return f"{base_selector}[ext={prefer_format}]/{base_selector}"
+            return base_selector
+        else:
+            quality_map = {
+                "best": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+                "high": "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
+                "medium": "bestvideo[height<=720]+bestaudio/best[height<=720]",
+                "low": "worstvideo+worstaudio/worst",
+            }
+            base_selector = quality_map.get(quality, "best")
+            if prefer_format:
+                return f"{base_selector}[ext={prefer_format}]/{base_selector}"
+            return base_selector
+
 
 
 class _SafeRedirectHandler(HTTPRedirectHandler):

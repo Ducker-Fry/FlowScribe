@@ -317,6 +317,13 @@ class ProgressiveTranscriptionExecutor:
 
         elapsed_seconds = time.perf_counter() - started_at
         normalized_transcript = self._normalize_chunk_transcript(transcript, chunk=chunk)
+
+        # Validate first chunk segments start near beginning
+        if chunk.index == 1:
+            normalized_transcript = self._validate_first_chunk_segments(
+                normalized_transcript, chunk=chunk, audio=audio
+            )
+
         trimmed_segments = self._merge_policy.merge(
             existing_segments=[],
             chunk_segments=normalized_transcript.segments,
@@ -330,6 +337,46 @@ class ProgressiveTranscriptionExecutor:
             elapsed_seconds=elapsed_seconds,
             merged_segment_count=len(trimmed_segments),
         )
+
+    @staticmethod
+    def _validate_first_chunk_segments(
+        transcript: Transcript,
+        *,
+        chunk: TranscriptionChunk,
+        audio: PreparedAudio,
+    ) -> Transcript:
+        """
+        Validate that first chunk segments start near the beginning.
+
+        Bug fix: Sometimes Whisper skips the first N seconds of audio,
+        resulting in segments starting at e.g. 28s instead of 0s.
+        This validation detects the issue and logs a warning.
+        """
+        if not transcript.segments:
+            return transcript
+
+        first_segment = transcript.segments[0]
+        if first_segment.start_seconds is None:
+            return transcript
+
+        # Check if first segment starts suspiciously late (> 5 seconds)
+        # This threshold allows for initial silence but catches real content loss
+        LATE_START_THRESHOLD_SECONDS = 5.0
+
+        if first_segment.start_seconds > LATE_START_THRESHOLD_SECONDS:
+            # Log warning about potential content loss
+            import warnings
+            warnings.warn(
+                f"First chunk of {audio.source.path.name} has segments starting at "
+                f"{first_segment.start_seconds:.1f}s instead of near 0s. "
+                f"This may indicate missing content at the beginning. "
+                f"Possible causes: VAD filter, initial silence, or Whisper model issue. "
+                f"Consider re-transcribing without VAD filter or checking the audio file.",
+                UserWarning,
+                stacklevel=2,
+            )
+
+        return transcript
 
     @staticmethod
     def _build_partial_transcript(

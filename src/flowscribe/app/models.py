@@ -12,6 +12,7 @@ from flowscribe.core.models import OutputArtifacts, TranscriptSegment
 
 SourceKind = Literal["local", "url", "capture"]
 UrlMediaKind = Literal["audio", "video"]
+DownloadQuality = Literal["best", "high", "medium", "low"]
 ProgressStage = Literal[
     "discover",
     "download",
@@ -26,6 +27,14 @@ ProgressStage = Literal[
 
 
 @dataclass(frozen=True)
+class DownloadOptions:
+    """Options for remote media download."""
+
+    quality: DownloadQuality = "best"
+    prefer_format: str | None = None
+
+
+@dataclass(frozen=True)
 class SourceSpec:
     """One user-provided source to process."""
 
@@ -36,6 +45,7 @@ class SourceSpec:
     url_media_kind: UrlMediaKind = "audio"
     media_output_dir: Path | None = None
     auto_bind_media: bool = False
+    download_options: DownloadOptions | None = None
 
 
 @dataclass(frozen=True)

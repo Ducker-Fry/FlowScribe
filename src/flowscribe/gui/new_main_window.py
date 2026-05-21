@@ -162,10 +162,10 @@ class NewMainWindow(QMainWindow):
             for artifacts in result.outputs:
                 for path in artifacts.paths:
                     if path.suffix.lower() == ".json":
-                        self._add_transcript_to_library(path)
+                        self._add_transcript_to_library(path, artifacts)
             self._library_view.refresh_library()
 
-    def _add_transcript_to_library(self, transcript_path: Path) -> None:
+    def _add_transcript_to_library(self, transcript_path: Path, artifacts=None) -> None:
         """Add transcript to library."""
         from flowscribe.library import TranscriptLibraryEntry, LibraryOutputRecord
         from flowscribe.gui.utils.library import _discover_transcript_output_paths
@@ -175,13 +175,36 @@ class NewMainWindow(QMainWindow):
             output_paths = _discover_transcript_output_paths(transcript_path)
             outputs = tuple(LibraryOutputRecord.from_path(p) for p in output_paths)
 
+            # Extract media path from artifacts if available
+            media_path = None
+            source_media_path = None
+            media_binding = None
+            if artifacts is not None:
+                if artifacts.media_path is not None:
+                    media_path = Path(artifacts.media_path) if isinstance(artifacts.media_path, str) else artifacts.media_path
+                    source_media_path = media_path
+                    # Create media binding if auto-bind is enabled
+                    if artifacts.auto_bind_media:
+                        from flowscribe.library.models import LibraryMediaBinding
+                        media_binding = LibraryMediaBinding.create(
+                            transcript_path=transcript_path,
+                            media_path=media_path,
+                            binding_type="auto",
+                        )
+                # Determine source kind from artifacts
+                source_kind = artifacts.source_kind or "local"
+            else:
+                source_kind = "local"
+
             # Create entry
             entry = TranscriptLibraryEntry.create(
                 transcript_path=transcript_path,
                 output_dir=transcript_path.parent,
                 display_label=transcript_path.stem,
-                source_kind="local",  # Default to local
+                source_kind=source_kind,
                 outputs=outputs,
+                source_media_path=source_media_path,
+                media_binding=media_binding,
             )
 
             # Upsert to store
@@ -230,11 +253,25 @@ class NewMainWindow(QMainWindow):
     # QueueView handlers
     def _on_enqueue_urls(self, text: str) -> None:
         """Enqueue URLs from text."""
+        from flowscribe.app.models import DownloadOptions
+
         urls = parse_urls_from_text(text)
         settings = self._settings_to_queue_settings()
+        download_opts_dict = self._queue_view.get_download_options()
+        download_opts = DownloadOptions(
+            quality=download_opts_dict["quality"],
+            prefer_format=download_opts_dict["prefer_format"],
+        )
         items = []
         for url in urls:
-            source = SourceSpec(kind="url", value=url)
+            source = SourceSpec(
+                kind="url",
+                value=url,
+                keep_media=download_opts_dict["preserve_media"],
+                url_media_kind=download_opts_dict["media_kind"],
+                download_options=download_opts,
+                auto_bind_media=True,
+            )
             item = QueueItem(
                 item_id=generate_queue_item_id(source),
                 source=source,
@@ -263,11 +300,25 @@ class NewMainWindow(QMainWindow):
 
     def _on_import_file(self, file_path: str) -> None:
         """Import URLs from file."""
+        from flowscribe.app.models import DownloadOptions
+
         urls = import_urls_from_file(Path(file_path))
         settings = self._settings_to_queue_settings()
+        download_opts_dict = self._queue_view.get_download_options()
+        download_opts = DownloadOptions(
+            quality=download_opts_dict["quality"],
+            prefer_format=download_opts_dict["prefer_format"],
+        )
         items = []
         for url in urls:
-            source = SourceSpec(kind="url", value=url)
+            source = SourceSpec(
+                kind="url",
+                value=url,
+                keep_media=download_opts_dict["preserve_media"],
+                url_media_kind=download_opts_dict["media_kind"],
+                download_options=download_opts,
+                auto_bind_media=True,
+            )
             item = QueueItem(
                 item_id=generate_queue_item_id(source),
                 source=source,
@@ -285,11 +336,16 @@ class NewMainWindow(QMainWindow):
             return
 
         self._queue_thread = QThread(self)
-        self._queue_runner = QueueRunner(self._queue_store, self._library_store)
+        self._queue_runner = QueueRunner(self._queue_store)
         self._queue_runner.moveToThread(self._queue_thread)
         self._queue_thread.started.connect(self._queue_runner.run)
-        self._queue_runner.finished.connect(self._on_queue_finished)
-        self._queue_runner.finished.connect(self._queue_thread.quit)
+        self._queue_runner.item_started.connect(self._on_queue_item_started)
+        self._queue_runner.item_progress.connect(self._on_queue_item_progress)
+        self._queue_runner.item_completed.connect(self._on_queue_item_completed)
+        self._queue_runner.item_failed.connect(self._on_queue_item_failed)
+        self._queue_runner.item_canceled.connect(self._on_queue_item_canceled)
+        self._queue_runner.queue_finished.connect(self._on_queue_finished)
+        self._queue_runner.queue_finished.connect(self._queue_thread.quit)
         self._queue_thread.finished.connect(self._queue_runner.deleteLater)
         self._queue_thread.finished.connect(self._queue_thread.deleteLater)
         self._queue_thread.start()
@@ -408,6 +464,31 @@ class NewMainWindow(QMainWindow):
         self._refresh_queue_view()
         self._library_view.refresh_library()
         self.statusBar().showMessage("Queue processing finished")
+
+    def _on_queue_item_started(self, item) -> None:
+        """Handle queue item started."""
+        self._queue_view.on_item_started(item)
+        self._refresh_queue_view()
+
+    def _on_queue_item_progress(self, event) -> None:
+        """Handle queue item progress."""
+        self._queue_view.on_item_progress(event)
+
+    def _on_queue_item_completed(self, data: tuple) -> None:
+        """Handle queue item completed."""
+        self._queue_view.on_item_completed(data)
+        self._refresh_queue_view()
+        self._library_view.refresh_library()
+
+    def _on_queue_item_failed(self, data: tuple) -> None:
+        """Handle queue item failed."""
+        self._queue_view.on_item_failed(data)
+        self._refresh_queue_view()
+
+    def _on_queue_item_canceled(self, item) -> None:
+        """Handle queue item canceled."""
+        self._queue_view.on_item_canceled(item)
+        self._refresh_queue_view()
 
     def _refresh_queue_view(self) -> None:
         """Refresh queue view display."""

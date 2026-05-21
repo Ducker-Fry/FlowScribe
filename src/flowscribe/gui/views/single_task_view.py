@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from PySide6.QtCore import QThread, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -21,7 +22,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from flowscribe.app.models import ProgressEvent, SourceSpec, TranscriptionJob
+from flowscribe.app.models import (
+    DownloadOptions,
+    ProgressEvent,
+    SourceSpec,
+    TranscriptionJob,
+    TranscriptionResult,
+)
 from flowscribe.gui.state import is_acceptable_local_source
 from flowscribe.gui.widgets.source_list_widget import SourceListWidget
 from flowscribe.gui.workers.transcription_worker import TranscriptionWorker
@@ -49,6 +56,7 @@ class SingleTaskView(QWidget):
         self._last_output_dir: Path | None = None
         self._last_transcript_path: Path | None = None
         self._current_run_output: str = ""
+        self._last_result = None  # Store TranscriptionResult
         self._view_dialog = None
         self._setup_ui()
 
@@ -94,8 +102,32 @@ class SingleTaskView(QWidget):
         self.url_input.setPlaceholderText("https://example.com/video")
         source_layout.addWidget(self.url_input)
 
-        self.url_media_preserve_check = QCheckBox("Preserve downloaded media file")
-        source_layout.addWidget(self.url_media_preserve_check)
+        # URL download options
+        url_options_layout = QHBoxLayout()
+
+        self.url_media_preserve_check = QCheckBox("Preserve media")
+        url_options_layout.addWidget(self.url_media_preserve_check)
+
+        url_options_layout.addWidget(QLabel("Type:"))
+        self.url_media_type_combo = QComboBox()
+        self.url_media_type_combo.addItems(["Audio", "Video"])
+        self.url_media_type_combo.setCurrentText("Audio")
+        url_options_layout.addWidget(self.url_media_type_combo)
+
+        url_options_layout.addWidget(QLabel("Quality:"))
+        self.url_quality_combo = QComboBox()
+        self.url_quality_combo.addItems(["Best", "High", "Medium", "Low"])
+        self.url_quality_combo.setCurrentText("Best")
+        url_options_layout.addWidget(self.url_quality_combo)
+
+        url_options_layout.addWidget(QLabel("Format:"))
+        self.url_format_combo = QComboBox()
+        self.url_format_combo.addItems(["Auto", "mp4", "webm", "mp3", "m4a", "opus"])
+        self.url_format_combo.setCurrentText("Auto")
+        url_options_layout.addWidget(self.url_format_combo)
+
+        url_options_layout.addStretch(1)
+        source_layout.addLayout(url_options_layout)
 
         # System audio capture section
         capture_label = QLabel("System Audio Capture:")
@@ -277,6 +309,7 @@ class SingleTaskView(QWidget):
         self._worker.progress.connect(self._on_progress)
         self._worker.finished.connect(self._on_finished)
         self._worker.failed.connect(self._on_failed)
+        self._worker.warning.connect(self._on_warning)  # Connect warning signal
         self._worker.finished.connect(self._thread.quit)
         self._worker.failed.connect(self._thread.quit)
         self._thread.finished.connect(self._worker.deleteLater)
@@ -310,7 +343,29 @@ class SingleTaskView(QWidget):
         for path in selected_paths:
             sources.append(SourceSpec(kind="local", value=str(path)))
         if url:
-            sources.append(SourceSpec(kind="url", value=url))
+            # Build download options from UI
+            quality_map = {"Best": "best", "High": "high", "Medium": "medium", "Low": "low"}
+            quality = quality_map.get(self.url_quality_combo.currentText(), "best")
+            prefer_format = None
+            if self.url_format_combo.currentText() != "Auto":
+                prefer_format = self.url_format_combo.currentText()
+
+            download_opts = DownloadOptions(quality=quality, prefer_format=prefer_format)
+
+            # Determine media kind from UI
+            preserve_media = self.url_media_preserve_check.isChecked()
+            media_kind = "video" if self.url_media_type_combo.currentText() == "Video" else "audio"
+
+            sources.append(
+                SourceSpec(
+                    kind="url",
+                    value=url,
+                    keep_media=preserve_media,
+                    url_media_kind=media_kind,
+                    download_options=download_opts,
+                    auto_bind_media=True,
+                )
+            )
 
         if not sources:
             self.status_label.setText("No sources selected.")
@@ -376,28 +431,46 @@ class SingleTaskView(QWidget):
 
     def _on_finished(self, result: Any) -> None:
         """Handle transcription completion."""
+        # Store result for later use
+        self._last_result = result
+
         self.progress_bar.setRange(0, 1)
         self.progress_bar.setValue(0 if result.canceled else 1)
         self.start_button.setEnabled(True)
         self.cancel_button.setEnabled(False)
 
+        # Format elapsed time
+        elapsed_time_str = ""
+        if result.elapsed_seconds is not None:
+            elapsed = result.elapsed_seconds
+            if elapsed < 60:
+                elapsed_time_str = f" (Time: {elapsed:.1f}s)"
+            else:
+                minutes = int(elapsed // 60)
+                seconds = int(elapsed % 60)
+                elapsed_time_str = f" (Time: {minutes}m {seconds}s)"
+
         if result.canceled:
             self.status_label.setText(
-                f"Canceled. Succeeded: {result.succeeded}. Failed: {result.failed}."
+                f"Canceled. Succeeded: {result.succeeded}. Failed: {result.failed}.{elapsed_time_str}"
             )
             self.preview_output.appendPlainText("\nTranscription canceled by user.")
         elif result.errors:
             self.status_label.setText(
-                f"Done with errors. Succeeded: {result.succeeded}. Failed: {result.failed}."
+                f"Done with errors. Succeeded: {result.succeeded}. Failed: {result.failed}.{elapsed_time_str}"
             )
             self.preview_output.appendPlainText("\n\nErrors occurred:")
             for error in result.errors:
                 self.preview_output.appendPlainText(f"  - {error}")
         else:
             self.status_label.setText(
-                f"Transcription complete! Succeeded: {result.succeeded}."
+                f"Transcription complete! Succeeded: {result.succeeded}.{elapsed_time_str}"
             )
             self.preview_output.appendPlainText("\n\nTranscription completed successfully!")
+
+        # Add elapsed time to output
+        if result.elapsed_seconds is not None:
+            self.preview_output.appendPlainText(f"\nElapsed time: {elapsed_time_str.strip(' ()')}")
 
         if result.outputs:
             self._last_output_dir = result.job.output_dir
@@ -424,6 +497,13 @@ class SingleTaskView(QWidget):
         self.status_label.setText(f"Transcription failed: {error}")
         self.preview_output.appendPlainText(f"\n\nFailed: {error}")
         self.transcription_error.emit(error)
+
+    def _on_warning(self, warning: str) -> None:
+        """Handle transcription warning."""
+        # Display warning in preview output with yellow color
+        self.preview_output.appendHtml(
+            f'<span style="color: #FFA500;">⚠ Warning: {warning}</span>'
+        )
 
     def _clear_worker_refs(self) -> None:
         """Clear worker and thread references."""
@@ -498,6 +578,7 @@ class SingleTaskView(QWidget):
                 self,
                 transcript_path=self._last_transcript_path,
                 run_output=self._current_run_output,
+                result=self._last_result,
             )
             self._view_dialog.show()
         else:

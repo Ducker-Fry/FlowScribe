@@ -61,6 +61,8 @@ class QueueItem:
     started_at: datetime | None = None
     finished_at: datetime | None = None
     title: str | None = None
+    transcript_path: Path | None = None
+    run_detail: str | None = None
 
     @property
     def can_retry(self) -> bool:

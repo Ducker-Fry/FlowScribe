@@ -162,6 +162,27 @@ def transcript_segment_index_for_seconds(view: TranscriptView, seconds: float) -
 
 
 def resolve_transcript_media_path(view: TranscriptView) -> Path | None:
+    # First, try to read media_binding from JSON
+    try:
+        import json
+        with open(view.path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            media_binding = data.get("media_binding")
+            if media_binding and isinstance(media_binding, dict):
+                media_path_str = media_binding.get("path")
+                if media_path_str:
+                    media_path = Path(media_path_str)
+                    if media_path.is_file():
+                        return media_path
+                    # Try relative to transcript
+                    if not media_path.is_absolute():
+                        candidate = (view.path.parent / media_path).resolve()
+                        if candidate.is_file():
+                            return candidate
+    except (OSError, json.JSONDecodeError, KeyError):
+        pass
+
+    # Fallback to source field
     source = view.source.strip()
     if not source:
         return None

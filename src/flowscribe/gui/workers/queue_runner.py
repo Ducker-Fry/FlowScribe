@@ -27,6 +27,7 @@ class QueueRunner(QObject):
         self._store = store
         self._cancel_all = False
         self._cancel_current = False
+        self._current_run_output = ""
 
     @Slot()
     def run(self) -> None:
@@ -39,6 +40,7 @@ class QueueRunner(QObject):
             if item is None:
                 break
             self._cancel_current = False
+            self._current_run_output = ""
             self.item_started.emit(item)
             success = self._process_item(item)
             if success:
@@ -79,8 +81,15 @@ class QueueRunner(QObject):
             return False
 
         print("[QueueRunner] Marking as completed")
+        transcript_path = None
+        if result.outputs:
+            transcript_path = result.outputs[0].json_path
         self._store.update_item(
-            item.item_id, status="completed", finished_at=datetime.now()
+            item.item_id,
+            status="completed",
+            finished_at=datetime.now(),
+            transcript_path=transcript_path,
+            run_detail=self._current_run_output,
         )
         self.item_completed.emit((item, result))
         return True
@@ -102,6 +111,8 @@ class QueueRunner(QObject):
                 break
 
     def _handle_progress(self, event: ProgressEvent) -> None:
+        if event.message:
+            self._current_run_output += event.message + "\n"
         self.item_progress.emit(event)
 
     @Slot()

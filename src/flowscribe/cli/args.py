@@ -99,6 +99,8 @@ class UrlOptions:
     progressive_chunk_overlap_seconds: float
     progressive_resume: bool
     progressive_max_workers: int
+    download_quality: str = "best"
+    download_format: str | None = None
 
 
 @dataclass(frozen=True)
@@ -464,6 +466,17 @@ def parse_url_args(argv: list[str] | None = None) -> UrlOptions:
         default=None,
         help="Proxy URL for URL media access, such as http://127.0.0.1:7890.",
     )
+    parser.add_argument(
+        "--download-quality",
+        choices=["best", "high", "medium", "low"],
+        default="best",
+        help="Download quality preference. Default: best",
+    )
+    parser.add_argument(
+        "--download-format",
+        default=None,
+        help="Preferred download format (e.g., mp4, webm, mp3, m4a, opus). Default: auto",
+    )
     namespace = parser.parse_args(argv)
     return UrlOptions(
         command="url",
@@ -495,6 +508,8 @@ def parse_url_args(argv: list[str] | None = None) -> UrlOptions:
         progressive_chunk_overlap_seconds=namespace.progressive_chunk_overlap_seconds,
         progressive_resume=namespace.progressive_resume,
         progressive_max_workers=namespace.progressive_max_workers,
+        download_quality=namespace.download_quality,
+        download_format=namespace.download_format,
     )
 
 
