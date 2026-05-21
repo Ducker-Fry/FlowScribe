@@ -123,7 +123,7 @@ def test_transcription_service_emits_write_events_for_url_source(monkeypatch, tm
         def __init__(self, **kwargs) -> None:
             self.kwargs = kwargs
 
-        def download_audio(self, url: str, *, saved_media_kind: str = "audio"):
+        def download_audio(self, url: str, *, saved_media_kind: str = "audio", download_options=None):
             return FakeDownload()
 
     class FakePipeline:
@@ -167,7 +167,7 @@ def test_transcription_service_passes_url_network_options_to_downloader(
         def __init__(self, **kwargs) -> None:
             captured.update(kwargs)
 
-        def download_audio(self, url: str, *, saved_media_kind: str = "audio"):
+        def download_audio(self, url: str, *, saved_media_kind: str = "audio", download_options=None):
             captured["url"] = url
             captured["saved_media_kind"] = saved_media_kind
             return FakeDownload()
@@ -230,7 +230,7 @@ def test_transcription_service_preserves_url_media_in_custom_directory(
         def __init__(self, **kwargs) -> None:
             self.kwargs = kwargs
 
-        def download_audio(self, url: str, *, saved_media_kind: str = "audio"):
+        def download_audio(self, url: str, *, saved_media_kind: str = "audio", download_options=None):
             assert saved_media_kind == "video"
             return FakeDownload()
 
@@ -291,7 +291,7 @@ def test_transcription_service_marks_url_media_fallback_when_video_copy_unavaila
         def __init__(self, **kwargs) -> None:
             self.kwargs = kwargs
 
-        def download_audio(self, url: str, *, saved_media_kind: str = "audio"):
+        def download_audio(self, url: str, *, saved_media_kind: str = "audio", download_options=None):
             assert saved_media_kind == "video"
             return FakeDownload()
 

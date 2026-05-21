@@ -15,6 +15,7 @@ $BuildRoot = Join-Path $ProjectRoot "build"
 $PackageDir = Join-Path $DistRoot $AppName
 $ReleaseReadme = Join-Path $PackageDir "README-USER.txt"
 $UserBase = Join-Path $ProjectRoot ".py-user-base"
+$DependencyChecker = Join-Path $PSScriptRoot "Check-BuildDependencies.ps1"
 
 function Write-Step {
     param([string]$Message)
@@ -80,6 +81,12 @@ function Copy-Tool {
 
 Push-Location $ProjectRoot
 try {
+    Write-Step "Check build dependencies"
+    & $DependencyChecker -Python $Python -CheckPython -CheckFfmpeg -CheckPyInstaller
+    if ($LASTEXITCODE -ne 0) {
+        throw "Dependency check failed. Please resolve the issues above."
+    }
+
     $env:PYTHONNOUSERSITE = "1"
     $env:PYTHONUSERBASE = $UserBase
 

@@ -89,7 +89,13 @@ class TestResolveTranscriptMediaPath:
             json.dump(data, f)
 
         # Create view
-        view = TranscriptView(path=json_file, source="audio.m4a")
+        view = TranscriptView(
+            path=json_file,
+            source="audio.m4a",
+            language=None,
+            model=None,
+            segments=()
+        )
 
         # Resolve should return media_binding path
         resolved = resolve_transcript_media_path(view)
@@ -109,7 +115,13 @@ class TestResolveTranscriptMediaPath:
             json.dump(data, f)
 
         # Create view
-        view = TranscriptView(path=json_file, source=str(source_file))
+        view = TranscriptView(
+            path=json_file,
+            source=str(source_file),
+            language=None,
+            model=None,
+            segments=()
+        )
 
         # Resolve should return source path
         resolved = resolve_transcript_media_path(view)

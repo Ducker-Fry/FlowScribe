@@ -11,6 +11,7 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $HelperProject = Join-Path $ProjectRoot "tools\wasapi-capture-helper\src\WasapiCaptureHelper\WasapiCaptureHelper.csproj"
 $DefaultOutputDir = Join-Path $ProjectRoot "build\wasapi-helper"
+$DependencyChecker = Join-Path $PSScriptRoot "Check-BuildDependencies.ps1"
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
     $OutputDir = $DefaultOutputDir
 }
@@ -32,6 +33,12 @@ function Assert-InProject {
 
 Push-Location $ProjectRoot
 try {
+    Write-Step "Check build dependencies"
+    & $DependencyChecker -DotNet $DotNet -CheckDotNet
+    if ($LASTEXITCODE -ne 0) {
+        throw "Dependency check failed. Please resolve the issues above."
+    }
+
     if (-not (Test-Path $HelperProject)) {
         throw "WASAPI helper project was not found: $HelperProject"
     }

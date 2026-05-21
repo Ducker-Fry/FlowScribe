@@ -16,6 +16,7 @@ $RuntimeHook = Join-Path $ProjectRoot "scripts\pyinstaller_gui_runtime_hook.py"
 $HelperBuildScript = Join-Path $ProjectRoot "scripts\build_wasapi_helper.ps1"
 $HelperStageDir = Join-Path $ProjectRoot "build\wasapi-helper"
 $UserBase = Join-Path $ProjectRoot ".py-user-base"
+$DependencyChecker = Join-Path $PSScriptRoot "Check-BuildDependencies.ps1"
 
 function Write-Step {
     param([string]$Message)
@@ -115,18 +116,14 @@ function Copy-WasapiHelper {
 
 Push-Location $ProjectRoot
 try {
+    Write-Step "Check build dependencies"
+    & $DependencyChecker -Python $Python -DotNet $DotNet -CheckPython -CheckDotNet -CheckFfmpeg -CheckPyInstaller -CheckPySide6
+    if ($LASTEXITCODE -ne 0) {
+        throw "Dependency check failed. Please resolve the issues above."
+    }
+
     $env:PYTHONNOUSERSITE = "1"
     $env:PYTHONUSERBASE = $UserBase
-
-    Write-Step "Check GUI dependencies"
-    & $Python -c "import PySide6; print('PySide6', PySide6.__version__)"
-    if ($LASTEXITCODE -ne 0) {
-        throw "PySide6 is not installed in the selected Python environment."
-    }
-    & $Python -s -m PyInstaller --version
-    if ($LASTEXITCODE -ne 0) {
-        throw "PyInstaller is not installed in the selected Python environment."
-    }
 
     if (-not $SkipHelperBuild) {
         Write-Step "Build WASAPI helper"
