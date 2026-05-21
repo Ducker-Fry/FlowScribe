@@ -4,6 +4,7 @@ from pathlib import Path
 from datetime import datetime
 import pytest
 import importlib
+import importlib.util
 
 from flowscribe.server.handlers import AddUrlHandler
 from flowscribe.queue.store import BatchQueueStore
