@@ -4,7 +4,6 @@ import warnings
 from pathlib import Path
 from unittest.mock import Mock
 
-import pytest
 
 from flowscribe.core.models import (
     MediaItem,
@@ -43,7 +42,7 @@ def test_first_chunk_segments_not_dropped():
 
     # Create executor with merge policy
     merge_policy = ConservativeChunkMergePolicy()
-    executor = ProgressiveTranscriptionExecutor(
+    ProgressiveTranscriptionExecutor(
         transcriber=mock_transcriber,
         merge_policy=merge_policy,
     )

@@ -1,12 +1,9 @@
 """Test Bilibili video download issue."""
 
 import warnings
-from pathlib import Path
 from unittest.mock import Mock, patch
 
-import pytest
 
-from flowscribe.core.errors import DownloadError
 from flowscribe.input.url_downloader import UrlAudioDownloader
 
 

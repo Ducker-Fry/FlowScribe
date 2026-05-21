@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 
 from flowscribe.app.models import DownloadOptions, SourceSpec
 from flowscribe.input.url_downloader import DownloadOptions as UrlDownloadOptions

@@ -2,8 +2,8 @@
 
 from pathlib import Path
 from datetime import datetime
-import json
 import pytest
+import importlib
 
 from flowscribe.server.handlers import AddUrlHandler
 from flowscribe.queue.store import BatchQueueStore
@@ -120,7 +120,7 @@ def test_bookmarklet_batch_with_titles(tmp_path):
 
 
 try:
-    import PySide6
+    importlib.util.find_spec("PySide6")
     HAS_PYSIDE6 = True
 except ImportError:
     HAS_PYSIDE6 = False

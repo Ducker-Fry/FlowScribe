@@ -1,13 +1,14 @@
 """Tests for TranscriptionViewDialog workspace transcript loading."""
 
-from pathlib import Path
-from unittest.mock import MagicMock, patch, mock_open
+from unittest.mock import MagicMock, patch
 import json
 import pytest
+import importlib
+import importlib.util
 
 # Skip all tests in this module if PySide6 is not available
 try:
-    import PySide6
+    importlib.util.find_spec("PySide6")
 except ImportError:
     pytest.skip("PySide6 not available", allow_module_level=True)
 

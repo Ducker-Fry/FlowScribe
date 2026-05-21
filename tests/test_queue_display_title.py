@@ -2,15 +2,17 @@
 
 from pathlib import Path
 from datetime import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 import pytest
+import importlib
+import importlib.util
 
 from flowscribe.app.models import SourceSpec
 from flowscribe.queue.models import QueueItem, QueueItemSettings, BatchOutputStrategy
 
 
 try:
-    import PySide6
+    importlib.util.find_spec("PySide6")
     HAS_PYSIDE6 = True
 except ImportError:
     HAS_PYSIDE6 = False

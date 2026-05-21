@@ -1,12 +1,9 @@
 """Test queue item transcript path and run detail tracking."""
 
-from datetime import datetime
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
-import pytest
 
-from flowscribe.app.models import SourceSpec, TranscriptionJob, TranscriptionResult
+from flowscribe.app.models import SourceSpec
 from flowscribe.core.models import OutputArtifacts
 from flowscribe.queue.models import QueueItem, QueueItemSettings
 from flowscribe.queue.store import BatchQueueStore

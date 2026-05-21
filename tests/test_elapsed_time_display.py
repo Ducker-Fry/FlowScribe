@@ -1,6 +1,6 @@
 """Test elapsed time display formatting."""
 
-from datetime import datetime, timedelta
+from datetime import datetime
 
 
 def format_elapsed_time(elapsed_seconds: float | None) -> str:

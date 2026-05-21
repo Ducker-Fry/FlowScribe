@@ -1,9 +1,7 @@
 """Test opening view for running queue items."""
 
 from pathlib import Path
-from unittest.mock import MagicMock, Mock
 
-import pytest
 
 from flowscribe.app.models import ProgressEvent, SourceSpec
 from flowscribe.queue.models import QueueItem, QueueItemSettings
@@ -70,7 +68,6 @@ def test_running_item_can_be_opened():
     )
 
     current_running_item_id = "test123"
-    current_run_output = "Processing...\nChunk 1/10 complete\n"
 
     can_open = (
         item.status == "running"
