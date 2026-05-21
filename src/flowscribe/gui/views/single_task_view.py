@@ -27,7 +27,6 @@ from flowscribe.app.models import (
     ProgressEvent,
     SourceSpec,
     TranscriptionJob,
-    TranscriptionResult,
 )
 from flowscribe.gui.state import is_acceptable_local_source
 from flowscribe.gui.widgets.source_list_widget import SourceListWidget

@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt, QSize, QUrl
+from PySide6.QtCore import Qt, QUrl
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import (
@@ -31,7 +31,6 @@ from PySide6.QtWidgets import (
     QTabWidget,
     QTextBrowser,
     QTextEdit,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -590,7 +589,7 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
             # Update UI
             self.media_binding_label.setText(f"Binding: {media_path.name}")
             self.media_status_label.setText(
-                f"Media bound successfully. Duration will appear when ready."
+                "Media bound successfully. Duration will appear when ready."
             )
 
             # Enable playback controls

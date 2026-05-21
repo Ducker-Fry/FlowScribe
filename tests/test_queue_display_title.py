@@ -9,6 +9,13 @@ from flowscribe.app.models import SourceSpec
 from flowscribe.queue.models import QueueItem, QueueItemSettings, BatchOutputStrategy
 
 
+try:
+    import PySide6
+    HAS_PYSIDE6 = True
+except ImportError:
+    HAS_PYSIDE6 = False
+
+
 @pytest.fixture
 def mock_queue_item_with_title():
     """Create a queue item with title."""
@@ -61,6 +68,7 @@ def test_queue_item_display_label_without_title(mock_queue_item_without_title):
     assert item.display_label == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 
 
+@pytest.mark.skipif(not HAS_PYSIDE6, reason="PySide6 not available")
 def test_format_item_display_with_title(mock_queue_item_with_title):
     """Test queue view formatting with title."""
     from flowscribe.gui.views.queue_view import QueueView
@@ -77,6 +85,7 @@ def test_format_item_display_with_title(mock_queue_item_with_title):
             assert "youtube.com" not in display  # URL should not be shown
 
 
+@pytest.mark.skipif(not HAS_PYSIDE6, reason="PySide6 not available")
 def test_format_item_display_without_title(mock_queue_item_without_title):
     """Test queue view formatting without title (fallback to URL)."""
     from flowscribe.gui.views.queue_view import QueueView
@@ -92,6 +101,7 @@ def test_format_item_display_without_title(mock_queue_item_without_title):
             assert "[URL]" in display
 
 
+@pytest.mark.skipif(not HAS_PYSIDE6, reason="PySide6 not available")
 def test_format_item_display_truncates_long_title():
     """Test that long titles are truncated."""
     from flowscribe.gui.views.queue_view import QueueView
@@ -125,6 +135,7 @@ def test_format_item_display_truncates_long_title():
             assert "..." in display
 
 
+@pytest.mark.skipif(not HAS_PYSIDE6, reason="PySide6 not available")
 def test_local_file_display_unchanged():
     """Test that local file display is not affected by title changes."""
     from flowscribe.gui.views.queue_view import QueueView

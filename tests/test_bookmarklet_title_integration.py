@@ -119,6 +119,14 @@ def test_bookmarklet_batch_with_titles(tmp_path):
         assert item.display_label == expected_title
 
 
+try:
+    import PySide6
+    HAS_PYSIDE6 = True
+except ImportError:
+    HAS_PYSIDE6 = False
+
+
+@pytest.mark.skipif(not HAS_PYSIDE6, reason="PySide6 not available")
 def test_queue_view_format_with_bookmarklet_title(tmp_path):
     """Test that QueueView formats bookmarklet items with title."""
     from unittest.mock import patch

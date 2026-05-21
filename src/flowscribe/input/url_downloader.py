@@ -389,7 +389,7 @@ class UrlAudioDownloader:
         ]
         try:
             process_timeout = self._max_duration_seconds + self._timeout_seconds
-            result = subprocess.run(
+            subprocess.run(
                 command,
                 capture_output=True,
                 text=True,

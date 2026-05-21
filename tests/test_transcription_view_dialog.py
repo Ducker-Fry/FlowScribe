@@ -5,6 +5,12 @@ from unittest.mock import MagicMock, patch, mock_open
 import json
 import pytest
 
+# Skip all tests in this module if PySide6 is not available
+try:
+    import PySide6
+except ImportError:
+    pytest.skip("PySide6 not available", allow_module_level=True)
+
 
 @pytest.fixture
 def mock_transcript_data():
