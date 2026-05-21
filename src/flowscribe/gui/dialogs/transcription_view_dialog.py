@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QSlider,
     QSplitter,
@@ -56,10 +57,12 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
         *,
         transcript_path: Path | None = None,
         run_output: str = "",
+        result = None,
     ):
         super().__init__(parent)
         self._transcript_path = transcript_path
         self._run_output = run_output
+        self._result = result
 
         # Initialize mixin state (copied from MainWindow.__init__)
         self._transcript_view = None
@@ -117,6 +120,20 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
         run_details_layout = QVBoxLayout(run_details_page)
         run_details_layout.setContentsMargins(8, 8, 8, 8)
 
+        # Add elapsed time label at the top if result is available
+        if self._result is not None and self._result.elapsed_seconds is not None:
+            elapsed = self._result.elapsed_seconds
+            if elapsed < 60:
+                elapsed_str = f"{elapsed:.1f}s"
+            else:
+                minutes = int(elapsed // 60)
+                seconds = int(elapsed % 60)
+                elapsed_str = f"{minutes}m {seconds}s"
+
+            time_label = QLabel(f"Elapsed Time: {elapsed_str}")
+            time_label.setStyleSheet("font-weight: bold; font-size: 12pt; color: #4CAF50;")
+            run_details_layout.addWidget(time_label)
+
         self.preview_output = QTextEdit()
         self.preview_output.setReadOnly(True)
         self.preview_output.setPlainText(self._run_output)
@@ -127,7 +144,12 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
 
     def _create_workspace_tab(self) -> None:
         """Create workspace tab with media sync, search, segments, editing, and artifacts."""
-        workspace_page = QWidget(self)
+        # Create scroll area for the entire workspace
+        scroll_area = QScrollArea(self)
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(scroll_area.Shape.NoFrame)
+
+        workspace_page = QWidget()
         workspace_layout = QVBoxLayout(workspace_page)
         workspace_layout.setContentsMargins(8, 8, 8, 8)
         workspace_layout.setSpacing(10)
@@ -140,6 +162,8 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
 
         workspace_splitter = QSplitter(Qt.Orientation.Vertical, workspace_page)
         workspace_splitter.setChildrenCollapsible(False)
+        # Set minimum height for the splitter to ensure content is tall enough to scroll
+        workspace_splitter.setMinimumHeight(1200)
 
         # Top section: Media + Transcript review
         review_splitter = QSplitter(Qt.Orientation.Horizontal, workspace_splitter)
@@ -183,6 +207,8 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
 
         # Bottom section: Artifacts
         artifact_box = self._create_artifacts_section()
+        # Set minimum height for artifact box to ensure it's visible
+        artifact_box.setMinimumHeight(400)
 
         workspace_splitter.addWidget(review_splitter)
         workspace_splitter.addWidget(artifact_box)
@@ -198,7 +224,10 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
 
         workspace_layout.addWidget(workspace_splitter, 1)
 
-        self.tabs.addTab(workspace_page, "Workspace")
+        # Set the workspace page as the scroll area's widget
+        scroll_area.setWidget(workspace_page)
+
+        self.tabs.addTab(scroll_area, "Workspace")
 
     def _create_media_sync_section(self) -> QGroupBox:
         """Create media sync section."""
@@ -335,6 +364,14 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
         artifact_box = QGroupBox("Transcript artifacts")
         artifact_layout = QVBoxLayout(artifact_box)
 
+        # Add "Open Transcript" button at the top
+        open_transcript_toolbar = QHBoxLayout()
+        open_transcript_button = QPushButton("Open Transcript", artifact_box)
+        open_transcript_button.clicked.connect(self._open_transcript_file)
+        open_transcript_toolbar.addWidget(open_transcript_button)
+        open_transcript_toolbar.addStretch(1)
+        artifact_layout.addLayout(open_transcript_toolbar)
+
         artifact_toolbar = QHBoxLayout()
         artifact_toolbar.addWidget(QLabel("Current artifact"))
         self.artifact_selector = QComboBox(artifact_box)
@@ -439,6 +476,37 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
         except Exception as e:
             self.transcript_summary.setPlainText(f"Error loading transcript: {e}")
             self.media_status_label.setText(f"Failed to load transcript: {e}")
+
+    def _open_transcript_file(self) -> None:
+        """Open a transcript JSON file and update workspace."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open Transcript JSON",
+            "",
+            "JSON files (*.json);;All files (*.*)"
+        )
+        if not file_path:
+            return
+
+        try:
+            import json
+            path = Path(file_path)
+
+            # Verify it's a valid transcript JSON
+            with open(path, 'r', encoding='utf-8') as f:
+                transcript_data = json.load(f)
+
+            if 'segments' not in transcript_data:
+                self.artifact_status_label.setText("Invalid transcript format - missing segments")
+                return
+
+            # Load the transcript and update all views
+            self._load_transcript(path)
+            self.artifact_status_label.setText(f"Loaded transcript: {path.name}")
+
+        except Exception as e:
+            self.artifact_status_label.setText(f"Error loading transcript: {e}")
+
 
     def _populate_segments(self) -> None:
         """Populate transcript segments list."""
@@ -550,6 +618,23 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
         self.media_position_slider.blockSignals(True)
         self.media_position_slider.setValue(position)
         self.media_position_slider.blockSignals(False)
+
+        # Auto-highlight current segment during playback
+        if self._transcript_view and self._media_player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+            from flowscribe.gui.transcript_viewer import transcript_segment_index_for_seconds
+
+            current_seconds = position / 1000.0
+            segment_index = transcript_segment_index_for_seconds(self._transcript_view, current_seconds)
+
+            if segment_index is not None and segment_index != self.transcript_segments.currentRow():
+                # Block signals to prevent triggering _activate_selected_segment
+                self.transcript_segments.blockSignals(True)
+                self.transcript_segments.setCurrentRow(segment_index)
+                self.transcript_segments.scrollToItem(
+                    self.transcript_segments.item(segment_index),
+                    self.transcript_segments.ScrollHint.PositionAtCenter
+                )
+                self.transcript_segments.blockSignals(False)
 
     def _on_media_duration_changed(self, duration: int) -> None:
         """Handle media duration change."""

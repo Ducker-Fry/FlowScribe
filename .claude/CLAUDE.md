@@ -128,9 +128,10 @@ NewMainWindow (QMainWindow)
 
 **Key Features**:
 - **Settings Dialog**: Standalone dialog (not embedded), saves space
-- **Single Task View**: Local files, URLs, system audio capture in one view
+- **Single Task View**: Local files, URLs, system audio capture in one view; "Open Transcript" button to load existing JSON files
 - **Library View**: Full filtering (source, status, opened), sorting, actions
-- **Queue View**: Supports both local files and URLs, bookmarklet server integration
+- **Queue View**: Supports both local files and URLs, bookmarklet server integration, displays titles instead of URLs
+- **Transcription View Dialog**: Workspace with "Open Transcript" button to switch between different transcript files
 - **Signal-based communication**: Loose coupling between views and main window
 - **Auto-indexing**: Completed transcriptions automatically added to library
 - **Queue file watcher**: Auto-refresh when queue changes externally
@@ -161,6 +162,7 @@ NewMainWindow (QMainWindow)
 - Queue persistence across GUI restarts
 - **File watcher integration**: GUI auto-refreshes when queue file changes (e.g., from Bookmarklet server)
 - **Bookmarklet server**: Integrated HTTP server for browser-based URL addition
+- **Title-based display**: Queue items display web page title (from bookmarklet) instead of URL for better readability
 - Completion notification with sound (planned)
 
 **Important notes**:
@@ -173,6 +175,7 @@ NewMainWindow (QMainWindow)
 - Progressive timestamp auto-fix: enabled by default to correct Whisper timestamp anomalies in long audio
 - CPU optimization: auto-detects CPU-only systems and enables int8 quantization for 15-25% speed boost
 - **Transcript deduplication**: enabled by default, removes duplicate segments at chunk boundaries after transcription completes (not during chunk merging)
+- **Queue display**: `QueueItem.display_label` prioritizes `title` field over URL; `QueueView._format_item_display` uses `display_label` for consistent title-based display
 
 ## Performance Metrics
 
@@ -203,10 +206,11 @@ NewMainWindow (QMainWindow)
 
 - pytest with `testpaths = ["tests"]`; Ruff lint (line-length 100)
 - Mock-based testing for service, URL downloader, progressive executor, queue system, deduplication
-- 41 test files covering core, queue, GUI utilities, and integration scenarios
+- 44 test files covering core, queue, GUI utilities, dialogs, and integration scenarios
 - Run focused: `python -m pytest tests/test_file.py`
-- Queue tests: `tests/test_queue_models.py`, `tests/test_queue_store.py`, `tests/test_queue_importers.py`
+- Queue tests: `tests/test_queue_models.py`, `tests/test_queue_store.py`, `tests/test_queue_importers.py`, `tests/test_queue_display_title.py`, `tests/test_bookmarklet_title_integration.py`
 - Deduplication tests: `tests/test_deduplication.py`, `tests/test_deduplication_integration.py`
+- Dialog tests: `tests/test_transcription_view_dialog.py`
 
 ## Workflow Preferences
 
@@ -214,6 +218,138 @@ NewMainWindow (QMainWindow)
 - **Standard mode**: Code + tests + lint + commit.
 - **Wrap-up mode**: Full test suite + build + docs + release if requested.
 - User runs builds/tests themselves and shares relevant output only.
+
+## Conversation Types and Responsibilities
+
+**CRITICAL: Each conversation should have a clear, single responsibility. Declare conversation type at the start.**
+
+### Conversation Categories
+
+**1. Configuration (Meta)**
+- **Purpose**: Update CLAUDE.md, manage Memory, adjust workflows, configure hooks/permissions
+- **Duration**: Short (complete and end)
+- **Output**: Configuration files updated
+- **When to use**: Setting up rules, changing preferences, adjusting automation
+- **Why separate**: New conversations load updated configs; avoid polluting development context
+
+**2. Feature Development**
+- **Purpose**: Implement single new feature with tests
+- **Duration**: Medium (dozens to hundreds of turns)
+- **Output**: Feature code + tests + commit
+- **Scope**: 1-3 modules
+- **When to use**: Adding new functionality with clear requirements
+- **Why separate**: Focused context on feature requirements and implementation details
+
+**3. Bug Fix**
+- **Purpose**: Diagnose and fix single bug with regression test
+- **Duration**: Short (few to dozens of turns)
+- **Output**: Bug fix + test + commit
+- **Scope**: Usually 1-2 files
+- **When to use**: Fixing specific reported issues
+- **Why separate**: Quick, focused fixes; avoid mixing with feature work
+
+**4. Refactoring**
+- **Purpose**: Code structure adjustment, performance optimization, tech debt cleanup
+- **Duration**: Medium to long (may use context compression)
+- **Output**: Refactored code + verification tests
+- **Scope**: May span multiple modules
+- **When to use**: Improving code quality without changing behavior
+- **Why separate**: Requires maintaining large context; keep separate from feature work
+
+**5. Exploration**
+- **Purpose**: Understand existing code, research solutions, evaluate feasibility
+- **Duration**: Short (mostly reading and analysis)
+- **Output**: Understanding docs, solution proposals
+- **Scope**: May be broad
+- **When to use**: Before starting implementation, investigating issues
+- **Why separate**: Avoid exploratory reads consuming development tokens; use Explore agent
+
+**6. Testing**
+- **Purpose**: Write test suites, improve coverage, fix failing tests
+- **Duration**: Short to medium
+- **Output**: Test files + execution commands (user runs tests)
+- **Scope**: Test files only
+- **When to use**: Dedicated testing work, improving test coverage
+- **Why separate**: AI writes tests, user executes; avoid test output polluting context
+
+**7. Release**
+- **Purpose**: Build executables, run full test suite, prepare release, tag and push
+- **Duration**: Short (verification-focused)
+- **Output**: Release package + git tag
+- **Scope**: Build and release process
+- **When to use**: Preparing version releases
+- **Why separate**: Critical operation requiring focus; clear release checklist
+
+### Core Principles
+
+**Single Responsibility**:
+- ✅ One conversation, one primary goal
+- ❌ Don't refactor during feature development
+- ❌ Don't add features during bug fixes
+
+**Context Efficiency**:
+- ✅ Related work in same conversation
+- ✅ Unrelated work in new conversation
+- ❌ Don't let exploration consume development tokens
+
+**Rule Consistency**:
+- ✅ Start new conversation after config changes
+- ✅ Start new conversation if AI violates rules
+- ✅ Periodically start fresh to reload rules
+
+**Traceability**:
+- ✅ Clear output at conversation end
+- ✅ Conversation title describes goal
+- ✅ Can trace decisions through conversation history
+
+### When to Start New Conversation
+
+**Always start new**:
+- Updated CLAUDE.md or Memory
+- Beginning independent task
+- Previous task completed and verified
+- AI behavior anomalies detected
+
+**Consider starting new**:
+- Conversation context compressed
+- Work type changes (development → refactoring)
+- Feature too large (split into multiple conversations)
+- Need to explore before implementing
+
+**Can continue**:
+- Small related changes
+- Bug fix discovered during feature work (if minor)
+- Test fixes for code just written
+
+### Conversation Flow Example
+
+**Scenario: Implement queue pause/resume feature**
+
+```
+Conversation 1 (Exploration):
+  → Analyze existing queue implementation
+  → Evaluate pause/resume technical approaches
+  → Output: Solution proposal document
+
+Conversation 2 (Feature Development):
+  → Implement pause/resume logic
+  → Update UI components
+  → Output: Feature code
+
+Conversation 3 (Testing):
+  → Write unit tests
+  → Write integration tests
+  → Output: Test files + execution commands for user
+
+Conversation 4 (Bug Fix, if needed):
+  → Fix bugs found during testing
+  → Output: Bug fixes
+
+Conversation 5 (Release, if version release):
+  → Build and verify
+  → Prepare release materials
+  → Output: Release package
+```
 
 ## Token Efficiency Guidelines
 

@@ -59,7 +59,10 @@ class QueueView(QWidget):
         super().__init__(parent)
         self._settings = settings
         self._item_ids: list[str] = []
-        self._items_cache: dict[str, QueueItem] = {}  # Cache items by ID
+        self._items_cache: dict[str, QueueItem] = {}
+        self._current_running_item_id: str | None = None
+        self._current_run_output: str = ""
+        self._current_view_dialog = None
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -162,6 +165,33 @@ class QueueView(QWidget):
         settings_row.addStretch()
         layout.addLayout(settings_row)
 
+        # Download options row
+        download_row = QHBoxLayout()
+
+        self._preserve_media_check = QCheckBox("Preserve media")
+        download_row.addWidget(self._preserve_media_check)
+
+        download_row.addWidget(QLabel("Type:"))
+        self._media_type_combo = QComboBox()
+        self._media_type_combo.addItems(["Audio", "Video"])
+        self._media_type_combo.setCurrentText("Audio")
+        download_row.addWidget(self._media_type_combo)
+
+        download_row.addWidget(QLabel("Quality:"))
+        self._download_quality_combo = QComboBox()
+        self._download_quality_combo.addItems(["Best", "High", "Medium", "Low"])
+        self._download_quality_combo.setCurrentText("Best")
+        download_row.addWidget(self._download_quality_combo)
+
+        download_row.addWidget(QLabel("Format:"))
+        self._download_format_combo = QComboBox()
+        self._download_format_combo.addItems(["Auto", "mp4", "webm", "mp3", "m4a", "opus"])
+        self._download_format_combo.setCurrentText("Auto")
+        download_row.addWidget(self._download_format_combo)
+
+        download_row.addStretch()
+        layout.addLayout(download_row)
+
         # Queue list
         queue_label = QLabel("Queue:")
         layout.addWidget(queue_label)
@@ -248,6 +278,21 @@ class QueueView(QWidget):
             self.enqueue_urls_requested.emit(text)
             self._url_input.clear()
 
+    def get_download_options(self) -> dict:
+        """Get current download options from UI."""
+        quality_map = {"Best": "best", "High": "high", "Medium": "medium", "Low": "low"}
+        quality = quality_map.get(self._download_quality_combo.currentText(), "best")
+        prefer_format = None
+        if self._download_format_combo.currentText() != "Auto":
+            prefer_format = self._download_format_combo.currentText()
+        media_kind = "video" if self._media_type_combo.currentText() == "Video" else "audio"
+        return {
+            "quality": quality,
+            "prefer_format": prefer_format,
+            "preserve_media": self._preserve_media_check.isChecked(),
+            "media_kind": media_kind,
+        }
+
     def _on_import_file(self) -> None:
         """Import URLs from file."""
         file_path, _ = QFileDialog.getOpenFileName(
@@ -319,48 +364,57 @@ class QueueView(QWidget):
             self._status_label.setText("Selected item not found in queue")
             return
 
-        # Check if item has completed
-        if item.status != "completed":
-            status_msg = {
-                "pending": "This item hasn't been transcribed yet. Start the queue to process it.",
-                "running": "This item is currently being transcribed. Wait for it to complete.",
-                "failed": "This item failed to transcribe. Try retrying it first.",
-            }.get(item.status, f"Cannot open view for item with status: {item.status}")
-            self._status_label.setText(status_msg)
+        if item.status == "pending":
+            self._status_label.setText("This item hasn't been transcribed yet. Start the queue to process it.")
             return
 
-        # Find transcript JSON in output directory
-        output_dir = item.settings.output_dir
-        if not output_dir or not output_dir.is_dir():
-            self._status_label.setText(
-                "Output directory not found. The transcription may have been moved or deleted."
-            )
+        if item.status == "failed":
+            self._status_label.setText("This item failed to transcribe. Check error message or retry.")
             return
 
-        # Look for JSON files in output directory
-        transcript_path = None
-        for json_file in output_dir.glob("*.json"):
-            transcript_path = json_file
-            break
+        if item.status == "running":
+            if item_id != self._current_running_item_id:
+                self._status_label.setText("Cannot open view: item status is inconsistent")
+                return
 
-        if not transcript_path or not transcript_path.is_file():
-            self._status_label.setText(
-                "Transcript file not found in output directory. "
-                "The file may have been moved or deleted."
-            )
+            try:
+                if self._current_view_dialog is not None and not self._current_view_dialog.isHidden():
+                    self._current_view_dialog.raise_()
+                    self._current_view_dialog.activateWindow()
+                    self._status_label.setText(f"View already open for: {item.display_label}")
+                    return
+
+                self._current_view_dialog = TranscriptionViewDialog(
+                    self,
+                    transcript_path=None,
+                    run_output=self._current_run_output,
+                )
+                self._current_view_dialog.show()
+                self._status_label.setText(f"Opened live view for: {item.display_label}")
+            except Exception as e:
+                self._status_label.setText(f"Error opening view: {e}")
             return
 
-        # Create and show view dialog
-        try:
-            view_dialog = TranscriptionViewDialog(
-                self,
-                transcript_path=transcript_path,
-                run_output="",  # Queue items don't have run output stored
-            )
-            view_dialog.show()
-            self._status_label.setText(f"Opened view for: {item.source.value}")
-        except Exception as e:
-            self._status_label.setText(f"Error opening view: {e}")
+        if item.status == "completed":
+            if not item.transcript_path or not item.transcript_path.is_file():
+                self._status_label.setText(
+                    "Transcript file not found. The file may have been moved or deleted."
+                )
+                return
+
+            try:
+                view_dialog = TranscriptionViewDialog(
+                    self,
+                    transcript_path=item.transcript_path,
+                    run_output=item.run_detail or "",
+                )
+                view_dialog.show()
+                self._status_label.setText(f"Opened view for: {item.display_label}")
+            except Exception as e:
+                self._status_label.setText(f"Error opening view: {e}")
+            return
+
+        self._status_label.setText(f"Cannot open view for item with status: {item.status}")
 
     def _on_clear_completed(self) -> None:
         """Clear completed items."""
@@ -443,7 +497,12 @@ class QueueView(QWidget):
         if item.source.kind == "local":
             source_label = f"[FILE] {Path(item.source.value).name}"
         else:
-            source_label = f"[URL] {item.source.value[:60]}..."
+            # Use display_label which prioritizes title over URL
+            display_name = item.display_label
+            # Truncate if too long
+            if len(display_name) > 80:
+                display_name = display_name[:77] + "..."
+            source_label = f"[URL] {display_name}"
 
         return f"{icon} {source_label}"
 
@@ -463,3 +522,32 @@ class QueueView(QWidget):
         self._start_queue_btn.setEnabled(not running)
         self._cancel_queue_btn.setEnabled(running)
         self._skip_current_btn.setEnabled(running)
+
+    def on_item_started(self, item: QueueItem) -> None:
+        """Handle item started event."""
+        self._current_running_item_id = item.item_id
+        self._current_run_output = ""
+        self._status_label.setText(f"Processing: {item.display_label}")
+
+    def on_item_progress(self, event) -> None:
+        """Handle item progress event."""
+        from flowscribe.app.models import ProgressEvent
+        if isinstance(event, ProgressEvent) and event.message:
+            self._current_run_output += event.message + "\n"
+            if self._current_view_dialog is not None and not self._current_view_dialog.isHidden():
+                self._current_view_dialog.update_run_output(self._current_run_output)
+
+    def on_item_completed(self, data: tuple) -> None:
+        """Handle item completed event."""
+        self._current_running_item_id = None
+        self._current_run_output = ""
+
+    def on_item_failed(self, data: tuple) -> None:
+        """Handle item failed event."""
+        self._current_running_item_id = None
+        self._current_run_output = ""
+
+    def on_item_canceled(self, item: QueueItem) -> None:
+        """Handle item canceled event."""
+        self._current_running_item_id = None
+        self._current_run_output = ""
