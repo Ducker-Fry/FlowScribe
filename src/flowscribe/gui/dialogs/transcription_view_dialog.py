@@ -81,6 +81,7 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
 
         self._current_segment_index: int = -1
         self._segment_modified: bool = False
+        self._active_segment_row: int = -1  # Track currently active segment for sync
 
         self._setup_ui()
 
@@ -619,22 +620,35 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
         self.media_position_slider.setValue(position)
         self.media_position_slider.blockSignals(False)
 
-        # Auto-highlight current segment during playback
-        if self._transcript_view and self._media_player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
-            from flowscribe.gui.transcript_viewer import transcript_segment_index_for_seconds
+        # Auto-sync transcript to media position during playback
+        self._sync_transcript_to_media_position(position)
 
-            current_seconds = position / 1000.0
-            segment_index = transcript_segment_index_for_seconds(self._transcript_view, current_seconds)
+    def _sync_transcript_to_media_position(self, position_milliseconds: int) -> None:
+        """Sync transcript segment selection to current media position."""
+        if self._transcript_view is None:
+            return
 
-            if segment_index is not None and segment_index != self.transcript_segments.currentRow():
-                # Block signals to prevent triggering _activate_selected_segment
-                self.transcript_segments.blockSignals(True)
-                self.transcript_segments.setCurrentRow(segment_index)
-                self.transcript_segments.scrollToItem(
-                    self.transcript_segments.item(segment_index),
-                    self.transcript_segments.ScrollHint.PositionAtCenter
-                )
-                self.transcript_segments.blockSignals(False)
+        from flowscribe.gui.transcript_viewer import transcript_segment_index_for_seconds
+
+        row = transcript_segment_index_for_seconds(
+            self._transcript_view,
+            position_milliseconds / 1000.0,
+        )
+
+        # Only update if different from current active segment
+        if row is None or row == self._active_segment_row:
+            return
+
+        self._active_segment_row = row
+
+        # Block signals to prevent triggering _activate_selected_segment
+        self.transcript_segments.blockSignals(True)
+        self.transcript_segments.setCurrentRow(row)
+        self.transcript_segments.scrollToItem(
+            self.transcript_segments.item(row),
+            self.transcript_segments.ScrollHint.PositionAtCenter
+        )
+        self.transcript_segments.blockSignals(False)
 
     def _on_media_duration_changed(self, duration: int) -> None:
         """Handle media duration change."""
@@ -721,7 +735,7 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
         self._seek_media_seconds(seek_seconds, autoplay=True)
 
     def _activate_selected_segment(self) -> None:
-        """Activate selected segment."""
+        """Activate selected segment and seek media to its start time."""
         from flowscribe.gui.transcript_viewer import transcript_segment_seek_seconds
 
         row = self.transcript_segments.currentRow()
@@ -733,12 +747,13 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
 
         segment = self._editable_transcript.segments[row]
         self._current_segment_index = row
+        self._active_segment_row = row  # Update active segment tracker
 
         # Seek media player to segment start time
         if self._transcript_view and row < len(self._transcript_view.segments):
             view_segment = self._transcript_view.segments[row]
             seek_seconds = transcript_segment_seek_seconds(view_segment)
-            self._seek_media_seconds(seek_seconds, autoplay=False)
+            self._seek_media_seconds(seek_seconds, autoplay=True)
 
         # Update editor
         self.segment_editor.blockSignals(True)
@@ -766,6 +781,7 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
             return
 
         self._media_player.setPosition(int(max(0.0, seconds) * 1000))
+
         if autoplay:
             self._media_player.play()
 
