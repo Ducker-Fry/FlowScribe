@@ -62,8 +62,9 @@ class QueueView(QWidget):
         self._items_cache: dict[str, QueueItem] = {}
         self._current_running_item_id: str | None = None
         self._current_run_output: str = ""
-        self._current_view_dialog = None
+        self._view_dialog = None  # Persistent dialog like Single Task
         self._setup_ui()
+        self._create_view_dialog()  # Create dialog at initialization
 
     def _setup_ui(self) -> None:
         """Initialize UI components."""
@@ -345,10 +346,21 @@ class QueueView(QWidget):
         if selected:
             self.remove_items_requested.emit(selected)
 
-    def _on_open_view(self) -> None:
-        """Open view for selected queue item."""
+    def _create_view_dialog(self) -> None:
+        """Create View Dialog at initialization (like Single Task)."""
         from flowscribe.gui.dialogs import TranscriptionViewDialog
 
+        self._view_dialog = TranscriptionViewDialog(
+            self,
+            transcript_path=None,  # No transcript initially
+            run_output="",
+            result=None,
+            output_paths=None,
+        )
+        # Don't show it yet - user will click "Open View" to show it
+
+    def _on_open_view(self) -> None:
+        """Open view for selected queue item (using persistent dialog like Single Task)."""
         selected = self._get_selected_item_ids()
         if not selected:
             self._status_label.setText("Please select a queue item first")
@@ -372,49 +384,44 @@ class QueueView(QWidget):
             self._status_label.setText("This item failed to transcribe. Check error message or retry.")
             return
 
+        # For running or completed items, use persistent dialog
+        if self._view_dialog is None:
+            self._create_view_dialog()
+
+        # Update dialog with current item's state
         if item.status == "running":
             if item_id != self._current_running_item_id:
                 self._status_label.setText("Cannot open view: item status is inconsistent")
                 return
 
-            try:
-                if self._current_view_dialog is not None and not self._current_view_dialog.isHidden():
-                    self._current_view_dialog.raise_()
-                    self._current_view_dialog.activateWindow()
-                    self._status_label.setText(f"View already open for: {item.display_label}")
-                    return
+            # Load live view with current run output
+            self._view_dialog.update_run_output(self._current_run_output)
+            self._status_label.setText(f"Opened live view for: {item.display_label}")
 
-                self._current_view_dialog = TranscriptionViewDialog(
-                    self,
-                    transcript_path=None,
-                    run_output=self._current_run_output,
-                )
-                self._current_view_dialog.show()
-                self._status_label.setText(f"Opened live view for: {item.display_label}")
-            except Exception as e:
-                self._status_label.setText(f"Error opening view: {e}")
-            return
-
-        if item.status == "completed":
+        elif item.status == "completed":
             if not item.transcript_path or not item.transcript_path.is_file():
                 self._status_label.setText(
                     "Transcript file not found. The file may have been moved or deleted."
                 )
                 return
 
+            # Load completed transcript with artifacts
             try:
-                view_dialog = TranscriptionViewDialog(
-                    self,
-                    transcript_path=item.transcript_path,
-                    run_output=item.run_detail or "",
-                )
-                view_dialog.show()
+                self._view_dialog._load_transcript(item.transcript_path)
+                self._view_dialog.update_run_output(item.run_detail or "")
                 self._status_label.setText(f"Opened view for: {item.display_label}")
             except Exception as e:
-                self._status_label.setText(f"Error opening view: {e}")
+                self._status_label.setText(f"Error loading transcript: {e}")
+                return
+
+        else:
+            self._status_label.setText(f"Cannot open view for item with status: {item.status}")
             return
 
-        self._status_label.setText(f"Cannot open view for item with status: {item.status}")
+        # Show the dialog
+        self._view_dialog.show()
+        self._view_dialog.raise_()
+        self._view_dialog.activateWindow()
 
     def _on_clear_completed(self) -> None:
         """Clear completed items."""
@@ -534,8 +541,9 @@ class QueueView(QWidget):
         from flowscribe.app.models import ProgressEvent
         if isinstance(event, ProgressEvent) and event.message:
             self._current_run_output += event.message + "\n"
-            if self._current_view_dialog is not None and not self._current_view_dialog.isHidden():
-                self._current_view_dialog.update_run_output(self._current_run_output)
+            # Update persistent view dialog if open
+            if self._view_dialog is not None and self._view_dialog.isVisible():
+                self._view_dialog.update_run_output(self._current_run_output)
 
     def on_item_completed(self, data: tuple) -> None:
         """Handle item completed event."""

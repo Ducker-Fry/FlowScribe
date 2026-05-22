@@ -356,18 +356,18 @@ class NewMainWindow(QMainWindow):
     def _on_cancel_queue(self) -> None:
         """Cancel queue processing."""
         if self._queue_runner:
-            self._queue_runner.request_cancel()
+            self._queue_runner.request_cancel_all()
         self.statusBar().showMessage("Queue cancellation requested")
 
     def _on_skip_current(self) -> None:
         """Skip current queue item."""
         if self._queue_runner:
-            self._queue_runner.request_skip()
+            self._queue_runner.request_skip_current()
         self.statusBar().showMessage("Skip requested")
 
     def _on_retry_item(self, item_id: str) -> None:
         """Retry failed item."""
-        self._queue_store.retry_item(item_id)
+        self._queue_store.update_item(item_id, status="pending", started_at=None, error_message=None)
         self._refresh_queue_view()
         self.statusBar().showMessage("Item marked for retry")
 
@@ -380,9 +380,9 @@ class NewMainWindow(QMainWindow):
 
     def _on_clear_completed(self) -> None:
         """Clear completed items."""
-        removed = self._queue_store.clear_completed()
+        removed = self._queue_store.remove_completed()
         self._refresh_queue_view()
-        self.statusBar().showMessage(f"Cleared {len(removed)} completed item(s)")
+        self.statusBar().showMessage(f"Cleared {removed} completed item(s)")
 
     def _on_reorder_queue(self, item_ids: list[str]) -> None:
         """Reorder queue items."""
