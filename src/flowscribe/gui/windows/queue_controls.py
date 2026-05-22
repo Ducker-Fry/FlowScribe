@@ -255,12 +255,13 @@ class QueueControlsMixin:
 
         from flowscribe.gui.dialogs.queue_item_settings_dialog import QueueItemSettingsDialog
 
-        dialog = QueueItemSettingsDialog(self, item.settings, item.display_label)
+        dialog = QueueItemSettingsDialog(self, item.settings, item.source, item.display_label)
         dialog.exec()
 
-        new_settings = dialog.get_settings()
-        if new_settings:
-            self._queue_store.update_item(item_id, settings=new_settings)
+        result = dialog.get_settings()
+        if result is not None:
+            new_settings, new_source = result
+            self._queue_store.update_item(item_id, settings=new_settings, source=new_source)
             self._refresh_queue_tab()
             self.status_label.setText(f"Updated settings for: {item.display_label}")
 

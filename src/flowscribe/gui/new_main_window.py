@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
 from pathlib import Path
 
 from PySide6.QtCore import QFileSystemWatcher, QThread, QUrl
@@ -396,12 +395,18 @@ class NewMainWindow(QMainWindow):
             self.statusBar().showMessage("Item not found")
             return
 
-        dialog = QueueItemSettingsDialog(self, item.settings, item.display_label)
+        dialog = QueueItemSettingsDialog(self, item.settings, item.source, item.display_label)
         if dialog.exec():
-            updated_settings = dialog.get_settings()
-            self._queue_store.update_item(item.item_id, settings=updated_settings)
-            self._refresh_queue_view()
-            self.statusBar().showMessage("Item settings updated")
+            result = dialog.get_settings()
+            if result is not None:
+                updated_settings, updated_source = result
+                self._queue_store.update_item(
+                    item.item_id,
+                    settings=updated_settings,
+                    source=updated_source,
+                )
+                self._refresh_queue_view()
+                self.statusBar().showMessage("Item settings updated")
 
     def _on_server_start(self, port: int) -> None:
         """Start bookmarklet server."""

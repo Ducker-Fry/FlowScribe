@@ -7,6 +7,7 @@ from datetime import datetime
 from hashlib import sha1
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlparse
 
 from flowscribe.app.models import SourceSpec, TranscriptionJob
 
@@ -66,9 +67,14 @@ class QueueItem:
         return Path(self.source.value).name
 
     def to_job(self) -> TranscriptionJob:
+        # Create subdirectory with timestamp for each queue item to avoid conflicts
+        timestamp = self.created_at.strftime("%H%M%S")
+        subdir_name = f"{timestamp}-{_source_stem(self.source)}"
+        effective_output_dir = self.settings.output_dir / subdir_name
+
         return TranscriptionJob(
             sources=(self.source,),
-            output_dir=self.settings.output_dir,
+            output_dir=effective_output_dir,
             output_name_base=self.settings.output_name_base or None,
             model_name=self.settings.model_name,
             language=self.settings.language,
@@ -93,3 +99,33 @@ class QueueItem:
 def generate_queue_item_id(source: SourceSpec) -> str:
     key = f"{source.kind}:{source.value}".encode("utf-8")
     return sha1(key).hexdigest()[:12]
+
+
+def _source_stem(source: SourceSpec) -> str:
+    """Extract a safe directory name from the source."""
+    if source.kind == "local":
+        return Path(source.value).stem
+
+    # For URLs, try to extract a meaningful name from the path
+    path = urlparse(source.value).path.rstrip("/")
+    if path:
+        stem = Path(path).stem
+        if stem:
+            return _sanitize_dirname(stem)
+
+    # Fallback: use URL hash for uniqueness
+    url_hash = sha1(source.value.encode("utf-8")).hexdigest()[:12]
+    return f"url-{url_hash}"
+
+
+def _sanitize_dirname(name: str) -> str:
+    """Sanitize a string to be safe for use as a directory name."""
+    # Remove or replace forbidden characters
+    forbidden = '<>:"/\\|?*'
+    cleaned = "".join("-" if char in forbidden else char for char in name)
+    # Remove leading/trailing spaces and dots
+    cleaned = cleaned.strip(" .")
+    # Limit length
+    if len(cleaned) > 100:
+        cleaned = cleaned[:100]
+    return cleaned or "output"

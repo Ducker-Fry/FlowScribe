@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from flowscribe.app.models import SourceSpec
 from flowscribe.gui.state import SUPPORTED_GUI_FORMATS
 from flowscribe.queue.models import QueueItemSettings
 
@@ -30,6 +31,7 @@ GUI_MODEL_OPTIONS = ("tiny", "base", "small", "medium", "large-v3-turbo", "large
 GUI_LANGUAGE_OPTIONS = ("auto", "en", "zh", "ja", "ko", "es", "fr", "de", "ru", "pt")
 GUI_PRESET_OPTIONS = ("none", "best_quality", "fast")
 GUI_NETWORK_OPTIONS = ("auto", "ipv4", "ipv6")
+GUI_MEDIA_KIND_OPTIONS = ("audio", "video")
 
 
 class QueueItemSettingsDialog(QDialog):
@@ -39,6 +41,7 @@ class QueueItemSettingsDialog(QDialog):
         self,
         parent: QWidget | None,
         settings: QueueItemSettings,
+        source: SourceSpec,
         item_label: str,
     ):
         super().__init__(parent)
@@ -46,8 +49,9 @@ class QueueItemSettingsDialog(QDialog):
         self.resize(600, 700)
 
         self._settings = settings
+        self._source = source
         self._setup_ui()
-        self._load_settings(settings)
+        self._load_settings(settings, source)
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -182,12 +186,32 @@ class QueueItemSettingsDialog(QDialog):
         network_layout.addWidget(QLabel("Download timeout"), 5, 0)
         network_layout.addWidget(self.download_timeout_spin, 5, 1)
 
+        # URL Media Settings (only for URL sources)
+        media_group = QGroupBox("URL Media Settings")
+        media_layout = QGridLayout(media_group)
+        media_layout.setHorizontalSpacing(10)
+        media_layout.setVerticalSpacing(8)
+
+        self.keep_media_check = QCheckBox("Preserve downloaded media")
+        self.media_kind_combo = QComboBox()
+        self.media_kind_combo.addItems(GUI_MEDIA_KIND_OPTIONS)
+        self.auto_bind_media_check = QCheckBox("Auto-bind media to transcript")
+
+        media_layout.addWidget(self.keep_media_check, 0, 0, 1, 2)
+        media_layout.addWidget(QLabel("Media kind"), 1, 0)
+        media_layout.addWidget(self.media_kind_combo, 1, 1)
+        media_layout.addWidget(self.auto_bind_media_check, 2, 0, 1, 2)
+
         # Add all groups to main layout
         layout.addWidget(output_group)
         layout.addWidget(model_group)
         layout.addWidget(timestamp_group)
         layout.addWidget(progressive_group)
         layout.addWidget(network_group)
+        layout.addWidget(media_group)
+
+        # Store reference to media group for conditional visibility
+        self._media_group = media_group
 
         # Buttons
         button_layout = QHBoxLayout()
@@ -211,7 +235,7 @@ class QueueItemSettingsDialog(QDialog):
         # Store reference to progressive group for enabled state
         self._progressive_group = progressive_group
 
-    def _load_settings(self, settings: QueueItemSettings) -> None:
+    def _load_settings(self, settings: QueueItemSettings, source: SourceSpec) -> None:
         """Load settings into UI controls."""
         self.output_dir_input.setText(str(settings.output_dir))
         self.output_name_input.setText(settings.output_name_base)
@@ -240,10 +264,20 @@ class QueueItemSettingsDialog(QDialog):
         self.max_duration_spin.setValue(int(settings.max_duration_seconds))
         self.download_timeout_spin.setValue(settings.download_timeout_seconds)
 
+        # Load URL media settings
+        self.keep_media_check.setChecked(source.keep_media)
+        self.media_kind_combo.setCurrentText(source.url_media_kind)
+        self.auto_bind_media_check.setChecked(source.auto_bind_media)
+
+        # Hide media group for non-URL sources
+        if source.kind != "url":
+            self._media_group.hide()
+
     def _reset_to_defaults(self) -> None:
         """Reset all settings to default values."""
         defaults = QueueItemSettings()
-        self._load_settings(defaults)
+        default_source = SourceSpec(kind=self._source.kind, value=self._source.value)
+        self._load_settings(defaults, default_source)
 
     def _choose_output_dir(self) -> None:
         """Open directory chooser for output directory."""
@@ -268,8 +302,8 @@ class QueueItemSettingsDialog(QDialog):
         if file_path:
             self.cookies_input.setText(file_path)
 
-    def get_settings(self) -> QueueItemSettings | None:
-        """Return updated settings if OK was clicked, None if canceled."""
+    def get_settings(self) -> tuple[QueueItemSettings, SourceSpec] | None:
+        """Return updated settings and source if Apply was clicked, None if canceled."""
         if self.result() != QDialog.DialogCode.Accepted:
             return None
 
@@ -291,7 +325,7 @@ class QueueItemSettingsDialog(QDialog):
         cookies_text = self.cookies_input.text().strip()
         cookies_path = Path(cookies_text) if cookies_text else None
 
-        return QueueItemSettings(
+        settings = QueueItemSettings(
             output_dir=Path(self.output_dir_input.text().strip() or "outputs"),
             output_name_base=self.output_name_input.text().strip(),
             model_name=self.model_combo.currentText().strip() or "small",
@@ -312,3 +346,17 @@ class QueueItemSettingsDialog(QDialog):
             max_duration_seconds=float(self.max_duration_spin.value()),
             download_timeout_seconds=self.download_timeout_spin.value(),
         )
+
+        # Create updated source with new media settings
+        source = SourceSpec(
+            kind=self._source.kind,
+            value=self._source.value,
+            recursive=self._source.recursive,
+            keep_media=self.keep_media_check.isChecked(),
+            url_media_kind=self.media_kind_combo.currentText(),
+            media_output_dir=self._source.media_output_dir,
+            auto_bind_media=self.auto_bind_media_check.isChecked(),
+            download_options=self._source.download_options,
+        )
+
+        return settings, source

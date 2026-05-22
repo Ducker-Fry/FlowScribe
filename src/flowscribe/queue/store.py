@@ -7,7 +7,7 @@ from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
-from flowscribe.app.models import SourceSpec
+from flowscribe.app.models import DownloadOptions, SourceSpec
 from flowscribe.queue.models import (
     QueueItem,
     QueueItemSettings,
@@ -168,6 +168,13 @@ class BatchQueueStore:
 
 
 def _item_to_payload(item: QueueItem) -> dict:
+    download_opts = None
+    if item.source.download_options:
+        download_opts = {
+            "quality": item.source.download_options.quality,
+            "prefer_format": item.source.download_options.prefer_format,
+        }
+
     return {
         "item_id": item.item_id,
         "source": {
@@ -180,6 +187,7 @@ def _item_to_payload(item: QueueItem) -> dict:
             if item.source.media_output_dir
             else None,
             "auto_bind_media": item.source.auto_bind_media,
+            "download_options": download_opts,
         },
         "settings": {
             "output_dir": str(item.settings.output_dir),
@@ -224,6 +232,14 @@ def _item_from_payload(data: object) -> QueueItem | None:
         source_data = data["source"]
         settings_data = data.get("settings", {})
 
+        download_opts = None
+        if source_data.get("download_options"):
+            opts_data = source_data["download_options"]
+            download_opts = DownloadOptions(
+                quality=opts_data.get("quality", "best"),
+                prefer_format=opts_data.get("prefer_format"),
+            )
+
         source = SourceSpec(
             kind=source_data["kind"],
             value=source_data["value"],
@@ -234,6 +250,7 @@ def _item_from_payload(data: object) -> QueueItem | None:
             if source_data.get("media_output_dir")
             else None,
             auto_bind_media=source_data.get("auto_bind_media", False),
+            download_options=download_opts,
         )
 
         settings = QueueItemSettings(
