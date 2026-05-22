@@ -399,8 +399,7 @@ class NewMainWindow(QMainWindow):
         dialog = QueueItemSettingsDialog(self, item.settings, item.display_label)
         if dialog.exec():
             updated_settings = dialog.get_settings()
-            updated_item = replace(item, settings=updated_settings)
-            self._queue_store.update_item(updated_item)
+            self._queue_store.update_item(item.item_id, settings=updated_settings)
             self._refresh_queue_view()
             self.statusBar().showMessage("Item settings updated")
 

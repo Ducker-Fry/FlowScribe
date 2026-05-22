@@ -201,10 +201,10 @@ class QueueItemSettingsDialog(QDialog):
         cancel_button.clicked.connect(self.reject)
         button_layout.addWidget(cancel_button)
 
-        ok_button = QPushButton("OK")
-        ok_button.clicked.connect(self.accept)
-        ok_button.setDefault(True)
-        button_layout.addWidget(ok_button)
+        apply_button = QPushButton("Apply")
+        apply_button.clicked.connect(self.accept)
+        apply_button.setDefault(True)
+        button_layout.addWidget(apply_button)
 
         layout.addLayout(button_layout)
 

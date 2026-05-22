@@ -388,6 +388,9 @@ class QueueView(QWidget):
         if self._view_dialog is None:
             self._create_view_dialog()
 
+        # Clear previous content before loading new item
+        self._view_dialog.clear_content()
+
         # Update dialog with current item's state
         if item.status == "running":
             if item_id != self._current_running_item_id:

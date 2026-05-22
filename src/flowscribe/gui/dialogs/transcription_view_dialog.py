@@ -839,25 +839,46 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
         self._search_hits = ()
         self._workspace_artifact_paths = ()
         self._last_chunk_index = 0  # Reset chunk index for progressive updates
+        self._current_segment_index = -1
+        self._segment_modified = False
+        self._active_segment_row = -1
 
-        # Clear UI elements
+        # Stop and clear media player
+        if hasattr(self, '_media_player'):
+            self._media_player.stop()
+            self._media_player.setSource(QUrl())
+
+        # Clear UI elements (block signals to prevent triggering change handlers)
         self.preview_output.clear()
         self.transcript_summary.setPlainText("Transcription will appear here...")
         self.transcript_segments.clear()
+
+        # Block signals when clearing segment editor to prevent _segment_modified from being set
+        self.segment_editor.blockSignals(True)
         self.segment_editor.clear()
+        self.segment_editor.blockSignals(False)
         self.segment_editor.setEnabled(False)
+
         self.search_results.clear()
         self.artifact_selector.clear()
         self.artifact_viewer.clear()
+        self.artifact_markdown_viewer.clear()
         self.artifact_status_label.setText("No artifacts yet")
         self.transcript_edit_status_label.setText("No segment selected")
         self.media_status_label.setText("No media bound")
         self.media_binding_label.setText("Binding: Unbound")
+        self.media_position_slider.setValue(0)
 
         # Disable controls
         self.open_media_button.setEnabled(False)
+        self.play_media_button.setEnabled(False)
+        self.media_position_slider.setEnabled(False)
         self.search_button.setEnabled(False)
         self.search_input.setEnabled(False)
+        self.segment_revert_button.setEnabled(False)
+        self.save_transcript_button.setEnabled(False)
+        self.save_transcript_copy_button.setEnabled(False)
+        self.reexport_transcript_button.setEnabled(False)
 
     def update_run_output(self, output: str) -> None:
         """Update run details output."""
