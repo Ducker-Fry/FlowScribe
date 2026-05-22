@@ -218,9 +218,10 @@ class TranscriptionService:
                             update=update,
                             run_started_at=run_started_at,
                         ),
+                        should_cancel=should_cancel,
                     )
                 else:
-                    artifacts = pipeline.process(item)
+                    artifacts = pipeline.process(item, should_cancel=should_cancel)
             except FlowScribeError as exc:
                 errors.append(_error_from_exception(exc, source=str(item.path)))
                 self._emit_progress(
@@ -338,9 +339,10 @@ class TranscriptionService:
                         update=update,
                         run_started_at=run_started_at,
                     ),
+                    should_cancel=should_cancel,
                 )
             else:
-                artifacts = pipeline.process(item)
+                artifacts = pipeline.process(item, should_cancel=should_cancel)
             preserved_media_path = self._preserve_url_media(
                 download,
                 source=source,

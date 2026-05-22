@@ -58,6 +58,7 @@ class ProgressiveTranscriptionExecutor:
         max_workers: int = 1,
         max_failed_chunks: int = 0,
         update_callback: Callable[[ProgressiveTranscriptionUpdate], None] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> ProgressiveTranscriptionState:
         if cache_store is not None:
             cache_store.prepare(chunk_plan, resume=resume)
@@ -83,11 +84,16 @@ class ProgressiveTranscriptionExecutor:
             completed_results_by_index=completed_results_by_index,
             cached_results_by_index=cached_results_by_index,
             max_workers=max_workers,
+            should_cancel=should_cancel,
         ):
+            if should_cancel is not None and should_cancel():
+                from flowscribe.core.errors import CancellationError
+                raise CancellationError("Progressive transcription canceled.")
+
             chunk = chunk_lookup[update.chunk_result.chunk.index]
             result = update.chunk_result
             if result.status == "failed":
-                retried = self._retry_one_chunk(audio, chunk, result)
+                retried = self._retry_one_chunk(audio, chunk, result, should_cancel=should_cancel)
                 if retried.status == "done":
                     update = ProgressiveTranscriptionUpdate(
                         state=update.state,
@@ -208,6 +214,7 @@ class ProgressiveTranscriptionExecutor:
         completed_results_by_index: dict[int, ChunkTranscriptionResult],
         cached_results_by_index: dict[int, ChunkTranscriptionResult],
         max_workers: int,
+        should_cancel: Callable[[], bool] | None = None,
     ):
         next_expected_index = 1
         while next_expected_index in completed_results_by_index:
@@ -226,7 +233,10 @@ class ProgressiveTranscriptionExecutor:
         effective_workers = self._resolve_max_workers(max_workers=max_workers)
         if effective_workers <= 1 or len(pending_chunks) <= 1:
             for chunk in pending_chunks:
-                result = self._transcribe_one_chunk(audio, chunk, transcriber=self._transcriber)
+                if should_cancel is not None and should_cancel():
+                    from flowscribe.core.errors import CancellationError
+                    raise CancellationError("Progressive transcription canceled.")
+                result = self._transcribe_one_chunk(audio, chunk, transcriber=self._transcriber, should_cancel=should_cancel)
                 completed_results_by_index[chunk.index] = result
                 while next_expected_index in completed_results_by_index:
                     ready_result = completed_results_by_index.pop(next_expected_index)
@@ -298,13 +308,20 @@ class ProgressiveTranscriptionExecutor:
         audio: PreparedAudio,
         chunk: TranscriptionChunk,
         transcriber,
+        *,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> ChunkTranscriptionResult:
+        if should_cancel is not None and should_cancel():
+            from flowscribe.core.errors import CancellationError
+            raise CancellationError("Progressive transcription canceled.")
+
         started_at = time.perf_counter()
         try:
             transcript = transcriber.transcribe_clip(
                 audio,
                 start_seconds=chunk.start_seconds,
                 end_seconds=chunk.end_seconds,
+                should_cancel=should_cancel,
             )
         except Exception as exc:
             elapsed_seconds = time.perf_counter() - started_at
@@ -401,10 +418,12 @@ class ProgressiveTranscriptionExecutor:
         audio: PreparedAudio,
         chunk: TranscriptionChunk,
         previous_result: ChunkTranscriptionResult,
+        *,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> ChunkTranscriptionResult:
         """Retry a failed chunk once and return the result."""
         try:
-            return self._transcribe_one_chunk(audio, chunk, transcriber=self._transcriber)
+            return self._transcribe_one_chunk(audio, chunk, transcriber=self._transcriber, should_cancel=should_cancel)
         except Exception as exc:
             return ChunkTranscriptionResult(
                 chunk=chunk,

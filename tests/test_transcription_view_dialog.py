@@ -149,3 +149,65 @@ def test_open_transcript_file_read_error(qt_app, tmp_path):
         # Verify error message contains "Error loading transcript"
         call_args = dialog.artifact_status_label.setText.call_args[0][0]
         assert "Error loading transcript" in call_args
+
+
+def test_load_transcript_with_artifacts(qt_app, mock_transcript_data, tmp_path):
+    """Test loading transcript with provided artifact paths."""
+    from flowscribe.gui.dialogs.transcription_view_dialog import TranscriptionViewDialog
+    from pathlib import Path
+
+    # Create temporary transcript and artifact files
+    transcript_file = tmp_path / "test_transcript.json"
+    with open(transcript_file, 'w', encoding='utf-8') as f:
+        json.dump(mock_transcript_data, f)
+
+    txt_file = tmp_path / "test_transcript.txt"
+    txt_file.write_text("Hello world\nThis is a test", encoding='utf-8')
+
+    srt_file = tmp_path / "test_transcript.srt"
+    srt_file.write_text("1\n00:00:00,000 --> 00:00:02,500\nHello world\n", encoding='utf-8')
+
+    artifact_paths = (transcript_file, txt_file, srt_file)
+
+    # Create dialog instance with mocked UI setup
+    with patch.object(TranscriptionViewDialog, '_setup_ui'):
+        dialog = TranscriptionViewDialog()
+        dialog.transcript_summary = MagicMock()
+        dialog.media_status_label = MagicMock()
+        dialog.media_binding_label = MagicMock()
+        dialog.open_media_button = MagicMock()
+        dialog.search_button = MagicMock()
+        dialog.search_input = MagicMock()
+        dialog._populate_segments = MagicMock()
+        dialog._load_artifacts = MagicMock()
+        dialog._bind_media = MagicMock()
+
+        # Mock the transcript loading functions
+        with patch('flowscribe.gui.transcript_viewer.load_transcript_view') as mock_load_view, \
+             patch('flowscribe.transcript.editing.load_editable_transcript') as mock_load_editable, \
+             patch('flowscribe.gui.transcript_viewer.render_transcript_summary', return_value="<html>Summary</html>") as mock_render, \
+             patch('flowscribe.gui.transcript_viewer.resolve_transcript_media_path', return_value=None):
+
+            mock_transcript_view = MagicMock()
+            mock_load_view.return_value = mock_transcript_view
+            mock_load_editable.return_value = MagicMock()
+
+            # Call the method
+            dialog._load_transcript_with_artifacts(transcript_file, artifact_paths)
+
+            # Verify transcript was loaded
+            mock_load_view.assert_called_once_with(transcript_file)
+            mock_load_editable.assert_called_once_with(transcript_file)
+
+            # Verify artifacts were loaded with provided paths (not discovered)
+            dialog._load_artifacts.assert_called_once_with(artifact_paths)
+
+            # Verify UI was updated
+            dialog.transcript_summary.setHtml.assert_called_once_with("<html>Summary</html>")
+            dialog._populate_segments.assert_called_once()
+
+            # Verify controls were enabled
+            dialog.open_media_button.setEnabled.assert_called_once_with(True)
+            dialog.search_button.setEnabled.assert_called_once_with(True)
+            dialog.search_input.setEnabled.assert_called_once_with(True)
+

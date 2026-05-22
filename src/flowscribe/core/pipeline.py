@@ -66,15 +66,25 @@ class LocalTranscriptionPipeline:
             self._audio_cache.put(prepared)
         return prepared
 
-    def process(self, item: MediaItem) -> OutputArtifacts:
-        transcript = self.build_transcript(item)
+    def process(
+        self,
+        item: MediaItem,
+        *,
+        should_cancel: Callable[[], bool] | None = None,
+    ) -> OutputArtifacts:
+        transcript = self.build_transcript(item, should_cancel=should_cancel)
         return self._artifact_writer.write_all(transcript, self._output_dir)
 
-    def build_transcript(self, item: MediaItem) -> Transcript:
+    def build_transcript(
+        self,
+        item: MediaItem,
+        *,
+        should_cancel: Callable[[], bool] | None = None,
+    ) -> Transcript:
         item_work_dir = self._work_dir / item.path.stem
         prepared_audio = self._prepare_or_cache(item, item_work_dir)
         try:
-            transcript = self._transcriber.transcribe(prepared_audio)
+            transcript = self._transcriber.transcribe(prepared_audio, should_cancel=should_cancel)
             if self._transcript_normalizer is not None:
                 transcript = self._transcript_normalizer(transcript)
             if self._deduplicator is not None:
@@ -96,6 +106,7 @@ class LocalTranscriptionPipeline:
         max_failed_chunks: int = 3,
         plan_callback: Callable[[MediaDurationInfo, TranscriptionChunkPlan], None] | None = None,
         update_callback: Callable[[ProgressiveTranscriptionUpdate], None] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> ProgressiveTranscriptionState:
         item_work_dir = self._work_dir / item.path.stem
         cache_store = ProgressiveChunkCache(item_work_dir / ".progressive")
@@ -117,6 +128,7 @@ class LocalTranscriptionPipeline:
                 max_workers=max_workers,
                 max_failed_chunks=max_failed_chunks,
                 update_callback=update_callback,
+                should_cancel=should_cancel,
             )
             transcript = state.transcript
             if self._transcript_normalizer is not None:
@@ -162,6 +174,7 @@ class LocalTranscriptionPipeline:
         max_failed_chunks: int = 3,
         plan_callback: Callable[[MediaDurationInfo, TranscriptionChunkPlan], None] | None = None,
         update_callback: Callable[[ProgressiveTranscriptionUpdate], None] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> tuple[OutputArtifacts, ProgressiveTranscriptionState]:
         state = self.build_progressive_transcript(
             item,
@@ -173,6 +186,7 @@ class LocalTranscriptionPipeline:
             max_failed_chunks=max_failed_chunks,
             plan_callback=plan_callback,
             update_callback=update_callback,
+            should_cancel=should_cancel,
         )
         return self._artifact_writer.write_all(state.transcript, self._output_dir), state
 

@@ -35,6 +35,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from flowscribe.app.models import ProgressEvent
+
 # Import the mixins that contain all the workspace logic
 from flowscribe.gui.windows.transcript_viewer_controls import TranscriptViewerControlsMixin
 from flowscribe.gui.windows.workspace_controls import WorkspaceControlsMixin
@@ -57,11 +59,13 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
         transcript_path: Path | None = None,
         run_output: str = "",
         result = None,
+        output_paths: tuple[Path, ...] | None = None,
     ):
         super().__init__(parent)
         self._transcript_path = transcript_path
         self._run_output = run_output
         self._result = result
+        self._output_paths = output_paths  # Store output paths for workspace loading
 
         # Initialize mixin state (copied from MainWindow.__init__)
         self._transcript_view = None
@@ -85,7 +89,11 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
         self._setup_ui()
 
         if transcript_path and transcript_path.is_file():
-            self._load_transcript(transcript_path)
+            # If output_paths provided, use them; otherwise discover from transcript
+            if output_paths:
+                self._load_transcript_with_artifacts(transcript_path, output_paths)
+            else:
+                self._load_transcript(transcript_path)
 
     def _setup_ui(self) -> None:
         """Initialize UI components."""
@@ -477,6 +485,60 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
             self.transcript_summary.setPlainText(f"Error loading transcript: {e}")
             self.media_status_label.setText(f"Failed to load transcript: {e}")
 
+    def _load_transcript_with_artifacts(
+        self, transcript_path: Path, artifact_paths: tuple[Path, ...]
+    ) -> None:
+        """Load transcript and use provided artifact paths instead of discovering them.
+
+        This method is used when artifacts are already known (e.g., from transcription result),
+        avoiding the need to discover them from the transcript path.
+        """
+        from flowscribe.gui.transcript_viewer import (
+            load_transcript_view,
+            render_transcript_summary,
+            resolve_transcript_media_path,
+        )
+        from flowscribe.transcript.editing import load_editable_transcript
+
+        self._transcript_path = transcript_path
+        self.setWindowTitle(f"Transcription View - {transcript_path.name}")
+
+        try:
+            # Load transcript view
+            self._transcript_view = load_transcript_view(transcript_path)
+
+            # Load editable transcript
+            self._editable_transcript = load_editable_transcript(transcript_path)
+
+            # Update summary
+            summary_html = render_transcript_summary(self._transcript_view)
+            self.transcript_summary.setHtml(summary_html)
+
+            # Populate segments list
+            self._populate_segments()
+
+            # Load provided artifacts (instead of discovering)
+            self._load_artifacts(artifact_paths)
+
+            # Try to auto-bind media from transcript source
+            media_path = resolve_transcript_media_path(self._transcript_view)
+            if media_path and media_path.is_file():
+                self._bind_media(media_path)
+            else:
+                self.media_status_label.setText(
+                    "Media file not found. Click 'Bind Media To Transcript' to select manually."
+                )
+                self.media_binding_label.setText("Binding: Unbound")
+
+            # Enable controls
+            self.open_media_button.setEnabled(True)
+            self.search_button.setEnabled(True)
+            self.search_input.setEnabled(True)
+
+        except Exception as e:
+            self.transcript_summary.setPlainText(f"Error loading transcript: {e}")
+            self.media_status_label.setText(f"Failed to load transcript: {e}")
+
     def _open_transcript_file(self) -> None:
         """Open a transcript JSON file and update workspace."""
         file_path, _ = QFileDialog.getOpenFileName(
@@ -768,6 +830,84 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
             f"[{start_str}s - {end_str}s]"
         )
 
+    def clear_content(self) -> None:
+        """Clear all content in the dialog (for new transcription)."""
+        # Clear transcript state
+        self._transcript_path = None
+        self._transcript_view = None
+        self._editable_transcript = None
+        self._search_hits = ()
+        self._workspace_artifact_paths = ()
+        self._last_chunk_index = 0  # Reset chunk index for progressive updates
+
+        # Clear UI elements
+        self.preview_output.clear()
+        self.transcript_summary.setPlainText("Transcription will appear here...")
+        self.transcript_segments.clear()
+        self.segment_editor.clear()
+        self.segment_editor.setEnabled(False)
+        self.search_results.clear()
+        self.artifact_selector.clear()
+        self.artifact_viewer.clear()
+        self.artifact_status_label.setText("No artifacts yet")
+        self.transcript_edit_status_label.setText("No segment selected")
+        self.media_status_label.setText("No media bound")
+        self.media_binding_label.setText("Binding: Unbound")
+
+        # Disable controls
+        self.open_media_button.setEnabled(False)
+        self.search_button.setEnabled(False)
+        self.search_input.setEnabled(False)
+
+    def update_run_output(self, output: str) -> None:
+        """Update run details output."""
+        self.preview_output.setPlainText(output)
+
+    def append_progress_segments(self, event: ProgressEvent) -> None:
+        """Append progressive transcription segments in real-time (like old version)."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QListWidgetItem
+        from flowscribe.gui.utils.formatting import _render_progress_segment_line
+
+        if not event.segments:
+            return
+
+        # Add chunk separator if needed (like old version)
+        current_chunk = event.chunk_index or 0
+        if hasattr(self, '_last_chunk_index'):
+            if current_chunk != self._last_chunk_index and self._last_chunk_index > 0:
+                separator = QListWidgetItem("─" * 30)
+                separator.setFlags(Qt.ItemFlag.ItemIsEnabled)
+                self.transcript_segments.addItem(separator)
+        else:
+            self._last_chunk_index = 0
+
+        # Add chunk header if available
+        if event.chunk_index is not None and event.chunk_count is not None:
+            header = QListWidgetItem(
+                f"╾ Chunk {event.chunk_index}/{event.chunk_count} ╼"
+            )
+            header.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            bold_font = header.font()
+            bold_font.setBold(True)
+            header.setFont(bold_font)
+            self.transcript_segments.addItem(header)
+
+        self._last_chunk_index = current_chunk
+
+        # Add segments
+        for segment in event.segments:
+            self.transcript_segments.addItem(_render_progress_segment_line(segment))
+
+        # Update summary with progress status
+        from flowscribe.gui.utils.formatting import _progress_event_status_line
+        status_line = _progress_event_status_line(event)
+        if status_line:
+            self.transcript_summary.setPlainText(
+                event.message + "\n\n" + status_line if event.message else status_line
+            )
+            self.transcript_edit_status_label.setText(status_line)
+
         # Enable buttons
         self.segment_revert_button.setEnabled(True)
         self.save_transcript_button.setEnabled(True)
@@ -932,6 +1072,3 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
                 f"Tab view not yet implemented. Viewing {path.name} in current view."
             )
 
-    def update_run_output(self, output: str) -> None:
-        """Update run details output."""
-        self.preview_output.setPlainText(output)

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from flowscribe.core.errors import TranscriptionError
+from collections.abc import Callable
+
+from flowscribe.core.errors import TranscriptionError, CancellationError
 from flowscribe.core.models import (
     PreparedAudio,
     Transcript,
@@ -38,13 +40,20 @@ class LocalWhisperTranscriber:
         self._word_timestamps = word_timestamps
         self._model = None
 
-    def transcribe(self, audio: PreparedAudio) -> Transcript:
+    def transcribe(
+        self,
+        audio: PreparedAudio,
+        *,
+        should_cancel: Callable[[], bool] | None = None,
+    ) -> Transcript:
         try:
-            return self._transcribe_internal(audio)
+            return self._transcribe_internal(audio, should_cancel=should_cancel)
         except ImportError as exc:
             raise TranscriptionError(
                 "faster-whisper is not installed. Run: python -m pip install faster-whisper"
             ) from exc
+        except CancellationError:
+            raise
         except Exception as exc:
             raise TranscriptionError(f"Local transcription failed for {audio.path}: {exc}") from exc
 
@@ -54,17 +63,21 @@ class LocalWhisperTranscriber:
         *,
         start_seconds: float,
         end_seconds: float,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> Transcript:
         try:
             return self._transcribe_internal(
                 audio,
                 clip_start_seconds=start_seconds,
                 clip_end_seconds=end_seconds,
+                should_cancel=should_cancel,
             )
         except ImportError as exc:
             raise TranscriptionError(
                 "faster-whisper is not installed. Run: python -m pip install faster-whisper"
             ) from exc
+        except CancellationError:
+            raise
         except Exception as exc:
             raise TranscriptionError(
                 f"Local clip transcription failed for {audio.path} [{start_seconds}, {end_seconds}]: {exc}"
@@ -76,6 +89,7 @@ class LocalWhisperTranscriber:
         *,
         clip_start_seconds: float | None = None,
         clip_end_seconds: float | None = None,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> Transcript:
         model = self._load_model()
         kwargs = {
@@ -90,11 +104,15 @@ class LocalWhisperTranscriber:
             kwargs["clip_timestamps"] = [clip_start_seconds, clip_end_seconds]
         segments, info = model.transcribe(str(audio.path), **kwargs)
         language = getattr(info, "language", None) or self._language
-        transcript_segments = tuple(
-            self._build_segment(segment, language=language)
-            for segment in segments
-            if segment.text.strip()
-        )
+
+        transcript_segments = []
+        for segment in segments:
+            if should_cancel is not None and should_cancel():
+                raise CancellationError("Transcription canceled.")
+            if segment.text.strip():
+                transcript_segments.append(self._build_segment(segment, language=language))
+
+        transcript_segments = tuple(transcript_segments)
 
         options = TranscriptionOptions(
             model_name=self._model_name,

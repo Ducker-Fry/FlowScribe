@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
 
@@ -19,7 +20,12 @@ class MediaPreparer(Protocol):
 
 
 class Transcriber(Protocol):
-    def transcribe(self, audio: PreparedAudio) -> Transcript:
+    def transcribe(
+        self,
+        audio: PreparedAudio,
+        *,
+        should_cancel: Callable[[], bool] | None = None,
+    ) -> Transcript:
         """Create a transcript from prepared audio."""
 
 

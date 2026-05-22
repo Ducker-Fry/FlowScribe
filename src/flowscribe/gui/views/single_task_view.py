@@ -54,10 +54,16 @@ class SingleTaskView(QWidget):
         self._cancel_requested = False
         self._last_output_dir: Path | None = None
         self._last_transcript_path: Path | None = None
+        self._last_output_paths: list[Path] = []  # Track all output paths
         self._current_run_output: str = ""
         self._last_result = None  # Store TranscriptionResult
         self._view_dialog = None
+        self._current_output_dir: Path | None = None  # Track current transcription output dir
+        self._progress_event_count = 0  # Counter for progress events
+        self._transcription_start_time: float = 0.0  # Track when transcription started
         self._setup_ui()
+        # Create View Dialog at initialization (like old version)
+        self._create_view_dialog()
 
     def _setup_ui(self) -> None:
         """Initialize UI components."""
@@ -166,7 +172,7 @@ class SingleTaskView(QWidget):
 
         self.open_view_button = QPushButton("Open View")
         self.open_view_button.clicked.connect(self._open_view)
-        self.open_view_button.setEnabled(False)
+        # Always enabled - View Dialog shows current state
         controls_layout.addWidget(self.open_view_button)
 
         controls_layout.addStretch(1)
@@ -291,6 +297,20 @@ class SingleTaskView(QWidget):
         if job is None:
             return
 
+        # Clear previous transcript path and output paths
+        self._last_transcript_path = None
+        self._last_output_paths = []
+
+        # Clear View Dialog content (but keep it available)
+        if self._view_dialog is not None:
+            self._view_dialog.clear_content()
+
+        # Track output directory and start time for progressive cache detection
+        self._current_output_dir = job.output_dir
+        self._progress_event_count = 0
+        import time
+        self._transcription_start_time = time.time()
+
         # Start transcription
         self.start_button.setEnabled(False)
         self.cancel_button.setEnabled(True)
@@ -408,7 +428,7 @@ class SingleTaskView(QWidget):
             self.preview_output.appendPlainText(event.message)
             self._current_run_output += event.message + "\n"
             # Update view dialog if open
-            if self._view_dialog is not None:
+            if self._view_dialog is not None and self._view_dialog.isVisible():
                 self._view_dialog.update_run_output(self._current_run_output)
 
         if event.total_duration_seconds is not None:
@@ -427,6 +447,20 @@ class SingleTaskView(QWidget):
 
         if event.stage == "transcribe" and event.message:
             self.status_label.setText(event.message)
+
+        # Update View Dialog with progressive segments in real-time
+        if event.segments and self._view_dialog is not None and self._view_dialog.isVisible():
+            self._view_dialog.append_progress_segments(event)
+
+        # Detect progressive cache file during transcription
+        # Check every 3 progress events to avoid excessive file system access
+        self._progress_event_count += 1
+        if (
+            self._last_transcript_path is None
+            and self._current_output_dir is not None
+            and self._progress_event_count % 3 == 0
+        ):
+            self._detect_progressive_cache()
 
     def _on_finished(self, result: Any) -> None:
         """Handle transcription completion."""
@@ -471,19 +505,27 @@ class SingleTaskView(QWidget):
         if result.elapsed_seconds is not None:
             self.preview_output.appendPlainText(f"\nElapsed time: {elapsed_time_str.strip(' ()')}")
 
+        # Collect all output paths from result
+        self._last_output_paths = []
         if result.outputs:
             self._last_output_dir = result.job.output_dir
             self.preview_output.appendPlainText("\nOutput files:")
             for artifacts in result.outputs:
                 for path in artifacts.paths:
                     self.preview_output.appendPlainText(f"  {path}")
+                    self._last_output_paths.append(path)
                     # Track transcript JSON path
                     if path.suffix.lower() == ".json" and self._last_transcript_path is None:
                         self._last_transcript_path = path
 
-        # Enable View button if we have a transcript
-        if self._last_transcript_path is not None:
-            self.open_view_button.setEnabled(True)
+        # Auto-update the View dialog if it's currently open
+        if self._last_transcript_path is not None and self._view_dialog is not None:
+            if self._view_dialog.isVisible():
+                # Pass all output paths to the dialog for workspace loading
+                self._view_dialog._load_transcript_with_artifacts(
+                    self._last_transcript_path,
+                    tuple(self._last_output_paths)
+                )
 
         self.transcription_finished.emit(result)
 
@@ -521,9 +563,10 @@ class SingleTaskView(QWidget):
         self._cancel_requested = True
         self._worker.request_cancel()
         self._thread.requestInterruption()
-        self.status_label.setText("Cancellation requested...")
+        self.status_label.setText("Canceling transcription... (may take a few seconds)")
         self.cancel_button.setEnabled(False)
-        self.preview_output.appendPlainText("\nCancellation requested...")
+        self.start_button.setEnabled(False)
+        self.preview_output.appendPlainText("\n[Cancellation requested - stopping at next checkpoint...]")
 
     def _request_settings(self) -> None:
         """Request settings dialog to be shown."""
@@ -554,37 +597,126 @@ class SingleTaskView(QWidget):
                 # Set as current transcript and open View
                 self._last_transcript_path = path
                 self._current_run_output = f"Opened existing transcript: {path.name}\n"
-                self.open_view_button.setEnabled(True)
 
-                # Automatically open the View dialog
+                # Update View dialog with the loaded transcript
+                if self._view_dialog is not None:
+                    self._view_dialog._load_transcript(path)
+                    self._view_dialog.update_run_output(self._current_run_output)
+
+                # Show the View dialog
                 self._open_view()
 
                 self.transcript_loaded.emit(path)
             except Exception as e:
                 self.status_label.setText(f"Error loading transcript: {e}")
 
-    def _open_view(self) -> None:
-        """Open transcription view dialog."""
+    def _create_view_dialog(self) -> None:
+        """Create View Dialog at initialization (like old version)."""
         from flowscribe.gui.dialogs import TranscriptionViewDialog
 
-        if self._last_transcript_path is None:
-            self.status_label.setText("No transcript available. Complete a transcription first.")
+        self._view_dialog = TranscriptionViewDialog(
+            self,
+            transcript_path=None,  # No transcript initially
+            run_output="",
+            result=None,
+            output_paths=None,
+        )
+        # Don't show it yet - user will click "Open View" to show it
+
+    def _open_view(self) -> None:
+        """Open transcription view dialog."""
+        if self._view_dialog is None:
+            self._create_view_dialog()
+
+        # Update dialog with current state before showing
+        if self._last_transcript_path is not None and self._last_output_paths:
+            self._view_dialog._load_transcript_with_artifacts(
+                self._last_transcript_path,
+                tuple(self._last_output_paths)
+            )
+        elif self._last_transcript_path is not None:
+            self._view_dialog._load_transcript(self._last_transcript_path)
+
+        # Always update run output
+        self._view_dialog.update_run_output(self._current_run_output)
+
+        # Show the dialog
+        self._view_dialog.show()
+        self._view_dialog.raise_()
+        self._view_dialog.activateWindow()
+
+        status_msg = f"Opened view for {self._last_transcript_path.name}" if self._last_transcript_path else "Opened view"
+        self.status_label.setText(status_msg)
+
+    def _detect_progressive_cache(self) -> None:
+        """Detect progressive cache JSON file during transcription."""
+        if self._current_output_dir is None:
             return
 
-        # Create or show existing view dialog
-        if self._view_dialog is None or not self._view_dialog.isVisible():
-            self._view_dialog = TranscriptionViewDialog(
-                self,
-                transcript_path=self._last_transcript_path,
-                run_output=self._current_run_output,
-                result=self._last_result,
-            )
-            self._view_dialog.show()
-        else:
-            self._view_dialog.raise_()
-            self._view_dialog.activateWindow()
+        try:
+            # Progressive cache is stored in work_dir/item_stem/.progressive/partial-transcript.json
+            # Search in the output directory's parent for progressive cache files
+            search_root = self._current_output_dir.parent
+            if not search_root.exists():
+                search_root = self._current_output_dir
 
-        self.status_label.setText(f"Opened view for {self._last_transcript_path.name}")
+            # Look for .progressive/partial-transcript.json files (limit depth to 2 levels)
+            progressive_files = []
+            for item in search_root.iterdir():
+                if item.is_dir():
+                    progressive_path = item / ".progressive" / "partial-transcript.json"
+                    if progressive_path.exists():
+                        # Only consider files modified after transcription started
+                        if progressive_path.stat().st_mtime >= self._transcription_start_time:
+                            progressive_files.append(progressive_path)
+
+            # Also check output directory itself for any JSON files (fallback)
+            if not progressive_files and self._current_output_dir.exists():
+                json_files = []
+                for json_file in self._current_output_dir.glob("*.json"):
+                    # Only consider files modified after transcription started
+                    if json_file.stat().st_mtime >= self._transcription_start_time:
+                        json_files.append(json_file)
+
+                if json_files:
+                    # Find the most recently modified JSON file
+                    latest_json = max(json_files, key=lambda p: p.stat().st_mtime)
+                    progressive_files = [latest_json]
+
+            if not progressive_files:
+                return
+
+            # Use the most recently modified progressive cache file
+            latest_cache = max(progressive_files, key=lambda p: p.stat().st_mtime)
+
+            # Verify it's a valid transcript JSON
+            import json
+            with open(latest_cache, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                if 'segments' not in data or not data['segments']:
+                    return
+
+            # Set as current transcript
+            self._last_transcript_path = latest_cache
+            # Add to output paths if not already there
+            if latest_cache not in self._last_output_paths:
+                self._last_output_paths.append(latest_cache)
+
+            # Auto-update the View dialog if it's currently open
+            if self._view_dialog is not None and self._view_dialog.isVisible():
+                self._view_dialog._load_transcript_with_artifacts(
+                    self._last_transcript_path,
+                    tuple(self._last_output_paths)
+                )
+
+            # Update status to inform user
+            self.status_label.setText(
+                "Progressive cache detected - You can now open View to see progress"
+            )
+
+        except Exception:
+            # Silently ignore errors during cache detection
+            pass
 
 
 
