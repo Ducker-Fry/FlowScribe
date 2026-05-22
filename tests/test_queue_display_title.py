@@ -8,7 +8,7 @@ import importlib
 import importlib.util
 
 from flowscribe.app.models import SourceSpec
-from flowscribe.queue.models import QueueItem, QueueItemSettings, BatchOutputStrategy
+from flowscribe.queue.models import QueueItem, QueueItemSettings
 
 
 try:
@@ -31,7 +31,6 @@ def mock_queue_item_with_title():
         item_id="test123",
         source=source,
         settings=settings,
-        output_strategy=BatchOutputStrategy(),
         status="pending",
         created_at=datetime.now(),
         title="Never Gonna Give You Up - Rick Astley",
@@ -51,7 +50,6 @@ def mock_queue_item_without_title():
         item_id="test456",
         source=source,
         settings=settings,
-        output_strategy=BatchOutputStrategy(),
         status="pending",
         created_at=datetime.now(),
         title=None,
@@ -120,7 +118,6 @@ def test_format_item_display_truncates_long_title():
         item_id="test789",
         source=source,
         settings=settings,
-        output_strategy=BatchOutputStrategy(),
         status="pending",
         created_at=datetime.now(),
         title=long_title,
@@ -152,7 +149,6 @@ def test_local_file_display_unchanged():
         item_id="test999",
         source=source,
         settings=settings,
-        output_strategy=BatchOutputStrategy(),
         status="pending",
         created_at=datetime.now(),
         title="Some Title",  # Title should be ignored for local files

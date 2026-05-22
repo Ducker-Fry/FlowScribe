@@ -11,7 +11,6 @@ from typing import Any
 from flowscribe.app.models import SourceSpec
 from flowscribe.input.url_security import validate_public_http_url
 from flowscribe.queue.models import (
-    BatchOutputStrategy,
     QueueItem,
     QueueItemSettings,
     generate_queue_item_id,
@@ -88,13 +87,11 @@ class AddUrlHandler:
         # Create queue item with default settings
         source = SourceSpec(kind="url", value=url)
         settings = self._create_default_settings()
-        output_strategy = BatchOutputStrategy(mode="unified", base_dir=settings.output_dir)
 
         item = QueueItem(
             item_id=generate_queue_item_id(source),
             source=source,
             settings=settings,
-            output_strategy=output_strategy,
             status="pending",
             created_at=datetime.now(),
             title=title if title else None,

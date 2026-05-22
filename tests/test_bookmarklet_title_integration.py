@@ -133,7 +133,7 @@ def test_queue_view_format_with_bookmarklet_title(tmp_path):
     from unittest.mock import patch
     from flowscribe.gui.views.queue_view import QueueView
     from flowscribe.app.models import SourceSpec
-    from flowscribe.queue.models import QueueItem, QueueItemSettings, BatchOutputStrategy
+    from flowscribe.queue.models import QueueItem, QueueItemSettings
 
     # Create queue item as if added by bookmarklet
     source = SourceSpec(kind="url", value="https://www.bilibili.com/video/BV1xx411c7mD")
@@ -146,7 +146,6 @@ def test_queue_view_format_with_bookmarklet_title(tmp_path):
         item_id="test123",
         source=source,
         settings=settings,
-        output_strategy=BatchOutputStrategy(),
         status="pending",
         created_at=datetime.now(),
         title="【中文测试】这是一个B站视频标题",

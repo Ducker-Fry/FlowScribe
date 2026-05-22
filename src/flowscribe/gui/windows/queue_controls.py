@@ -9,7 +9,6 @@ from PySide6.QtCore import QThread, QFileSystemWatcher, Qt
 from flowscribe.app.models import SourceSpec
 from flowscribe.gui.gui_logging import get_gui_logger
 from flowscribe.queue.models import (
-    BatchOutputStrategy,
     QueueItem,
     QueueItemSettings,
     generate_queue_item_id,
@@ -84,13 +83,6 @@ class QueueControlsMixin:
             progressive_resume=self.progressive_resume_check.isChecked(),
         )
 
-    def _current_output_strategy(self) -> BatchOutputStrategy:
-        mode = "unified"
-        if self._queue_tab is not None:
-            mode = self._queue_tab.output_strategy_mode
-        base_dir = Path(self.output_dir_input.text().strip() or "outputs")
-        return BatchOutputStrategy(mode=mode, base_dir=base_dir)
-
     def _enqueue_urls_from_text(self, text: str) -> None:
         urls = parse_urls_from_text(text)
         if not urls:
@@ -111,7 +103,6 @@ class QueueControlsMixin:
 
     def _enqueue_url_list(self, urls: list[str]) -> None:
         settings = self._current_queue_item_settings()
-        strategy = self._current_output_strategy()
         max_retries = self._queue_tab.max_retries if self._queue_tab else 2
         sources = [SourceSpec(kind="url", value=url) for url in urls]
         existing = self._queue_store.load_items()
@@ -125,7 +116,6 @@ class QueueControlsMixin:
                 item_id=generate_queue_item_id(source),
                 source=source,
                 settings=settings,
-                output_strategy=strategy,
                 max_retries=max_retries,
             )
             if self._queue_store.enqueue(item) is not None:

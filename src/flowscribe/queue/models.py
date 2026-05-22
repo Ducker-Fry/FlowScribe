@@ -7,20 +7,10 @@ from datetime import datetime
 from hashlib import sha1
 from pathlib import Path
 from typing import Literal
-from urllib.parse import urlparse
 
 from flowscribe.app.models import SourceSpec, TranscriptionJob
 
 QueueItemStatus = Literal["pending", "running", "completed", "failed", "canceled"]
-BatchOutputMode = Literal["unified", "per_source", "template"]
-
-
-@dataclass(frozen=True)
-class BatchOutputStrategy:
-    mode: BatchOutputMode = "unified"
-    base_dir: Path = field(default_factory=lambda: Path("outputs"))
-    subdir_template: str = "{source_stem}"
-    name_template: str = "{source_stem}"
 
 
 @dataclass(frozen=True)
@@ -51,7 +41,6 @@ class QueueItem:
     item_id: str
     source: SourceSpec
     settings: QueueItemSettings
-    output_strategy: BatchOutputStrategy = field(default_factory=BatchOutputStrategy)
     status: QueueItemStatus = "pending"
     priority: int = 0
     attempt_count: int = 0
@@ -77,14 +66,10 @@ class QueueItem:
         return Path(self.source.value).name
 
     def to_job(self) -> TranscriptionJob:
-        effective_output_dir = _resolve_output_dir(
-            self.source, self.settings, self.output_strategy
-        )
-        effective_name_base = _resolve_output_name(self.source, self.output_strategy)
         return TranscriptionJob(
             sources=(self.source,),
-            output_dir=effective_output_dir,
-            output_name_base=effective_name_base,
+            output_dir=self.settings.output_dir,
+            output_name_base=self.settings.output_name_base or None,
             model_name=self.settings.model_name,
             language=self.settings.language,
             preset=self.settings.preset,
@@ -108,33 +93,3 @@ class QueueItem:
 def generate_queue_item_id(source: SourceSpec) -> str:
     key = f"{source.kind}:{source.value}".encode("utf-8")
     return sha1(key).hexdigest()[:12]
-
-
-def _resolve_output_dir(
-    source: SourceSpec,
-    settings: QueueItemSettings,
-    strategy: BatchOutputStrategy,
-) -> Path:
-    if strategy.mode == "unified":
-        return strategy.base_dir
-    if strategy.mode == "per_source":
-        stem = _source_stem(source)
-        subdir = strategy.subdir_template.format(source_stem=stem)
-        return strategy.base_dir / subdir
-    return strategy.base_dir
-
-
-def _resolve_output_name(source: SourceSpec, strategy: BatchOutputStrategy) -> str | None:
-    if strategy.mode == "template":
-        stem = _source_stem(source)
-        return strategy.name_template.format(source_stem=stem)
-    return None
-
-
-def _source_stem(source: SourceSpec) -> str:
-    if source.kind == "local":
-        return Path(source.value).stem
-    path = urlparse(source.value).path.rstrip("/")
-    if path:
-        return Path(path).stem or "download"
-    return "download"

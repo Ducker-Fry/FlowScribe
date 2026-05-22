@@ -9,7 +9,6 @@ from pathlib import Path
 
 from flowscribe.app.models import SourceSpec
 from flowscribe.queue.models import (
-    BatchOutputStrategy,
     QueueItem,
     QueueItemSettings,
 )
@@ -204,12 +203,6 @@ def _item_to_payload(item: QueueItem) -> dict:
             "max_duration_seconds": item.settings.max_duration_seconds,
             "download_timeout_seconds": item.settings.download_timeout_seconds,
         },
-        "output_strategy": {
-            "mode": item.output_strategy.mode,
-            "base_dir": str(item.output_strategy.base_dir),
-            "subdir_template": item.output_strategy.subdir_template,
-            "name_template": item.output_strategy.name_template,
-        },
         "status": item.status,
         "priority": item.priority,
         "attempt_count": item.attempt_count,
@@ -230,7 +223,6 @@ def _item_from_payload(data: object) -> QueueItem | None:
     try:
         source_data = data["source"]
         settings_data = data.get("settings", {})
-        strategy_data = data.get("output_strategy", {})
 
         source = SourceSpec(
             kind=source_data["kind"],
@@ -267,18 +259,10 @@ def _item_from_payload(data: object) -> QueueItem | None:
             download_timeout_seconds=settings_data.get("download_timeout_seconds", 30),
         )
 
-        strategy = BatchOutputStrategy(
-            mode=strategy_data.get("mode", "unified"),
-            base_dir=Path(strategy_data.get("base_dir", "outputs")),
-            subdir_template=strategy_data.get("subdir_template", "{source_stem}"),
-            name_template=strategy_data.get("name_template", "{source_stem}"),
-        )
-
         return QueueItem(
             item_id=data["item_id"],
             source=source,
             settings=settings,
-            output_strategy=strategy,
             status=data.get("status", "pending"),
             priority=data.get("priority", 0),
             attempt_count=data.get("attempt_count", 0),

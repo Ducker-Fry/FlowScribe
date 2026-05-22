@@ -151,13 +151,6 @@ class QueueView(QWidget):
 
         # Queue settings
         settings_row = QHBoxLayout()
-        settings_row.addWidget(QLabel("Output Strategy:"))
-        self._output_strategy_combo = QComboBox()
-        self._output_strategy_combo.addItems(
-            ["Unified Directory", "Per-Source Subdir", "Name Template"]
-        )
-        settings_row.addWidget(self._output_strategy_combo)
-
         settings_row.addWidget(QLabel("Max Retries:"))
         self._max_retries_spin = QSpinBox()
         self._max_retries_spin.setRange(0, 10)

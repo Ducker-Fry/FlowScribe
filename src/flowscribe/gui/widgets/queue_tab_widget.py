@@ -7,7 +7,6 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import (
     QCheckBox,
-    QComboBox,
     QFileDialog,
     QGroupBox,
     QHBoxLayout,
@@ -45,7 +44,6 @@ class QueueTabWidget(QWidget):
     remove_items_requested = Signal(list)  # list[str]
     clear_completed_requested = Signal()
     reorder_requested = Signal(list)
-    output_strategy_changed = Signal(str)
     max_retries_changed = Signal(int)
     server_start_requested = Signal(int)  # port
     server_stop_requested = Signal()
@@ -121,12 +119,6 @@ class QueueTabWidget(QWidget):
         layout.addLayout(import_row)
 
         settings_row = QHBoxLayout()
-        settings_row.addWidget(QLabel("Output:"))
-        self._output_strategy_combo = QComboBox()
-        self._output_strategy_combo.addItems(["Unified Directory", "Per-Source Subdir", "Name Template"])
-        self._output_strategy_combo.currentIndexChanged.connect(self._on_strategy_changed)
-        settings_row.addWidget(self._output_strategy_combo)
-
         settings_row.addWidget(QLabel("Max Retries:"))
         self._max_retries_spin = QSpinBox()
         self._max_retries_spin.setRange(0, 10)
@@ -235,11 +227,6 @@ class QueueTabWidget(QWidget):
         self._status_label.setText(label)
 
     @property
-    def output_strategy_mode(self) -> str:
-        index = self._output_strategy_combo.currentIndex()
-        return ("unified", "per_source", "template")[index]
-
-    @property
     def max_retries(self) -> int:
         return self._max_retries_spin.value()
 
@@ -307,10 +294,6 @@ class QueueTabWidget(QWidget):
         )
         if path:
             self.import_file_requested.emit(path)
-
-    def _on_strategy_changed(self, index: int) -> None:
-        mode = ("unified", "per_source", "template")[index]
-        self.output_strategy_changed.emit(mode)
 
     def _on_retry_selected(self) -> None:
         current = self._queue_list.currentItem()
