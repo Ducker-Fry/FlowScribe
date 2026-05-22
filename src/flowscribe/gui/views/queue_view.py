@@ -545,6 +545,11 @@ class QueueView(QWidget):
             if self._view_dialog is not None and self._view_dialog.isVisible():
                 self._view_dialog.update_run_output(self._current_run_output)
 
+        # Update View Dialog with progressive segments in real-time (like Single Task)
+        if isinstance(event, ProgressEvent) and event.segments:
+            if self._view_dialog is not None and self._view_dialog.isVisible():
+                self._view_dialog.append_progress_segments(event)
+
     def on_item_completed(self, data: tuple) -> None:
         """Handle item completed event."""
         self._current_running_item_id = None
