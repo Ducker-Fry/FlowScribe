@@ -149,6 +149,11 @@ class QueueView(QWidget):
 
         layout.addWidget(add_group)
 
+        # Default settings for new items
+        defaults_group = QGroupBox("Default Settings for New Items")
+        defaults_layout = QVBoxLayout(defaults_group)
+        defaults_layout.setSpacing(8)
+
         # Queue settings
         settings_row = QHBoxLayout()
         settings_row.addWidget(QLabel("Max Retries:"))
@@ -157,7 +162,7 @@ class QueueView(QWidget):
         self._max_retries_spin.setValue(2)
         settings_row.addWidget(self._max_retries_spin)
         settings_row.addStretch()
-        layout.addLayout(settings_row)
+        defaults_layout.addLayout(settings_row)
 
         # Download options row
         download_row = QHBoxLayout()
@@ -184,7 +189,9 @@ class QueueView(QWidget):
         download_row.addWidget(self._download_format_combo)
 
         download_row.addStretch()
-        layout.addLayout(download_row)
+        defaults_layout.addLayout(download_row)
+
+        layout.addWidget(defaults_group)
 
         # Queue list
         queue_label = QLabel("Queue:")
