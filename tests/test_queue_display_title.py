@@ -2,7 +2,6 @@
 
 from pathlib import Path
 from datetime import datetime
-from unittest.mock import patch
 import pytest
 import importlib
 import importlib.util
@@ -72,39 +71,50 @@ def test_queue_item_display_label_without_title(mock_queue_item_without_title):
 def test_format_item_display_with_title(mock_queue_item_with_title):
     """Test queue view formatting with title."""
     from flowscribe.gui.views.queue_view import QueueView
+    from PySide6.QtWidgets import QApplication
+    import sys
 
-    # Mock Qt components
-    with patch('PySide6.QtWidgets.QWidget.__init__', return_value=None):
-        with patch.object(QueueView, '_setup_ui'):
-            view = QueueView({})
-            display = view._format_item_display(mock_queue_item_with_title)
+    # Ensure QApplication exists
+    _ = QApplication.instance() or QApplication(sys.argv)
 
-            # Should show title, not URL
-            assert "Never Gonna Give You Up - Rick Astley" in display
-            assert "[URL]" in display
-            assert "youtube.com" not in display  # URL should not be shown
+    # Create view with proper initialization
+    view = QueueView({})
+    display = view._format_item_display(mock_queue_item_with_title)
+
+    # Should show title, not URL
+    assert "Never Gonna Give You Up - Rick Astley" in display
+    assert "[URL]" in display
+    assert "youtube.com" not in display  # URL should not be shown
 
 
 @pytest.mark.skipif(not HAS_PYSIDE6, reason="PySide6 not available")
 def test_format_item_display_without_title(mock_queue_item_without_title):
     """Test queue view formatting without title (fallback to URL)."""
     from flowscribe.gui.views.queue_view import QueueView
+    from PySide6.QtWidgets import QApplication
+    import sys
 
-    # Mock Qt components
-    with patch('PySide6.QtWidgets.QWidget.__init__', return_value=None):
-        with patch.object(QueueView, '_setup_ui'):
-            view = QueueView({})
-            display = view._format_item_display(mock_queue_item_without_title)
+    # Ensure QApplication exists
+    _ = QApplication.instance() or QApplication(sys.argv)
 
-            # Should show URL when no title
-            assert "youtube.com" in display
-            assert "[URL]" in display
+    # Create view with proper initialization
+    view = QueueView({})
+    display = view._format_item_display(mock_queue_item_without_title)
+
+    # Should show URL when no title
+    assert "youtube.com" in display
+    assert "[URL]" in display
 
 
 @pytest.mark.skipif(not HAS_PYSIDE6, reason="PySide6 not available")
 def test_format_item_display_truncates_long_title():
     """Test that long titles are truncated."""
     from flowscribe.gui.views.queue_view import QueueView
+    from PySide6.QtWidgets import QApplication
+    import sys
+
+    # Ensure QApplication exists
+    _ = QApplication.instance() or QApplication(sys.argv)
 
     # Create item with very long title
     source = SourceSpec(kind="url", value="https://example.com/video")
@@ -123,21 +133,24 @@ def test_format_item_display_truncates_long_title():
         title=long_title,
     )
 
-    # Mock Qt components
-    with patch('PySide6.QtWidgets.QWidget.__init__', return_value=None):
-        with patch.object(QueueView, '_setup_ui'):
-            view = QueueView({})
-            display = view._format_item_display(item)
+    # Create view with proper initialization
+    view = QueueView({})
+    display = view._format_item_display(item)
 
-            # Should be truncated to 80 chars (77 + "...")
-            assert len(display) < len(long_title) + 20  # Account for icon and [URL] prefix
-            assert "..." in display
+    # Should be truncated to 80 chars (77 + "...")
+    assert len(display) < len(long_title) + 20  # Account for icon and [URL] prefix
+    assert "..." in display
 
 
 @pytest.mark.skipif(not HAS_PYSIDE6, reason="PySide6 not available")
 def test_local_file_display_unchanged():
     """Test that local file display is not affected by title changes."""
     from flowscribe.gui.views.queue_view import QueueView
+    from PySide6.QtWidgets import QApplication
+    import sys
+
+    # Ensure QApplication exists
+    _ = QApplication.instance() or QApplication(sys.argv)
 
     source = SourceSpec(kind="local", value="/path/to/video.mp4")
     settings = QueueItemSettings(
@@ -154,13 +167,11 @@ def test_local_file_display_unchanged():
         title="Some Title",  # Title should be ignored for local files
     )
 
-    # Mock Qt components
-    with patch('PySide6.QtWidgets.QWidget.__init__', return_value=None):
-        with patch.object(QueueView, '_setup_ui'):
-            view = QueueView({})
-            display = view._format_item_display(item)
+    # Create view with proper initialization
+    view = QueueView({})
+    display = view._format_item_display(item)
 
-            # Should show filename, not title
-            assert "video.mp4" in display
-            assert "[FILE]" in display
-            assert "Some Title" not in display
+    # Should show filename, not title
+    assert "video.mp4" in display
+    assert "[FILE]" in display
+    assert "Some Title" not in display

@@ -2,8 +2,6 @@
 
 from pathlib import Path
 
-import pytest
-
 from flowscribe.app.models import SourceSpec
 from flowscribe.queue.models import QueueItem, QueueItemSettings, generate_queue_item_id
 from flowscribe.queue.store import BatchQueueStore

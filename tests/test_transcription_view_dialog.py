@@ -154,7 +154,6 @@ def test_open_transcript_file_read_error(qt_app, tmp_path):
 def test_load_transcript_with_artifacts(qt_app, mock_transcript_data, tmp_path):
     """Test loading transcript with provided artifact paths."""
     from flowscribe.gui.dialogs.transcription_view_dialog import TranscriptionViewDialog
-    from pathlib import Path
 
     # Create temporary transcript and artifact files
     transcript_file = tmp_path / "test_transcript.json"
@@ -185,7 +184,7 @@ def test_load_transcript_with_artifacts(qt_app, mock_transcript_data, tmp_path):
         # Mock the transcript loading functions
         with patch('flowscribe.gui.transcript_viewer.load_transcript_view') as mock_load_view, \
              patch('flowscribe.transcript.editing.load_editable_transcript') as mock_load_editable, \
-             patch('flowscribe.gui.transcript_viewer.render_transcript_summary', return_value="<html>Summary</html>") as mock_render, \
+             patch('flowscribe.gui.transcript_viewer.render_transcript_summary', return_value="<html>Summary</html>"), \
              patch('flowscribe.gui.transcript_viewer.resolve_transcript_media_path', return_value=None):
 
             mock_transcript_view = MagicMock()

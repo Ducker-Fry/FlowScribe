@@ -28,7 +28,6 @@ def mock_transcript():
         source=Path("/tmp/test.mp3"),
         segments=(
             TranscriptSegment(
-                index=0,
                 start_seconds=0.0,
                 end_seconds=5.0,
                 text="Test segment",
@@ -39,8 +38,12 @@ def mock_transcript():
 
 def test_service_cancellation_before_transcription(tmp_path):
     """Test that cancellation is detected before transcription starts."""
+    # Create a test file
+    test_file = tmp_path / "test.mp3"
+    test_file.write_bytes(b"fake audio")
+
     job = TranscriptionJob(
-        sources=(SourceSpec(kind="local", value=str(tmp_path / "test.mp3")),),
+        sources=(SourceSpec(kind="local", value=str(test_file)),),
         output_dir=tmp_path / "output",
         work_dir=tmp_path / "work",
         output_formats=("json",),
@@ -58,8 +61,12 @@ def test_service_cancellation_before_transcription(tmp_path):
 
 def test_service_cancellation_during_progress(tmp_path):
     """Test that cancellation is detected during progress emission."""
+    # Create a test file
+    test_file = tmp_path / "test.mp3"
+    test_file.write_bytes(b"fake audio")
+
     job = TranscriptionJob(
-        sources=(SourceSpec(kind="local", value=str(tmp_path / "test.mp3")),),
+        sources=(SourceSpec(kind="local", value=str(test_file)),),
         output_dir=tmp_path / "output",
         work_dir=tmp_path / "work",
         output_formats=("json",),
@@ -131,7 +138,6 @@ def test_progressive_executor_cancellation_between_chunks(mock_audio):
         source=mock_audio.source,
         segments=(
             TranscriptSegment(
-                index=0,
                 start_seconds=0.0,
                 end_seconds=5.0,
                 text="Test",
@@ -142,12 +148,19 @@ def test_progressive_executor_cancellation_between_chunks(mock_audio):
     executor = ProgressiveTranscriptionExecutor(transcriber=mock_transcriber)
 
     chunk_plan = TranscriptionChunkPlan(
-        duration_info=MediaDurationInfo(duration_seconds=60.0),
+        duration_info=MediaDurationInfo(
+            source=mock_audio.source,
+            prepared_audio_path=mock_audio.path,
+            sample_rate=mock_audio.sample_rate,
+            duration_seconds=60.0,
+        ),
         chunks=(
             TranscriptionChunk(index=1, start_seconds=0.0, end_seconds=30.0),
             TranscriptionChunk(index=2, start_seconds=27.0, end_seconds=57.0),
             TranscriptionChunk(index=3, start_seconds=54.0, end_seconds=60.0),
         ),
+        chunk_duration_seconds=30.0,
+        chunk_overlap_seconds=3.0,
     )
 
     # Cancel after first chunk

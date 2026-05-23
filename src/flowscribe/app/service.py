@@ -60,17 +60,17 @@ class TranscriptionService:
         outputs: list[OutputArtifacts] = []
         errors: list[ErrorInfo] = []
 
-        self._emit_progress(
-            progress,
-            should_cancel,
-            ProgressEvent(
-                stage="discover",
-                message=f"Received {len(job.sources)} source(s).",
-                total=len(job.sources),
-            )
-        )
-
         try:
+            self._emit_progress(
+                progress,
+                should_cancel,
+                ProgressEvent(
+                    stage="discover",
+                    message=f"Received {len(job.sources)} source(s).",
+                    total=len(job.sources),
+                )
+            )
+
             for index, source in enumerate(job.sources, start=1):
                 self._ensure_not_canceled(should_cancel)
                 source_outputs, source_errors = self._run_source(

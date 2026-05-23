@@ -130,10 +130,14 @@ except ImportError:
 @pytest.mark.skipif(not HAS_PYSIDE6, reason="PySide6 not available")
 def test_queue_view_format_with_bookmarklet_title(tmp_path):
     """Test that QueueView formats bookmarklet items with title."""
-    from unittest.mock import patch
     from flowscribe.gui.views.queue_view import QueueView
     from flowscribe.app.models import SourceSpec
     from flowscribe.queue.models import QueueItem, QueueItemSettings
+    from PySide6.QtWidgets import QApplication
+    import sys
+
+    # Ensure QApplication exists
+    _ = QApplication.instance() or QApplication(sys.argv)
 
     # Create queue item as if added by bookmarklet
     source = SourceSpec(kind="url", value="https://www.bilibili.com/video/BV1xx411c7mD")
@@ -151,13 +155,11 @@ def test_queue_view_format_with_bookmarklet_title(tmp_path):
         title="【中文测试】这是一个B站视频标题",
     )
 
-    # Mock Qt components
-    with patch('PySide6.QtWidgets.QWidget.__init__', return_value=None):
-        with patch.object(QueueView, '_setup_ui'):
-            view = QueueView({})
-            display = view._format_item_display(item)
+    # Create view with proper initialization
+    view = QueueView({})
+    display = view._format_item_display(item)
 
-            # Should show Chinese title, not URL
-            assert "【中文测试】这是一个B站视频标题" in display
-            assert "[URL]" in display
-            assert "bilibili.com" not in display
+    # Should show Chinese title, not URL
+    assert "【中文测试】这是一个B站视频标题" in display
+    assert "[URL]" in display
+    assert "bilibili.com" not in display

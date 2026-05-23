@@ -3,9 +3,9 @@
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
+from flowscribe.app.models import SourceSpec
 from flowscribe.gui.dialogs.queue_item_settings_dialog import QueueItemSettingsDialog
 from flowscribe.queue.models import QueueItemSettings
 
@@ -40,8 +40,9 @@ def test_dialog_loads_provided_settings(qapp):
         max_duration_seconds=7200.0,
         download_timeout_seconds=60,
     )
+    source = SourceSpec(kind="url", value="https://example.com/video")
 
-    dialog = QueueItemSettingsDialog(None, custom_settings, "Test Item")
+    dialog = QueueItemSettingsDialog(None, custom_settings, source, "Test Item")
 
     # Verify all settings are loaded correctly
     assert dialog.output_dir_input.text() == "custom_output"
@@ -69,8 +70,9 @@ def test_dialog_loads_provided_settings(qapp):
 def test_dialog_loads_default_settings(qapp):
     """Dialog should load default settings when provided with defaults."""
     default_settings = QueueItemSettings()
+    source = SourceSpec(kind="url", value="https://example.com/video")
 
-    dialog = QueueItemSettingsDialog(None, default_settings, "Test Item")
+    dialog = QueueItemSettingsDialog(None, default_settings, source, "Test Item")
 
     # Verify default settings are loaded
     assert dialog.output_dir_input.text() == "outputs"
@@ -94,8 +96,9 @@ def test_reset_to_defaults_button(qapp):
         language="zh",
         progressive_chunk_seconds=60.0,
     )
+    source = SourceSpec(kind="url", value="https://example.com/video")
 
-    dialog = QueueItemSettingsDialog(None, custom_settings, "Test Item")
+    dialog = QueueItemSettingsDialog(None, custom_settings, source, "Test Item")
 
     # Verify custom settings loaded
     assert dialog.output_dir_input.text() == "custom_output"
@@ -116,13 +119,12 @@ def test_reset_to_defaults_button(qapp):
 def test_apply_button_exists(qapp):
     """Dialog should have Apply button instead of OK."""
     settings = QueueItemSettings()
-    dialog = QueueItemSettingsDialog(None, settings, "Test Item")
+    source = SourceSpec(kind="url", value="https://example.com/video")
+    dialog = QueueItemSettingsDialog(None, settings, source, "Test Item")
 
     # Find the Apply button
-    apply_button = None
     for child in dialog.findChildren(type(dialog).__bases__[0]):
         if hasattr(child, "text") and child.text() == "Apply":
-            apply_button = child
             break
 
     # Note: This test may need adjustment based on how QPushButton is found

@@ -13,7 +13,7 @@ class FakePreparer:
 
 
 class FakeTranscriber:
-    def transcribe(self, audio: PreparedAudio) -> Transcript:
+    def transcribe(self, audio: PreparedAudio, *, should_cancel=None) -> Transcript:
         return Transcript(source=audio.source, segments=(TranscriptSegment(text="transcribed"),))
 
 

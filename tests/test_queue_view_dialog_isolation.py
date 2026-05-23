@@ -1,7 +1,7 @@
 """Test that QueueView properly isolates TranscriptionViewDialog content per QueueItem."""
 
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 import pytest
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt
@@ -31,7 +31,6 @@ def queue_view(qt_app):
 
 def test_dialog_content_cleared_between_items(queue_view):
     """Test that dialog content is cleared when switching between queue items."""
-    # Create mock items without using tmp_path
     from unittest.mock import MagicMock
 
     mock_path1 = MagicMock(spec=Path)
@@ -69,7 +68,7 @@ def test_dialog_content_cleared_between_items(queue_view):
     queue_view._queue_list.item(0).setCheckState(Qt.CheckState.Checked)
 
     # Mock the dialog creation and methods
-    with patch.object(queue_view, '_create_view_dialog') as mock_create:
+    with patch.object(queue_view, '_create_view_dialog'):
         mock_dialog = Mock()
         mock_dialog.isVisible.return_value = False
         queue_view._view_dialog = mock_dialog
@@ -79,7 +78,6 @@ def test_dialog_content_cleared_between_items(queue_view):
 
         # Verify clear_content was called
         assert mock_dialog.clear_content.called
-        clear_calls_after_first = mock_dialog.clear_content.call_count
 
         # Verify _load_transcript was called with first item's path
         mock_dialog._load_transcript.assert_called_once()

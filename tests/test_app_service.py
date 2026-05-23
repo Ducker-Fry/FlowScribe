@@ -48,7 +48,7 @@ def test_transcription_service_runs_local_source_with_progress(monkeypatch, tmp_
             return [MediaItem(path=media)]
 
     class FakePipeline:
-        def process(self, item: MediaItem) -> OutputArtifacts:
+        def process(self, item: MediaItem, *, should_cancel=None) -> OutputArtifacts:
             assert item.path == media
             return artifact
 
@@ -86,7 +86,7 @@ def test_transcription_service_keeps_processing_after_local_item_failure(
             return [MediaItem(path=bad_media), MediaItem(path=good_media)]
 
     class FakePipeline:
-        def process(self, item: MediaItem) -> OutputArtifacts:
+        def process(self, item: MediaItem, *, should_cancel=None) -> OutputArtifacts:
             if item.path == bad_media:
                 raise MediaPreparationError("no audio")
             return artifact
@@ -127,7 +127,7 @@ def test_transcription_service_emits_write_events_for_url_source(monkeypatch, tm
             return FakeDownload()
 
     class FakePipeline:
-        def process(self, item: MediaItem) -> OutputArtifacts:
+        def process(self, item: MediaItem, *, should_cancel=None) -> OutputArtifacts:
             assert item.path == audio
             return artifact
 
@@ -173,7 +173,7 @@ def test_transcription_service_passes_url_network_options_to_downloader(
             return FakeDownload()
 
     class FakePipeline:
-        def process(self, item: MediaItem) -> OutputArtifacts:
+        def process(self, item: MediaItem, *, should_cancel=None) -> OutputArtifacts:
             return OutputArtifacts(paths=(tmp_path / "out" / "remote-audio.txt",))
 
     monkeypatch.setattr("flowscribe.app.service.UrlAudioDownloader", FakeDownloader)
@@ -235,7 +235,7 @@ def test_transcription_service_preserves_url_media_in_custom_directory(
             return FakeDownload()
 
     class FakePipeline:
-        def process(self, item: MediaItem) -> OutputArtifacts:
+        def process(self, item: MediaItem, *, should_cancel=None) -> OutputArtifacts:
             return OutputArtifacts(paths=(tmp_path / "out" / "remote-audio.json",))
 
     monkeypatch.setattr("flowscribe.app.service.UrlAudioDownloader", FakeDownloader)
@@ -296,7 +296,7 @@ def test_transcription_service_marks_url_media_fallback_when_video_copy_unavaila
             return FakeDownload()
 
     class FakePipeline:
-        def process(self, item: MediaItem) -> OutputArtifacts:
+        def process(self, item: MediaItem, *, should_cancel=None) -> OutputArtifacts:
             return OutputArtifacts(paths=(tmp_path / "out" / "remote-audio.json",))
 
     monkeypatch.setattr("flowscribe.app.service.UrlAudioDownloader", FakeDownloader)
@@ -340,7 +340,7 @@ def test_transcription_service_returns_canceled_result_when_cancel_requested(
             return [MediaItem(path=media)]
 
     class FakePipeline:
-        def process(self, item: MediaItem) -> OutputArtifacts:
+        def process(self, item: MediaItem, *, should_cancel=None) -> OutputArtifacts:
             return artifact
 
     monkeypatch.setattr("flowscribe.app.service.LocalFileSource", FakeLocalFileSource)
@@ -395,6 +395,7 @@ def test_transcription_service_emits_progressive_chunk_updates(monkeypatch, tmp_
             max_workers: int,
             plan_callback,
             update_callback,
+            should_cancel=None,
         ):
             duration_info = MediaDurationInfo(
                 source=item,
@@ -509,6 +510,7 @@ def test_transcription_service_uses_more_conservative_default_overlap_for_chines
             max_workers: int,
             plan_callback,
             update_callback,
+            should_cancel=None,
         ):
             captured["chunk_overlap_seconds"] = chunk_overlap_seconds
             return OutputArtifacts(paths=(tmp_path / "out" / "sample.txt",)), ProgressiveTranscriptionState(

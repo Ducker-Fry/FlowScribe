@@ -26,7 +26,7 @@ class FakeClipTranscriber:
     def __init__(self) -> None:
         self.calls: list[tuple[float, float]] = []
 
-    def transcribe(self, audio: PreparedAudio) -> Transcript:  # pragma: no cover - compatibility only
+    def transcribe(self, audio: PreparedAudio, *, should_cancel=None) -> Transcript:  # pragma: no cover - compatibility only
         return Transcript(source=audio.source, segments=(TranscriptSegment(text="full"),))
 
     def transcribe_clip(
@@ -35,6 +35,7 @@ class FakeClipTranscriber:
         *,
         start_seconds: float,
         end_seconds: float,
+        should_cancel=None,
     ) -> Transcript:
         self.calls.append((start_seconds, end_seconds))
         if start_seconds == 0.0:
@@ -256,10 +257,11 @@ def test_progressive_executor_parallel_workers_keep_ordered_merge(tmp_path: Path
             *,
             start_seconds: float,
             end_seconds: float,
+            should_cancel=None,
         ) -> Transcript:
             with self.lock:
                 type(self).call_count += 1
-            return super().transcribe_clip(audio, start_seconds=start_seconds, end_seconds=end_seconds)
+            return super().transcribe_clip(audio, start_seconds=start_seconds, end_seconds=end_seconds, should_cancel=should_cancel)
 
         def fork_for_worker(self):
             return SlowParallelTranscriber()
@@ -322,6 +324,7 @@ def test_progressive_executor_clips_cross_boundary_chinese_segment_start(tmp_pat
             *,
             start_seconds: float,
             end_seconds: float,
+            should_cancel=None,
         ) -> Transcript:
             if start_seconds == 0.0:
                 segments = (
