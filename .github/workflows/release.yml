@@ -164,58 +164,127 @@ jobs:
           $notes = @'
           # FlowScribe {{VERSION}}
 
-          Windows portable release for FlowScribe.
+          FlowScribe Windows 便携版发布。
 
-          ## What's Included
+          ## 包含内容
 
-          - Local audio/video transcription CLI.
-          - PySide6 desktop GUI for transcription, transcript viewing, search, and media sync.
-          - Public URL transcription with audio-first download/extraction.
-          - Local and URL media inspection with `flowscribe inspect`.
-          - Keyword search and timestamp location with `flowscribe search`.
-          - TXT, Markdown, JSON, SRT, and VTT transcript output.
-          - GUI system-playback capture through bundled `WasapiCaptureHelper.exe`.
-          - Chinese, English, and mixed-language workflows.
-          - Word timestamp data for future text-to-video navigation.
-          - Explicit cookies and proxy support for URL media access.
-          - `flowscribe doctor` environment diagnostics.
-          - Chinese-oriented preset: `--preset zh`.
-          - Portable Windows one-folder build.
-          - Bundled `ffmpeg.exe` and `ffprobe.exe` in both CLI and GUI packages.
+          ### CLI 命令行工具
+          - 本地音视频文件转录
+          - 公开URL音频转录（基于 yt-dlp）
+          - 长音频渐进式转录（分块处理、中断恢复）
+          - 转录搜索和关键词定位
+          - 媒体检查工具（`flowscribe inspect`）
+          - 环境诊断工具（`flowscribe doctor`）
+          - 书签服务器（`flowscribe serve`）
 
-          ## Download
+          ### GUI 桌面图形界面（v0.3.0架构）
+          - **单任务视图**：本地文件、URL、系统音频捕获
+          - **转录库**：管理所有历史转录，支持过滤和排序
+          - **批处理队列**：从文本/CSV/Excel导入URL，顺序处理，自动重试
+          - **书签服务器集成**：浏览器一键添加URL到队列
+          - **转录编辑**：编辑转录文本并重新导出
+          - **媒体同步播放**：点击分段跳转，播放进度高亮
+          - **关键词搜索**：搜索并跳转到匹配位置
+          - **系统音频捕获**：通过 WASAPI helper 捕获系统播放音频
 
-          Download one of these Windows x64 portable packages:
+          ### 输出格式
+          - 纯文本（`.txt`）
+          - Markdown（`.md`，带元信息）
+          - 结构化JSON（`.json`，包含时间戳）
+          - 字幕文件（`.srt`, `.vtt`）
+          - 词级时间戳（中文自然词对齐）
 
-          - `{{CLI_ZIP_NAME}}` for the CLI build
-          - `{{GUI_ZIP_NAME}}` for the desktop GUI build
+          ### 语言支持
+          - 中文（简体/繁体，自然词对齐）
+          - 英文
+          - 中英混合
+          - 其他语言（Whisper支持的所有语言）
+          - 中文优化预设（`--preset zh`）
 
-          CLI quick check:
+          ## 下载
+
+          下载以下 Windows x64 便携版压缩包之一：
+
+          - `{{CLI_ZIP_NAME}}` - CLI 命令行工具
+          - `{{GUI_ZIP_NAME}}` - GUI 桌面图形界面
+
+          ### CLI 快速检查
 
           ```powershell
           .\FlowScribe\FlowScribe.exe doctor
           ```
 
-          GUI quick start:
+          ### GUI 快速启动
 
           ```powershell
           .\FlowScribeGUI\FlowScribeGUI.exe
           ```
 
-          ## Notes
+          ## 使用说明
 
-          - Windows x64 portable build.
-          - Whisper models are not bundled in the executable.
-          - The first transcription with a selected model may download model files from Hugging Face.
-          - The GUI release defaults to quiet `user` logging mode and launches without a console window.
-          - The GUI package includes `WasapiCaptureHelper.exe` for Windows system-playback capture.
-          - `tiny` is recommended only for smoke tests.
-          - `small` is the recommended starting model for real use.
-          - Use `medium` or larger models when accuracy matters more than speed.
+          ### CLI 基础用法
 
-          ## Legal Boundary
+          转录单个文件：
+          ```powershell
+          .\FlowScribe\FlowScribe.exe transcribe "D:\media\lecture.mp4" -o outputs
+          ```
 
-          FlowScribe is intended for personal learning, accessibility, research notes, and lawful information processing. Do not use it to bypass DRM, crack applications, or redistribute copyrighted transcripts without permission.
+          使用中文优化预设：
+          ```powershell
+          .\FlowScribe\FlowScribe.exe transcribe "D:\media\lecture.mp4" -o outputs --preset zh
+          ```
+
+          转录URL：
+          ```powershell
+          .\FlowScribe\FlowScribe.exe url "https://www.youtube.com/watch?v=VIDEO_ID" -o outputs
+          ```
+
+          ### GUI 使用
+
+          1. 运行 `FlowScribeGUI.exe`
+          2. 在"单任务"视图拖放文件或输入URL
+          3. 配置转录参数（模型、语言、输出格式）
+          4. 点击"开始转录"
+          5. 在"转录库"查看所有历史转录
+
+          详细使用说明请参见：
+          - [用户指南](https://github.com/Ducker-Fry/FlowScribe/blob/main/docs/user-guide.md)
+          - [GUI用户指南](https://github.com/Ducker-Fry/FlowScribe/blob/main/docs/gui-user-guide.md)
+
+          ## 重要说明
+
+          - **平台**: Windows x64 便携版
+          - **Whisper模型**: 不包含在便携版中，首次运行时会自动下载
+          - **模型选择**:
+            - `tiny` - 仅用于快速测试
+            - `small` - **推荐**，日常使用的起点
+            - `medium` - 更高准确率，速度较慢
+            - `large-v2` - 最高准确率，速度最慢
+          - **GUI日志**: 默认使用安静的 `user` 日志模式，无控制台窗口
+          - **WASAPI helper**: GUI包含 `WasapiCaptureHelper.exe` 用于系统音频捕获
+          - **依赖**: 便携版已包含 `ffmpeg.exe` 和 `ffprobe.exe`
+
+          ## 使用边界
+
+          FlowScribe 面向：
+          - ✅ 个人学习和研究
+          - ✅ 无障碍阅读（为听障人士生成字幕）
+          - ✅ 内容创作（播客、视频字幕）
+          - ✅ 会议记录和笔记整理
+          - ✅ 合法的信息处理
+
+          **不应用于**：
+          - ❌ 绕过DRM或版权保护
+          - ❌ 未经授权分发受版权保护的转录内容
+          - ❌ 破解或逆向工程应用程序
+          - ❌ 侵犯他人隐私或知识产权
+
+          ## 更多资源
+
+          - [GitHub仓库](https://github.com/Ducker-Fry/FlowScribe)
+          - [问题反馈](https://github.com/Ducker-Fry/FlowScribe/issues)
+          - [用户指南](https://github.com/Ducker-Fry/FlowScribe/blob/main/docs/user-guide.md)
+          - [GUI用户指南](https://github.com/Ducker-Fry/FlowScribe/blob/main/docs/gui-user-guide.md)
           '@
           $notes = $notes.Replace("{{VERSION}}", $env:RELEASE_VERSION)
           $notes = $notes.Replace("{{CLI_ZIP_NAME}}", $env:RELEASE_CLI_ZIP_NAME)

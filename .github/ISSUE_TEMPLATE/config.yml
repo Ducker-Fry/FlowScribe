@@ -1,5 +1,5 @@
 blank_issues_enabled: true
 contact_links:
-  - name: Security issue
+  - name: 安全问题
     url: https://github.com/Ducker-Fry/FlowScribe/security
-    about: Please do not report security vulnerabilities in public issues.
+    about: 请不要在公开 Issue 中报告安全漏洞

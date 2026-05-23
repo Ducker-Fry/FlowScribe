@@ -1,47 +1,49 @@
-name: Feature request
-description: Suggest a useful improvement for FlowScribe.
+name: 功能请求
+description: 为 FlowScribe 提出有用的改进建议
 title: "[Feature]: "
 labels: ["enhancement"]
 body:
   - type: textarea
     id: problem
     attributes:
-      label: Problem
-      description: What user problem would this feature solve?
+      label: 问题描述
+      description: 这个功能将解决什么用户问题？
     validations:
       required: true
   - type: textarea
     id: proposal
     attributes:
-      label: Proposed solution
-      description: What should FlowScribe do?
+      label: 建议方案
+      description: FlowScribe 应该如何实现这个功能？
     validations:
       required: true
   - type: dropdown
     id: area
     attributes:
-      label: Area
+      label: 功能领域
       options:
-        - Input source
-        - Transcription provider
-        - Output format
-        - Packaging
-        - Documentation
-        - GUI
-        - Other
+        - 输入源（Input source）
+        - 转录提供商（Transcription provider）
+        - 输出格式（Output format）
+        - 打包（Packaging）
+        - 文档（Documentation）
+        - GUI 图形界面
+        - CLI 命令行
+        - 性能优化（Performance）
+        - 其他（Other）
     validations:
       required: true
   - type: textarea
     id: alternatives
     attributes:
-      label: Alternatives considered
-      description: Any other approaches?
+      label: 替代方案
+      description: 是否考虑过其他实现方式？
   - type: checkboxes
     id: boundaries
     attributes:
-      label: Boundaries
+      label: 使用边界确认
       options:
-        - label: This feature does not require DRM bypassing or client cracking.
+        - label: 此功能不需要绕过DRM或破解客户端应用
           required: true
-        - label: This feature can be implemented without uploading user media by default.
+        - label: 此功能可以在不默认上传用户媒体的情况下实现
           required: false

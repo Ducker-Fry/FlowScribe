@@ -1,23 +1,24 @@
-name: Documentation issue
-description: Report missing, confusing, or incorrect documentation.
+name: 文档问题
+description: 报告缺失、混淆或错误的文档
 title: "[Docs]: "
 labels: ["documentation"]
 body:
   - type: textarea
     id: location
     attributes:
-      label: Document location
-      description: Which README section, docs page, or release note is affected?
+      label: 文档位置
+      description: 哪个 README 章节、文档页面或发布说明受到影响？
     validations:
       required: true
   - type: textarea
     id: issue
     attributes:
-      label: Issue
-      description: What is missing, confusing, or wrong?
+      label: 问题描述
+      description: 什么内容缺失、混淆或错误？
     validations:
       required: true
   - type: textarea
     id: suggestion
     attributes:
-      label: Suggested improvement
+      label: 改进建议
+      description: 你建议如何改进这部分文档？

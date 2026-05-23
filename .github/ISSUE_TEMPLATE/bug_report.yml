@@ -1,64 +1,66 @@
-name: Bug report
-description: Report something that is broken or behaving incorrectly.
+name: Bug 报告
+description: 报告程序错误或异常行为
 title: "[Bug]: "
 labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting a bug. Please include enough detail for the issue to be reproduced.
+        感谢报告Bug。请提供足够的细节以便问题能够被重现。
   - type: textarea
     id: summary
     attributes:
-      label: Summary
-      description: What went wrong?
+      label: 问题概述
+      description: 发生了什么问题？
     validations:
       required: true
   - type: textarea
     id: steps
     attributes:
-      label: Steps to reproduce
-      description: Include the command you ran and the input type, but do not attach private media.
+      label: 重现步骤
+      description: 请包含运行的命令和输入类型，但不要附加私人媒体文件。
       placeholder: |
-        1. Run ...
-        2. Observe ...
+        1. 运行 ...
+        2. 观察到 ...
     validations:
       required: true
   - type: textarea
     id: expected
     attributes:
-      label: Expected behavior
+      label: 期望行为
+      description: 你期望发生什么？
     validations:
       required: true
   - type: textarea
     id: actual
     attributes:
-      label: Actual behavior
+      label: 实际行为
+      description: 实际发生了什么？
     validations:
       required: true
   - type: input
     id: version
     attributes:
-      label: FlowScribe version
-      placeholder: v0.1.0
+      label: FlowScribe 版本
+      placeholder: v0.3.0
     validations:
       required: true
   - type: input
     id: os
     attributes:
-      label: Operating system
+      label: 操作系统
       placeholder: Windows 11 x64
     validations:
       required: true
   - type: textarea
     id: doctor
     attributes:
-      label: flowscribe doctor output
+      label: flowscribe doctor 输出
       render: text
-      description: Paste the output of `flowscribe doctor` or `FlowScribe.exe doctor`.
+      description: 粘贴 `flowscribe doctor` 或 `FlowScribe.exe doctor` 的输出。
   - type: textarea
     id: logs
     attributes:
-      label: Error output or logs
+      label: 错误输出或日志
       render: text
-      description: Paste relevant terminal output.
+      description: 粘贴相关的终端输出或错误信息。
