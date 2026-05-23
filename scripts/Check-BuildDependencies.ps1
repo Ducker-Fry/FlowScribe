@@ -595,7 +595,6 @@ if ($CheckFfmpeg) {
             $allChecksPassed = $false
         }
     }
-    }
 }
 
 if ($CheckPyInstaller) {
