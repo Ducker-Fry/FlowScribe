@@ -17,7 +17,7 @@ from flowscribe.gui.state import SUPPORTED_GUI_FORMATS, is_acceptable_local_sour
 
 GUI_MODEL_OPTIONS = ("small", "tiny", "base", "medium", "large-v3-turbo", "large-v3")
 GUI_LANGUAGE_OPTIONS = ("auto", "zh", "en")
-GUI_PRESET_OPTIONS = ("none", "zh")
+GUI_PRESET_OPTIONS = ("none", "speed", "quality", "best_quality", "zh")
 GUI_NETWORK_OPTIONS = ("auto", "ipv4", "ipv6")
 DEFAULT_GUI_PREFERENCES = {
     "output_dir": "outputs",

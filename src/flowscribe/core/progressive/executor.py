@@ -288,14 +288,71 @@ class ProgressiveTranscriptionExecutor:
         )
 
     def _resolve_max_workers(self, *, max_workers: int) -> int:
+        """Resolve max workers based on CPU count and available memory.
+
+        Each worker loads a model copy (~500MB-2GB depending on model size).
+        We dynamically calculate safe worker count based on available memory.
+        """
         requested = max(1, int(max_workers))
         cpu_count = max(1, os.cpu_count() or 1)
-        capped = min(requested, cpu_count, 2)
-        if capped <= 1:
-            return 1
+
+        # Check if transcriber supports forking
         if not hasattr(self._transcriber, "fork_for_worker"):
             return 1
-        return capped
+
+        # Calculate memory-based limit
+        memory_limit = self._calculate_memory_based_worker_limit()
+
+        # Use minimum of requested, CPU count, and memory-based limit
+        capped = min(requested, cpu_count, memory_limit)
+        return max(1, capped)
+
+    def _calculate_memory_based_worker_limit(self) -> int:
+        """Calculate safe worker count based on available memory.
+
+        Estimates model memory usage and ensures we don't exceed 80% of available memory.
+        Returns conservative limit if memory info unavailable.
+        """
+        try:
+            import psutil
+
+            # Get available memory in GB
+            available_gb = psutil.virtual_memory().available / (1024 ** 3)
+
+            # Estimate model memory usage based on model name
+            model_name = getattr(self._transcriber, "_model_name", "small")
+            model_memory_gb = self._estimate_model_memory(model_name)
+
+            # Reserve 20% of available memory for system and other processes
+            usable_memory_gb = available_gb * 0.8
+
+            # Calculate how many workers can fit
+            max_workers = int(usable_memory_gb / model_memory_gb)
+
+            # Return at least 1, at most 8 (reasonable upper bound)
+            return max(1, min(max_workers, 8))
+        except ImportError:
+            # psutil not available, use conservative default
+            return 2
+        except Exception:
+            # Any error, use conservative default
+            return 2
+
+    def _estimate_model_memory(self, model_name: str) -> float:
+        """Estimate model memory usage in GB.
+
+        Based on typical faster-whisper model sizes with int8 quantization.
+        """
+        memory_map = {
+            "tiny": 0.5,
+            "base": 0.7,
+            "small": 1.0,
+            "medium": 1.5,
+            "large-v3-turbo": 1.8,
+            "large-v3": 2.5,
+        }
+        # Default to medium estimate if model not recognized
+        return memory_map.get(model_name, 1.5)
 
     def _fork_transcriber(self):
         fork = getattr(self._transcriber, "fork_for_worker", None)

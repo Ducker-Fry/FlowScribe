@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 
 GUI_MODEL_OPTIONS = ("tiny", "base", "small", "medium", "large-v3-turbo", "large-v3")
 GUI_LANGUAGE_OPTIONS = ("auto", "en", "zh", "ja", "ko", "es", "fr", "de", "ru", "pt")
-GUI_PRESET_OPTIONS = ("none", "best_quality", "fast")
+GUI_PRESET_OPTIONS = ("none", "speed", "quality", "best_quality")
 GUI_NETWORK_OPTIONS = ("auto", "ipv4", "ipv6")
 GUI_MEDIA_KIND_OPTIONS = ("audio", "video")
 

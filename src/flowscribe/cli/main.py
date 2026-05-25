@@ -53,6 +53,7 @@ def main(argv: list[str] | None = None) -> int:
         print("- large-v3 / large-v3-turbo: highest local accuracy, requires more resources")
         print("")
         print("Examples:")
+        print("  flowscribe transcribe video.mp4 --model small --preset speed")
         print("  flowscribe transcribe video.mp4 --model small --preset zh")
         print("  flowscribe transcribe video.mp4 --model medium --language en")
         return 0

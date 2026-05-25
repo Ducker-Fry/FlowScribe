@@ -99,9 +99,14 @@ def add_transcription_options(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--preset",
-        choices=["zh"],
+        choices=["speed", "quality", "zh"],
         default=None,
-        help="Apply a transcription preset. zh enables Chinese-oriented defaults.",
+        help=(
+            "Apply a transcription preset. "
+            "speed: optimize for fast transcription (beam_size=1, vad_filter=True, int8). "
+            "quality: optimize for accuracy (beam_size=5, vad_filter=False). "
+            "zh: Chinese-oriented defaults."
+        ),
     )
     parser.add_argument(
         "--task",
@@ -202,9 +207,14 @@ def parse_transcribe_args(argv: list[str] | None = None, *, prog: str = "flowscr
     )
     parser.add_argument(
         "--preset",
-        choices=["zh"],
+        choices=["speed", "quality", "zh"],
         default=None,
-        help="Apply a transcription preset. zh enables Chinese-oriented defaults.",
+        help=(
+            "Apply a transcription preset. "
+            "speed: optimize for fast transcription (beam_size=1, vad_filter=True, int8). "
+            "quality: optimize for accuracy (beam_size=5, vad_filter=False). "
+            "zh: Chinese-oriented defaults."
+        ),
     )
     parser.add_argument(
         "--task",

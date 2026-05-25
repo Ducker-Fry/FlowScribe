@@ -57,10 +57,21 @@ class AppSettings:
         effective_language = language
         effective_vad_filter = vad_filter
         effective_initial_prompt = initial_prompt
+        effective_beam_size = beam_size
 
+        # Apply preset-specific settings
         if preset == "zh":
             effective_language = effective_language or "zh"
             effective_initial_prompt = effective_initial_prompt or ZH_INITIAL_PROMPT
+        elif preset == "speed":
+            # Speed preset: optimize for fast transcription
+            effective_beam_size = 1  # Fastest beam search
+            effective_vad_filter = True  # Skip silence for speed
+        elif preset == "quality" or preset == "best_quality":
+            # Quality preset: optimize for accuracy (current defaults)
+            effective_beam_size = 5
+            effective_vad_filter = False
+
         if no_vad_filter:
             effective_vad_filter = False
 
@@ -71,7 +82,7 @@ class AppSettings:
             language=effective_language,
             preset=preset,
             task=task,
-            beam_size=beam_size,
+            beam_size=effective_beam_size,
             vad_filter=effective_vad_filter,
             initial_prompt=effective_initial_prompt,
             word_timestamps=word_timestamps,
