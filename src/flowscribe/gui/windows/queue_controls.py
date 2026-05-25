@@ -247,23 +247,44 @@ class QueueControlsMixin:
         self._queue_store.update_item(item_id, status="pending", started_at=None, error_message=None)
         self._refresh_queue_tab()
 
-    def _edit_queue_item_settings(self, item_id: str) -> None:
-        """Open dialog to edit queue item settings."""
-        item = self._queue_store.get_item(item_id)
-        if not item:
+    def _edit_queue_item_settings(self, item_ids: list[str]) -> None:
+        """Open dialog to edit queue item settings (supports batch editing)."""
+        if not item_ids:
+            self.status_label.setText("No items selected")
+            return
+
+        # Get first item as template
+        first_item = self._queue_store.get_item(item_ids[0])
+        if not first_item:
+            self.status_label.setText("Item not found")
             return
 
         from flowscribe.gui.dialogs.queue_item_settings_dialog import QueueItemSettingsDialog
 
-        dialog = QueueItemSettingsDialog(self, item.settings, item.source, item.display_label)
+        # Determine label for dialog
+        is_batch = len(item_ids) > 1
+        if is_batch:
+            item_label = f"{len(item_ids)} items"
+        else:
+            item_label = first_item.display_label
+
+        # Show dialog with first item's settings as template
+        dialog = QueueItemSettingsDialog(
+            self, first_item.settings, first_item.source, item_label, is_batch=is_batch
+        )
         dialog.exec()
 
         result = dialog.get_settings()
         if result is not None:
             new_settings, new_source = result
-            self._queue_store.update_item(item_id, settings=new_settings, source=new_source)
+            # Apply to all selected items
+            for item_id in item_ids:
+                self._queue_store.update_item(item_id, settings=new_settings, source=new_source)
             self._refresh_queue_tab()
-            self.status_label.setText(f"Updated settings for: {item.display_label}")
+            if is_batch:
+                self.status_label.setText(f"Updated settings for {len(item_ids)} items")
+            else:
+                self.status_label.setText(f"Updated settings for: {first_item.display_label}")
 
     def _remove_queue_items(self, item_ids: list[str]) -> None:
         """Remove multiple queue items."""

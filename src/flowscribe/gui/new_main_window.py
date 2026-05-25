@@ -388,25 +388,45 @@ class NewMainWindow(QMainWindow):
         self._queue_store.reorder_items(item_ids)
         self._refresh_queue_view()
 
-    def _on_edit_item_settings(self, item_id: str) -> None:
-        """Edit settings for queue item."""
-        item = self._queue_store.get_item(item_id)
-        if item is None:
+    def _on_edit_item_settings(self, item_ids: list[str]) -> None:
+        """Edit settings for queue items (supports batch editing)."""
+        if not item_ids:
+            self.statusBar().showMessage("No items selected")
+            return
+
+        # Get first item as template
+        first_item = self._queue_store.get_item(item_ids[0])
+        if first_item is None:
             self.statusBar().showMessage("Item not found")
             return
 
-        dialog = QueueItemSettingsDialog(self, item.settings, item.source, item.display_label)
+        # Determine label for dialog
+        is_batch = len(item_ids) > 1
+        if is_batch:
+            item_label = f"{len(item_ids)} items"
+        else:
+            item_label = first_item.display_label
+
+        # Show dialog with first item's settings as template
+        dialog = QueueItemSettingsDialog(
+            self, first_item.settings, first_item.source, item_label, is_batch=is_batch
+        )
         if dialog.exec():
             result = dialog.get_settings()
             if result is not None:
                 updated_settings, updated_source = result
-                self._queue_store.update_item(
-                    item.item_id,
-                    settings=updated_settings,
-                    source=updated_source,
-                )
+                # Apply to all selected items
+                for item_id in item_ids:
+                    self._queue_store.update_item(
+                        item_id,
+                        settings=updated_settings,
+                        source=updated_source,
+                    )
                 self._refresh_queue_view()
-                self.statusBar().showMessage("Item settings updated")
+                if is_batch:
+                    self.statusBar().showMessage(f"Updated settings for {len(item_ids)} items")
+                else:
+                    self.statusBar().showMessage("Item settings updated")
 
     def _on_server_start(self, port: int) -> None:
         """Start bookmarklet server."""

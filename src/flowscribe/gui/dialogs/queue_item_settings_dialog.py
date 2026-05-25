@@ -43,13 +43,16 @@ class QueueItemSettingsDialog(QDialog):
         settings: QueueItemSettings,
         source: SourceSpec,
         item_label: str,
+        is_batch: bool = False,
     ):
         super().__init__(parent)
-        self.setWindowTitle(f"Edit Settings - {item_label}")
+        title = f"Batch Edit Settings ({item_label})" if is_batch else f"Edit Settings - {item_label}"
+        self.setWindowTitle(title)
         self.resize(600, 700)
 
         self._settings = settings
         self._source = source
+        self._is_batch = is_batch
         self._setup_ui()
         self._load_settings(settings, source)
 

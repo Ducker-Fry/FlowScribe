@@ -51,7 +51,7 @@ class QueueView(QWidget):
     remove_items_requested = Signal(list)  # list[str]
     clear_completed_requested = Signal()
     reorder_requested = Signal(list)
-    edit_item_settings_requested = Signal(str)
+    edit_item_settings_requested = Signal(list)  # list[str] - item_ids
     server_start_requested = Signal(int)  # port
     server_stop_requested = Signal()
 
@@ -329,10 +329,10 @@ class QueueView(QWidget):
         self.skip_current_requested.emit()
 
     def _on_edit_settings(self) -> None:
-        """Edit settings for selected item."""
+        """Edit settings for selected items (supports batch editing)."""
         selected = self._get_selected_item_ids()
         if selected:
-            self.edit_item_settings_requested.emit(selected[0])
+            self.edit_item_settings_requested.emit(selected)
 
     def _on_retry_failed(self) -> None:
         """Retry failed items."""

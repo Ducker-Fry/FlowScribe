@@ -47,7 +47,7 @@ class QueueTabWidget(QWidget):
     max_retries_changed = Signal(int)
     server_start_requested = Signal(int)  # port
     server_stop_requested = Signal()
-    edit_item_settings_requested = Signal(str)  # item_id
+    edit_item_settings_requested = Signal(list)  # list[str] - item_ids
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -303,11 +303,10 @@ class QueueTabWidget(QWidget):
                 self.retry_item_requested.emit(item_id)
 
     def _on_edit_settings(self) -> None:
-        current = self._queue_list.currentItem()
-        if current:
-            item_id = current.data(Qt.ItemDataRole.UserRole)
-            if item_id:
-                self.edit_item_settings_requested.emit(item_id)
+        """Edit settings for selected/checked items (supports batch editing)."""
+        item_ids = self.get_selected_or_checked_item_ids()
+        if item_ids:
+            self.edit_item_settings_requested.emit(item_ids)
 
     def _on_remove_selected(self) -> None:
         item_ids = self.get_selected_or_checked_item_ids()

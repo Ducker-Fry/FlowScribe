@@ -321,35 +321,6 @@ NewMainWindow (QMainWindow)
 - Bug fix discovered during feature work (if minor)
 - Test fixes for code just written
 
-### Conversation Flow Example
-
-**Scenario: Implement queue pause/resume feature**
-
-```
-Conversation 1 (Exploration):
-  → Analyze existing queue implementation
-  → Evaluate pause/resume technical approaches
-  → Output: Solution proposal document
-
-Conversation 2 (Feature Development):
-  → Implement pause/resume logic
-  → Update UI components
-  → Output: Feature code
-
-Conversation 3 (Testing):
-  → Write unit tests
-  → Write integration tests
-  → Output: Test files + execution commands for user
-
-Conversation 4 (Bug Fix, if needed):
-  → Fix bugs found during testing
-  → Output: Bug fixes
-
-Conversation 5 (Release, if version release):
-  → Build and verify
-  → Prepare release materials
-  → Output: Release package
-```
 
 ## Token Efficiency Guidelines
 
