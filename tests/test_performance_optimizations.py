@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from flowscribe.config.settings import AppSettings
-from flowscribe.core.models import PreparedAudio, SourceSpec
+from flowscribe.core.models import PreparedAudio
 from flowscribe.core.progressive.executor import ProgressiveTranscriptionExecutor
 from flowscribe.transcription.local_whisper import LocalWhisperTranscriber
 
@@ -20,12 +20,14 @@ class TestDynamicWorkerCalculation:
         transcriber.fork_for_worker = MagicMock()
         transcriber._model_name = "small"
 
-        executor = ProgressiveTranscriptionExecutor(transcriber)
+        executor = ProgressiveTranscriptionExecutor(transcriber=transcriber)
+
+        # Mock psutil at import time
+        mock_psutil = MagicMock()
+        mock_psutil.virtual_memory.return_value.available = 16 * 1024 ** 3
 
         with patch("os.cpu_count", return_value=4):
-            with patch("psutil.virtual_memory") as mock_mem:
-                # 16GB available, small model ~1GB, should allow 12 workers
-                mock_mem.return_value.available = 16 * 1024 ** 3
+            with patch.dict("sys.modules", {"psutil": mock_psutil}):
                 result = executor._resolve_max_workers(max_workers=20)
                 # Should be capped by CPU count (4)
                 assert result == 4
@@ -36,12 +38,14 @@ class TestDynamicWorkerCalculation:
         transcriber.fork_for_worker = MagicMock()
         transcriber._model_name = "large-v3"  # ~2.5GB per worker
 
-        executor = ProgressiveTranscriptionExecutor(transcriber)
+        executor = ProgressiveTranscriptionExecutor(transcriber=transcriber)
+
+        # Mock psutil at import time
+        mock_psutil = MagicMock()
+        mock_psutil.virtual_memory.return_value.available = 8 * 1024 ** 3
 
         with patch("os.cpu_count", return_value=16):
-            with patch("psutil.virtual_memory") as mock_mem:
-                # 8GB available, large model ~2.5GB, should allow ~2 workers
-                mock_mem.return_value.available = 8 * 1024 ** 3
+            with patch.dict("sys.modules", {"psutil": mock_psutil}):
                 result = executor._resolve_max_workers(max_workers=16)
                 # Should be capped by memory (2-3 workers)
                 assert result <= 3
@@ -52,10 +56,11 @@ class TestDynamicWorkerCalculation:
         transcriber.fork_for_worker = MagicMock()
         transcriber._model_name = "small"
 
-        executor = ProgressiveTranscriptionExecutor(transcriber)
+        executor = ProgressiveTranscriptionExecutor(transcriber=transcriber)
 
         with patch("os.cpu_count", return_value=8):
-            with patch("psutil.virtual_memory", side_effect=ImportError):
+            # Simulate ImportError when trying to import psutil
+            with patch.dict("sys.modules", {"psutil": None}):
                 result = executor._resolve_max_workers(max_workers=8)
                 # Should use conservative default (2)
                 assert result == 2
@@ -66,7 +71,7 @@ class TestDynamicWorkerCalculation:
         # No fork_for_worker method
         delattr(transcriber, "fork_for_worker")
 
-        executor = ProgressiveTranscriptionExecutor(transcriber)
+        executor = ProgressiveTranscriptionExecutor(transcriber=transcriber)
 
         with patch("os.cpu_count", return_value=8):
             result = executor._resolve_max_workers(max_workers=8)
@@ -77,7 +82,7 @@ class TestDynamicWorkerCalculation:
         transcriber = MagicMock()
         transcriber.fork_for_worker = MagicMock()
 
-        executor = ProgressiveTranscriptionExecutor(transcriber)
+        executor = ProgressiveTranscriptionExecutor(transcriber=transcriber)
 
         # Test known models
         assert executor._estimate_model_memory("tiny") == 0.5
@@ -160,7 +165,7 @@ class TestSpeedPreset:
             preset="speed",
         )
 
-        with patch("flowscribe.transcription.local_whisper.WhisperModel") as mock_model:
+        with patch("faster_whisper.WhisperModel") as mock_model:
             transcriber._load_model()
 
             # Verify WhisperModel called with int8
@@ -176,7 +181,7 @@ class TestSpeedPreset:
             preset=None,
         )
 
-        with patch("flowscribe.transcription.local_whisper.WhisperModel") as mock_model:
+        with patch("faster_whisper.WhisperModel") as mock_model:
             with patch("ctranslate2.get_cuda_device_count", return_value=0):
                 transcriber._load_model()
 
