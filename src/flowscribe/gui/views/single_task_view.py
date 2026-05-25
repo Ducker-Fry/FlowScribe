@@ -6,11 +6,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QThread, Qt, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
     QFrame,
+    QGraphicsDropShadowEffect,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -84,6 +86,7 @@ class SingleTaskView(QWidget):
 
     def _setup_ui(self) -> None:
         """Initialize UI components."""
+        self.setProperty("view", "single-task")
         layout = QVBoxLayout(self)
         layout.setSpacing(8)
         layout.setContentsMargins(10, 10, 10, 10)
@@ -99,23 +102,29 @@ class SingleTaskView(QWidget):
 
         # Source selection area
         source_group = QGroupBox("Sources")
+        source_group.setProperty("softCard", True)
         source_layout = QVBoxLayout(source_group)
         source_layout.setSpacing(8)
         source_layout.setContentsMargins(10, 12, 10, 10)
+        self._apply_soft_shadow(source_group)
 
         source_splitter = QSplitter(Qt.Orientation.Horizontal, source_group)
         source_splitter.setChildrenCollapsible(False)
         source_splitter.setHandleWidth(6)
 
         local_panel = QGroupBox("Local Files")
+        local_panel.setProperty("softCard", True)
         local_layout = QVBoxLayout(local_panel)
         local_layout.setSpacing(6)
         local_layout.setContentsMargins(10, 12, 10, 10)
+        self._apply_soft_shadow(local_panel)
 
         local_header = QHBoxLayout()
         local_header.setSpacing(8)
         local_title = QLabel("Drop media here or add files manually.")
+        local_title.setProperty("helperText", True)
         self.file_summary_label = QLabel("0 files selected")
+        self.file_summary_label.setProperty("helperText", True)
         self.file_summary_label.setAlignment(
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
@@ -124,6 +133,7 @@ class SingleTaskView(QWidget):
         local_layout.addLayout(local_header)
 
         self.file_list = SourceListWidget()
+        self.file_list.setProperty("singleTaskSourceList", True)
         self.file_list.setMinimumHeight(180)
         self.file_list.setMinimumWidth(320)
         self.file_list.setAlternatingRowColors(True)
@@ -150,14 +160,18 @@ class SingleTaskView(QWidget):
         local_layout.addLayout(file_actions)
 
         url_group = QGroupBox("Online Source")
+        url_group.setProperty("softCard", True)
         url_layout = QVBoxLayout(url_group)
         url_layout.setSpacing(6)
         url_layout.setContentsMargins(10, 12, 10, 10)
+        self._apply_soft_shadow(url_group)
 
         url_header = QLabel("Paste a video or audio URL for download and transcription.")
+        url_header.setProperty("helperText", True)
         url_layout.addWidget(url_header)
 
         self.url_input = QLineEdit()
+        self.url_input.setProperty("singleTaskInput", True)
         self.url_input.setPlaceholderText("https://example.com/video")
         url_layout.addWidget(self.url_input)
         self.url_input.returnPressed.connect(self._start_transcription)
@@ -172,18 +186,21 @@ class SingleTaskView(QWidget):
 
         url_options_layout.addWidget(QLabel("Type"), 1, 0)
         self.url_media_type_combo = QComboBox()
+        self.url_media_type_combo.setProperty("singleTaskInput", True)
         self.url_media_type_combo.addItems(["Audio", "Video"])
         self.url_media_type_combo.setCurrentText("Audio")
         url_options_layout.addWidget(self.url_media_type_combo, 1, 1)
 
         url_options_layout.addWidget(QLabel("Quality"), 1, 2)
         self.url_quality_combo = QComboBox()
+        self.url_quality_combo.setProperty("singleTaskInput", True)
         self.url_quality_combo.addItems(["Best", "High", "Medium", "Low"])
         self.url_quality_combo.setCurrentText("Best")
         url_options_layout.addWidget(self.url_quality_combo, 1, 3)
 
         url_options_layout.addWidget(QLabel("Format"), 1, 4)
         self.url_format_combo = QComboBox()
+        self.url_format_combo.setProperty("singleTaskInput", True)
         self.url_format_combo.addItems(["Auto", "mp4", "webm", "mp3", "m4a", "opus"])
         self.url_format_combo.setCurrentText("Auto")
         url_options_layout.addWidget(self.url_format_combo, 1, 5)
@@ -194,6 +211,7 @@ class SingleTaskView(QWidget):
         capture_layout.setSpacing(6)
         capture_layout.setContentsMargins(10, 12, 10, 10)
         capture_hint = QLabel("Capture loopback audio directly when no local file or URL is available.")
+        capture_hint.setProperty("helperText", True)
         capture_hint.setWordWrap(True)
         capture_layout.addWidget(capture_hint)
         capture_controls = QHBoxLayout()
@@ -206,6 +224,7 @@ class SingleTaskView(QWidget):
         self.capture_stop_button.setEnabled(False)
         self.capture_stop_button.setProperty("secondary", True)
         self.capture_status_label = QLabel("Not capturing")
+        self.capture_status_label.setProperty("helperText", True)
         capture_controls.addWidget(self.capture_start_button)
         capture_controls.addWidget(self.capture_stop_button)
         capture_controls.addWidget(self.capture_status_label)
@@ -266,8 +285,11 @@ class SingleTaskView(QWidget):
 
         # Progress bar
         self.progress_bar = QProgressBar()
+        self.progress_bar.setProperty("singleTaskProgress", True)
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
+        self.progress_bar.setFormat("%p%")
+        self.progress_bar.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         lower_layout.addWidget(self.progress_bar)
 
         # Run details section
@@ -280,6 +302,7 @@ class SingleTaskView(QWidget):
         run_details_layout.setSpacing(6)
 
         self.preview_output = QPlainTextEdit()
+        self.preview_output.setProperty("singleTaskLog", True)
         self.preview_output.setReadOnly(True)
         self.preview_output.setPlaceholderText("Transcription progress will appear here...")
         run_details_layout.addWidget(self.preview_output)
@@ -293,6 +316,8 @@ class SingleTaskView(QWidget):
 
         # Status label
         self.status_label = QLabel("Ready")
+        self.status_label.setProperty("statusText", True)
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lower_layout.addWidget(self.status_label)
 
         content_splitter.addWidget(lower_panel)
@@ -301,6 +326,15 @@ class SingleTaskView(QWidget):
         content_splitter.setSizes([260, 560])
 
         self._refresh_file_summary()
+
+    @staticmethod
+    def _apply_soft_shadow(widget: QWidget) -> None:
+        """Apply a subtle shadow to card-like panels in light mode."""
+        shadow = QGraphicsDropShadowEffect(widget)
+        shadow.setBlurRadius(14)
+        shadow.setOffset(0, 1)
+        shadow.setColor(QColor(0, 0, 0, 13))
+        widget.setGraphicsEffect(shadow)
 
     def update_settings(self, settings: dict) -> None:
         """Update view with new settings."""
