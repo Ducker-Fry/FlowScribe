@@ -59,15 +59,24 @@ class QueueItemCard(QWidget):
 
     retry_requested = Signal(str)
     remove_requested = Signal(str)
+    checked_changed = Signal(str, bool)
 
     def __init__(self, item: QueueItem, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._item_id = item.item_id
         self.setProperty("card", True)
+        self.setProperty("selected", False)
 
         root_layout = QHBoxLayout(self)
         root_layout.setContentsMargins(10, 10, 10, 10)
         root_layout.setSpacing(10)
+
+        self._check_button = QPushButton("✓")
+        self._check_button.setProperty("queueCheck", True)
+        self._check_button.setCheckable(True)
+        self._check_button.setChecked(False)
+        self._check_button.clicked.connect(self._on_checked_changed)
+        root_layout.addWidget(self._check_button, 0, Qt.AlignmentFlag.AlignTop)
 
         status_label = QLabel(_STATUS_LABELS.get(item.status, "Unknown"))
         status_color = _STATUS_COLORS.get(item.status, "#6B7280")
@@ -109,17 +118,36 @@ class QueueItemCard(QWidget):
 
         retry_button = QPushButton("Retry")
         retry_button.setProperty("secondary", True)
+        retry_button.setProperty("cardAction", True)
         retry_button.clicked.connect(lambda: self.retry_requested.emit(self._item_id))
         retry_button.setVisible(item.status in {"failed", "canceled"})
         actions_column.addWidget(retry_button)
 
         remove_button = QPushButton("Remove")
         remove_button.setProperty("secondary", True)
+        remove_button.setProperty("cardAction", True)
         remove_button.clicked.connect(lambda: self.remove_requested.emit(self._item_id))
         actions_column.addWidget(remove_button)
         actions_column.addStretch()
 
         root_layout.addLayout(actions_column)
+
+    def set_checked(self, checked: bool) -> None:
+        """Synchronize checkbox state without relying on list item painting."""
+        self._check_button.blockSignals(True)
+        self._check_button.setChecked(checked)
+        self._check_button.blockSignals(False)
+
+    def set_selected(self, selected: bool) -> None:
+        """Update visual selection state for the card."""
+        self.setProperty("selected", selected)
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.update()
+
+    def _on_checked_changed(self, checked: bool) -> None:
+        """Propagate card checkbox changes back to the queue view."""
+        self.checked_changed.emit(self._item_id, checked)
 
     @staticmethod
     def _primary_text(item: QueueItem) -> str:
@@ -133,8 +161,8 @@ class QueueItemCard(QWidget):
     @staticmethod
     def _secondary_text(item: QueueItem) -> str:
         if item.source.kind == "local":
-            return f"Local file • {Path(item.source.value)}"
-        return f"URL • {item.source.value}"
+            return f"Local file - {Path(item.source.value)}"
+        return f"URL - {item.source.value}"
 
 
 class QueueView(QWidget):
@@ -160,6 +188,7 @@ class QueueView(QWidget):
         self._settings = settings
         self._item_ids: list[str] = []
         self._items_cache: dict[str, QueueItem] = {}
+        self._checked_item_ids: set[str] = set()
         self._current_running_item_id: str | None = None
         self._current_run_output: str = ""
         self._view_dialog = None  # Persistent dialog like Single Task
@@ -300,14 +329,15 @@ class QueueView(QWidget):
         queue_content_layout = QHBoxLayout()
         queue_content_layout.setSpacing(10)
         self._queue_list = QListWidget()
+        self._queue_list.setProperty("cardList", True)
         self._queue_list.setDragDropMode(QListWidget.DragDropMode.InternalMove)
         self._queue_list.setDefaultDropAction(Qt.DropAction.MoveAction)
         self._queue_list.setAlternatingRowColors(True)
         self._queue_list.setSpacing(2)
         self._queue_list.setMinimumHeight(260)
         self._queue_list.model().rowsMoved.connect(self._on_rows_moved)
-        self._queue_list.itemChanged.connect(self._update_button_states)
         self._queue_list.itemSelectionChanged.connect(self._update_button_states)
+        self._queue_list.itemSelectionChanged.connect(self._sync_card_selection_states)
         self._queue_list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         queue_content_layout.addWidget(self._queue_list, 1)
 
@@ -557,10 +587,9 @@ class QueueView(QWidget):
 
     def _on_select_all(self) -> None:
         """Select all items."""
-        for i in range(self._queue_list.count()):
-            item = self._queue_list.item(i)
-            if item:
-                item.setCheckState(Qt.CheckState.Checked)
+        self._checked_item_ids = set(self._item_ids)
+        self._sync_all_card_check_states()
+        self._update_button_states()
 
     def _on_rows_moved(self, parent, start: int, end: int, dest, row: int) -> None:
         """Handle drag-drop reordering."""
@@ -571,12 +600,10 @@ class QueueView(QWidget):
         selected: list[str] = []
         selected_rows = {index.row() for index in self._queue_list.selectedIndexes()}
         for i in range(self._queue_list.count()):
-            item = self._queue_list.item(i)
-            if item and (
-                item.checkState() == Qt.CheckState.Checked or i in selected_rows
-            ):
-                if i < len(self._item_ids):
-                    selected.append(self._item_ids[i])
+            if i < len(self._item_ids):
+                item_id = self._item_ids[i]
+                if item_id in self._checked_item_ids or i in selected_rows:
+                    selected.append(item_id)
         return selected
 
     def _collect_item_order(self) -> list[str]:
@@ -599,24 +626,46 @@ class QueueView(QWidget):
         self._clear_completed_btn.setEnabled(has_items)
         self._select_all_btn.setEnabled(has_items)
 
+    def _sync_all_card_check_states(self) -> None:
+        """Refresh all visible card checkboxes from the checked item set."""
+        for row, item_id in enumerate(self._item_ids):
+            list_item = self._queue_list.item(row)
+            if list_item is None:
+                continue
+
+            card = self._queue_list.itemWidget(list_item)
+            if isinstance(card, QueueItemCard):
+                card.set_checked(item_id in self._checked_item_ids)
+
+    def _sync_card_selection_states(self) -> None:
+        """Refresh card selection styling from the current list selection."""
+        selected_rows = {index.row() for index in self._queue_list.selectedIndexes()}
+        for row in range(self._queue_list.count()):
+            list_item = self._queue_list.item(row)
+            if list_item is None:
+                continue
+
+            card = self._queue_list.itemWidget(list_item)
+            if isinstance(card, QueueItemCard):
+                card.set_selected(row in selected_rows)
+
     def refresh_queue(self, items: list[QueueItem]) -> None:
         """Refresh queue display with current items."""
         self._queue_list.clear()
         self._item_ids.clear()
         self._items_cache.clear()
+        self._checked_item_ids.clear()
 
         for item in items:
             self._item_ids.append(item.item_id)
             self._items_cache[item.item_id] = item  # Cache item for later access
             display_text = self._format_item_display(item)
-            list_item = QListWidgetItem(display_text)
-            list_item.setFlags(
-                list_item.flags() | Qt.ItemFlag.ItemIsUserCheckable
-            )
-            list_item.setCheckState(Qt.CheckState.Unchecked)
-            list_item.setSizeHint(list_item.sizeHint().expandedTo(self._queue_list.iconSize()))
+            list_item = QListWidgetItem()
+            list_item.setToolTip(display_text)
             self._queue_list.addItem(list_item)
             card = QueueItemCard(item, self._queue_list)
+            card.set_checked(False)
+            card.checked_changed.connect(self._on_card_checked_changed)
             card.retry_requested.connect(self._on_retry_single_item)
             card.remove_requested.connect(self._on_remove_single_item)
             list_item.setSizeHint(card.sizeHint())
@@ -635,6 +684,15 @@ class QueueView(QWidget):
         self._queue_summary_label.setText(summary_text)
         self._status_label.setText("Queue is empty" if count == 0 else "Select items to manage the queue")
 
+        self._sync_card_selection_states()
+        self._update_button_states()
+
+    def _on_card_checked_changed(self, item_id: str, checked: bool) -> None:
+        """Track card checkbox changes using an explicit checked item set."""
+        if checked:
+            self._checked_item_ids.add(item_id)
+        else:
+            self._checked_item_ids.discard(item_id)
         self._update_button_states()
 
     def _format_item_display(self, item: QueueItem) -> str:

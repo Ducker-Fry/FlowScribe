@@ -4,7 +4,6 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
 from flowscribe.app.models import SourceSpec
@@ -56,9 +55,8 @@ def test_queue_view_emits_multiple_item_ids(queue_view, sample_items):
     queue_view.refresh_queue(sample_items)
 
     # Check first two items
-    for i in range(2):
-        item = queue_view._queue_list.item(i)
-        item.setCheckState(Qt.CheckState.Checked)
+    queue_view._checked_item_ids.update({"item-0", "item-1"})
+    queue_view._sync_all_card_check_states()
 
     # Connect signal to capture emitted value
     emitted_ids = []
@@ -141,8 +139,8 @@ def test_single_item_edit_backward_compatibility(queue_view, sample_items):
     queue_view.refresh_queue(sample_items)
 
     # Check only first item
-    item = queue_view._queue_list.item(0)
-    item.setCheckState(Qt.CheckState.Checked)
+    queue_view._checked_item_ids.add("item-0")
+    queue_view._sync_all_card_check_states()
 
     # Connect signal to capture emitted value
     emitted_ids = []

@@ -68,6 +68,41 @@ QPushButton[secondary="true"] {
     color: #e5e7eb;
 }
 
+QPushButton[cardAction="true"] {
+    min-width: 78px;
+    padding: 5px 10px;
+}
+
+QPushButton[queueCheck="true"] {
+    min-width: 22px;
+    max-width: 22px;
+    min-height: 22px;
+    max-height: 22px;
+    padding: 0;
+    border-radius: 6px;
+    border: 1px solid #4b5563;
+    background-color: #111827;
+    color: transparent;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+QPushButton[queueCheck="true"]:hover {
+    border-color: #3b82f6;
+    background-color: #1e3a8a;
+}
+
+QPushButton[queueCheck="true"]:checked {
+    border-color: #2563eb;
+    background-color: #2563eb;
+    color: #ffffff;
+}
+
+QPushButton[queueCheck="true"]:checked:hover {
+    border-color: #3b82f6;
+    background-color: #1d4ed8;
+}
+
 QToolButton[sectionToggle="true"] {
     background-color: #1f2937;
     border: 1px solid #374151;
@@ -107,6 +142,21 @@ QListWidget::item {
 QListWidget::item:selected {
     background-color: #1d4ed8;
     color: #ffffff;
+}
+
+QListWidget[cardList="true"]::item {
+    padding: 4px 4px;
+    border: none;
+}
+
+QListWidget[cardList="true"]::item:selected {
+    background-color: transparent;
+    color: #e5e7eb;
+}
+
+QWidget[card="true"][selected="true"] {
+    background-color: #172554;
+    border: 1px solid #3b82f6;
 }
 
 QTabWidget::pane {

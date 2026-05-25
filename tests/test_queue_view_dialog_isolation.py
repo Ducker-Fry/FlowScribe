@@ -4,8 +4,6 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 import pytest
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import Qt
-
 from flowscribe.gui.views.queue_view import QueueView
 from flowscribe.queue.models import QueueItem, QueueItemSettings
 from flowscribe.app.models import SourceSpec
@@ -65,7 +63,8 @@ def test_dialog_content_cleared_between_items(queue_view):
     queue_view.refresh_queue(mock_items)
 
     # Select first item by checking its checkbox
-    queue_view._queue_list.item(0).setCheckState(Qt.CheckState.Checked)
+    queue_view._checked_item_ids.add("item1")
+    queue_view._sync_all_card_check_states()
 
     # Mock the dialog creation and methods
     with patch.object(queue_view, '_create_view_dialog'):
@@ -88,8 +87,9 @@ def test_dialog_content_cleared_between_items(queue_view):
         mock_dialog.reset_mock()
 
         # Select second item by checking its checkbox
-        queue_view._queue_list.item(0).setCheckState(Qt.CheckState.Unchecked)
-        queue_view._queue_list.item(1).setCheckState(Qt.CheckState.Checked)
+        queue_view._checked_item_ids.discard("item1")
+        queue_view._checked_item_ids.add("item2")
+        queue_view._sync_all_card_check_states()
 
         # Open second item
         queue_view._on_open_view()
@@ -122,7 +122,8 @@ def test_dialog_content_cleared_for_running_item(queue_view):
     queue_view._current_run_output = "Running transcription..."
 
     # Select the item by checking its checkbox
-    queue_view._queue_list.item(0).setCheckState(Qt.CheckState.Checked)
+    queue_view._checked_item_ids.add("running1")
+    queue_view._sync_all_card_check_states()
 
     # Mock the dialog
     mock_dialog = Mock()
