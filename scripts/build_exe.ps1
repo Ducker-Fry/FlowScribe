@@ -7,6 +7,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Set console output encoding to UTF-8 to fix Chinese character display
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+
 $ProjectRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $VenvFullPath = Join-Path $ProjectRoot $VenvPath
 $PythonExe = Join-Path $VenvFullPath "Scripts\python.exe"

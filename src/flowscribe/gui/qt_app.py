@@ -28,6 +28,11 @@ def run_gui(argv: list[str] | None = None) -> int:
     app.setApplicationVersion(__version__)
     LOGGER.debug("Starting GUI in %s mode.", log_mode)
 
+    # Set application icon
+    from flowscribe.gui.icons import get_app_icon
+
+    app.setWindowIcon(get_app_icon())
+
     from flowscribe.gui.state_manager import load_gui_state
     from flowscribe.gui.theme_manager import apply_theme
 

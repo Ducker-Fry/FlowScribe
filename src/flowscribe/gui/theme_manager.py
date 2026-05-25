@@ -15,6 +15,19 @@ def get_available_themes() -> tuple[str, ...]:
     return ("light", "dark")
 
 
+def get_current_theme(app) -> str:
+    """Get the current theme name from the application.
+
+    Args:
+        app: QApplication instance
+
+    Returns:
+        Current theme name ("light" or "dark"), defaults to "light"
+    """
+    theme = app.property("current_theme")
+    return theme if theme in get_available_themes() else "light"
+
+
 def load_theme_stylesheet(theme_name: str) -> str:
     """Load QSS stylesheet content for the specified theme.
 
@@ -56,6 +69,9 @@ def apply_theme(app, theme_name: str) -> None:
 
     # Apply arrow icons to all combo boxes and spin boxes
     _apply_arrow_icons(app, theme_name)
+
+    # Store current theme in app property for icon updates
+    app.setProperty("current_theme", theme_name)
 
 
 def _apply_arrow_icons(app, theme_name: str) -> None:

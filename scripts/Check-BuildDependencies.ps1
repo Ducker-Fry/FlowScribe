@@ -15,6 +15,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Set console output encoding to UTF-8 to fix Chinese character display
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+
 function Write-Info {
     param([string]$Message)
     Write-Host $Message -ForegroundColor Cyan

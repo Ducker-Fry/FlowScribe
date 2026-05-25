@@ -98,9 +98,12 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
     def _setup_ui(self) -> None:
         """Initialize UI components."""
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
 
         # Toolbar
         toolbar_row = QHBoxLayout()
+        toolbar_row.setSpacing(6)
         toolbar_row.addWidget(
             QLabel("Review run details, transcript workspace, and generated artifacts.")
         )
@@ -126,7 +129,8 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
         """Create run details tab."""
         run_details_page = QWidget(self)
         run_details_layout = QVBoxLayout(run_details_page)
-        run_details_layout.setContentsMargins(8, 8, 8, 8)
+        run_details_layout.setContentsMargins(6, 6, 6, 6)
+        run_details_layout.setSpacing(6)
 
         # Add elapsed time label at the top if result is available
         if self._result is not None and self._result.elapsed_seconds is not None:
@@ -159,36 +163,37 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
 
         workspace_page = QWidget()
         workspace_layout = QVBoxLayout(workspace_page)
-        workspace_layout.setContentsMargins(8, 8, 8, 8)
-        workspace_layout.setSpacing(10)
+        workspace_layout.setContentsMargins(6, 6, 6, 6)
+        workspace_layout.setSpacing(8)
 
         workspace_summary_label = QLabel(
             "Keep playback, segment review, editing, and transcript artifacts in one workspace."
         )
         workspace_summary_label.setWordWrap(True)
+        workspace_summary_label.setStyleSheet("color: gray; font-size: 10px;")
         workspace_layout.addWidget(workspace_summary_label)
 
         workspace_splitter = QSplitter(Qt.Orientation.Vertical, workspace_page)
         workspace_splitter.setChildrenCollapsible(False)
-        # Set minimum height for the splitter to ensure content is tall enough to scroll
-        workspace_splitter.setMinimumHeight(1200)
+        workspace_splitter.setHandleWidth(6)
 
         # Top section: Media + Transcript review
         review_splitter = QSplitter(Qt.Orientation.Horizontal, workspace_splitter)
         review_splitter.setChildrenCollapsible(False)
+        review_splitter.setHandleWidth(6)
 
         # Left: Media Sync + Summary
         review_left = QWidget(review_splitter)
         review_left_layout = QVBoxLayout(review_left)
         review_left_layout.setContentsMargins(0, 0, 0, 0)
-        review_left_layout.setSpacing(8)
+        review_left_layout.setSpacing(6)
 
         media_box = self._create_media_sync_section()
-        review_left_layout.addWidget(media_box, 3)
+        review_left_layout.addWidget(media_box, 1)
 
         self.transcript_summary = QTextBrowser()
         self.transcript_summary.setReadOnly(True)
-        self.transcript_summary.setMaximumHeight(96)
+        self.transcript_summary.setMaximumHeight(72)
         self.transcript_summary.setOpenExternalLinks(False)
         self.transcript_summary.setPlaceholderText("Transcript summary will appear here.")
         self.transcript_summary.setSizePolicy(
@@ -200,6 +205,7 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
         # Right: Search + Segments + Editing
         review_right = QSplitter(Qt.Orientation.Vertical, review_splitter)
         review_right.setChildrenCollapsible(False)
+        review_right.setHandleWidth(6)
 
         search_box = self._create_search_section()
         review_right.addWidget(search_box)
@@ -215,22 +221,22 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
 
         # Bottom section: Artifacts
         artifact_box = self._create_artifacts_section()
-        # Set minimum height for artifact box to ensure it's visible
-        artifact_box.setMinimumHeight(400)
+        artifact_box.setMinimumHeight(460)
 
         workspace_splitter.addWidget(review_splitter)
         workspace_splitter.addWidget(artifact_box)
 
-        # Set stretch factors
-        workspace_splitter.setStretchFactor(0, 4)
-        workspace_splitter.setStretchFactor(1, 3)
+        # Bias the layout toward the artifact preview area.
+        workspace_splitter.setStretchFactor(0, 2)
+        workspace_splitter.setStretchFactor(1, 5)
         review_splitter.setStretchFactor(0, 3)
         review_splitter.setStretchFactor(1, 4)
         review_right.setStretchFactor(0, 1)
-        review_right.setStretchFactor(1, 3)
-        review_right.setStretchFactor(2, 3)
+        review_right.setStretchFactor(1, 4)
+        review_right.setStretchFactor(2, 2)
 
         workspace_layout.addWidget(workspace_splitter, 1)
+        workspace_splitter.setSizes([300, 560])
 
         # Set the workspace page as the scroll area's widget
         scroll_area.setWidget(workspace_page)
@@ -241,10 +247,11 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
         """Create media sync section."""
         media_box = QGroupBox("Media Sync")
         media_layout = QVBoxLayout(media_box)
-        media_layout.setSpacing(10)
+        media_layout.setSpacing(8)
+        media_layout.setContentsMargins(10, 12, 10, 10)
 
         self.video_widget = QVideoWidget()
-        self.video_widget.setMinimumHeight(180)
+        self.video_widget.setMinimumHeight(150)
         self.video_widget.setSizePolicy(
             QSizePolicy.Policy.Preferred,
             QSizePolicy.Policy.Expanding,
@@ -293,8 +300,11 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
         """Create transcript search section."""
         search_box = QGroupBox("Transcript search")
         search_layout = QVBoxLayout(search_box)
+        search_layout.setContentsMargins(10, 12, 10, 10)
+        search_layout.setSpacing(6)
 
         search_row = QHBoxLayout()
+        search_row.setSpacing(6)
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Search transcript keyword")
         self.search_input.returnPressed.connect(self._run_transcript_search)
@@ -304,8 +314,8 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
         search_row.addWidget(self.search_button)
 
         self.search_results = QListWidget()
-        self.search_results.setMinimumHeight(72)
-        self.search_results.setMaximumHeight(140)
+        self.search_results.setMinimumHeight(64)
+        self.search_results.setMaximumHeight(96)
         self.search_results.itemActivated.connect(self._jump_to_selected_hit)
         self.search_results.itemClicked.connect(self._jump_to_selected_hit)
 
@@ -318,6 +328,8 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
         """Create transcript segments section."""
         segments_box = QGroupBox("Transcript segments")
         segments_layout = QVBoxLayout(segments_box)
+        segments_layout.setContentsMargins(10, 12, 10, 10)
+        segments_layout.setSpacing(6)
 
         self.transcript_segments = QListWidget()
         self.transcript_segments.setMinimumHeight(140)
@@ -332,12 +344,14 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
         """Create transcript editing section."""
         edit_box = QGroupBox("Transcript editing")
         edit_layout = QVBoxLayout(edit_box)
+        edit_layout.setContentsMargins(10, 12, 10, 10)
+        edit_layout.setSpacing(6)
 
         self.segment_editor = QTextEdit()
         self.segment_editor.setPlaceholderText("Select a transcript segment to edit its text.")
         self.segment_editor.textChanged.connect(self._on_segment_editor_text_changed)
         self.segment_editor.setEnabled(False)
-        self.segment_editor.setMinimumHeight(120)
+        self.segment_editor.setMinimumHeight(96)
         edit_layout.addWidget(self.segment_editor)
 
         edit_actions = QHBoxLayout()
@@ -363,7 +377,10 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
 
         self.transcript_edit_status_label = QLabel("No transcript loaded for editing.")
         self.transcript_edit_status_label.setWordWrap(True)
+        self.transcript_edit_status_label.setStyleSheet("color: gray; font-size: 10px;")
         edit_layout.addWidget(self.transcript_edit_status_label)
+
+        edit_box.setMaximumHeight(220)
 
         return edit_box
 
@@ -371,17 +388,15 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
         """Create transcript artifacts section."""
         artifact_box = QGroupBox("Transcript artifacts")
         artifact_layout = QVBoxLayout(artifact_box)
-
-        # Add "Open Transcript" button at the top
-        open_transcript_toolbar = QHBoxLayout()
-        open_transcript_button = QPushButton("Open Transcript", artifact_box)
-        open_transcript_button.clicked.connect(self._open_transcript_file)
-        open_transcript_toolbar.addWidget(open_transcript_button)
-        open_transcript_toolbar.addStretch(1)
-        artifact_layout.addLayout(open_transcript_toolbar)
+        artifact_layout.setContentsMargins(10, 12, 10, 10)
+        artifact_layout.setSpacing(6)
 
         artifact_toolbar = QHBoxLayout()
-        artifact_toolbar.addWidget(QLabel("Current artifact"))
+        artifact_toolbar.setSpacing(6)
+        open_transcript_button = QPushButton("Open Transcript", artifact_box)
+        open_transcript_button.clicked.connect(self._open_transcript_file)
+        artifact_toolbar.addWidget(open_transcript_button)
+        artifact_toolbar.addWidget(QLabel("Artifact"))
         self.artifact_selector = QComboBox(artifact_box)
         self.artifact_selector.currentIndexChanged.connect(self._show_selected_workspace_artifact)
         artifact_toolbar.addWidget(self.artifact_selector, 1)
@@ -395,6 +410,7 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
         artifact_layout.addLayout(artifact_toolbar)
 
         artifact_compare_row = QHBoxLayout()
+        artifact_compare_row.setSpacing(4)
         artifact_compare_row.addWidget(QLabel("Quick switch"))
         for group, label in (
             ("transcript_json", "Transcript JSON"),
@@ -419,6 +435,8 @@ class TranscriptionViewDialog(QDialog, TranscriptViewerControlsMixin, WorkspaceC
             "Open a transcript or artifact to inspect generated files here."
         )
         self.artifact_status_label.setWordWrap(True)
+        self.artifact_status_label.setStyleSheet("color: gray; font-size: 10px;")
+        self.artifact_status_label.setMaximumHeight(34)
         artifact_layout.addWidget(self.artifact_status_label)
 
         artifact_viewer_stack = QStackedWidget(artifact_box)

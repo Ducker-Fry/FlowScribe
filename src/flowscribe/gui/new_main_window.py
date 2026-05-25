@@ -6,18 +6,26 @@ from pathlib import Path
 
 from PySide6.QtCore import QFileSystemWatcher, QThread, QUrl
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QMainWindow, QStackedWidget, QToolBar
+from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget, QToolBar
 
 from flowscribe.app.models import SourceSpec
 from flowscribe.gui.dialogs.queue_item_settings_dialog import QueueItemSettingsDialog
 from flowscribe.gui.dialogs.settings_dialog import SettingsDialog
+from flowscribe.gui.icons import (
+    get_app_icon,
+    get_application_icon,
+    get_library_icon,
+    get_queue_icon,
+    get_settings_icon,
+)
 from flowscribe.gui.state_manager import batch_queue_store, transcript_library_store
+from flowscribe.gui.theme_manager import get_current_theme
 from flowscribe.gui.views.library_view import LibraryView
 from flowscribe.gui.views.queue_view import QueueView
 from flowscribe.gui.views.single_task_view import SingleTaskView
 from flowscribe.gui.workers.bookmarklet_server_worker import BookmarkletServerWorker
 from flowscribe.gui.workers.queue_runner import QueueRunner
-from flowscribe.queue.importers import parse_urls_from_text, import_urls_from_file
+from flowscribe.queue.importers import import_urls_from_file, parse_urls_from_text
 from flowscribe.queue.models import (
     QueueItem,
     QueueItemSettings,
@@ -72,17 +80,33 @@ class NewMainWindow(QMainWindow):
 
     def _setup_ui(self) -> None:
         """Initialize UI components."""
+        # Get current theme for icons
+        app = QApplication.instance()
+        theme = get_current_theme(app) if app else "light"
+
+        # Set application icon
+        app_icon = get_app_icon()
+        if app:
+            app.setWindowIcon(app_icon)
+        self.setWindowIcon(app_icon)
+
         # Toolbar
         toolbar = QToolBar("Main")
+        toolbar.setMovable(False)
         self.addToolBar(toolbar)
 
-        single_task_action = toolbar.addAction("Single Task")
+        settings_action = toolbar.addAction(get_settings_icon(theme), "Settings")
+        settings_action.triggered.connect(self._show_settings_dialog)
+
+        toolbar.addSeparator()
+
+        single_task_action = toolbar.addAction(get_application_icon(theme), "Single Task")
         single_task_action.triggered.connect(lambda: self._view_stack.setCurrentIndex(0))
 
-        library_action = toolbar.addAction("Library")
+        library_action = toolbar.addAction(get_library_icon(theme), "Library")
         library_action.triggered.connect(lambda: self._view_stack.setCurrentIndex(1))
 
-        queue_action = toolbar.addAction("Queue")
+        queue_action = toolbar.addAction(get_queue_icon(theme), "Queue")
         queue_action.triggered.connect(lambda: self._view_stack.setCurrentIndex(2))
 
         # Views
@@ -139,6 +163,7 @@ class NewMainWindow(QMainWindow):
             self._settings = dialog.get_settings()
             self._single_task_view.update_settings(self._settings)
             self._queue_view.update_settings(self._settings)
+            self._refresh_icons()
             self.statusBar().showMessage("Settings updated")
 
     def _on_settings_changed(self, settings: dict) -> None:
@@ -146,7 +171,30 @@ class NewMainWindow(QMainWindow):
         self._settings = settings
         self._single_task_view.update_settings(settings)
         self._queue_view.update_settings(settings)
+        self._refresh_icons()
         self.statusBar().showMessage("Settings applied")
+
+    def _refresh_icons(self) -> None:
+        """Refresh all icons after theme change."""
+        app = QApplication.instance()
+        theme = get_current_theme(app) if app else "light"
+
+        # Update window icon (app icon doesn't change with theme)
+        app_icon = get_app_icon()
+        if app:
+            app.setWindowIcon(app_icon)
+        self.setWindowIcon(app_icon)
+
+        # Update toolbar icons
+        toolbar = self.findChild(QToolBar, "Main")
+        if toolbar:
+            actions = toolbar.actions()
+            if len(actions) >= 4:
+                actions[0].setIcon(get_settings_icon(theme))  # Settings
+                # Skip separator at index 1
+                actions[2].setIcon(get_application_icon(theme))  # Single Task
+                actions[3].setIcon(get_library_icon(theme))  # Library
+                actions[4].setIcon(get_queue_icon(theme))  # Queue
 
     # SingleTaskView handlers
     def _on_transcription_started(self) -> None:
