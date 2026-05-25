@@ -19,7 +19,9 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QSpinBox,
+    QTabWidget,
     QVBoxLayout,
+    QWidget,
 )
 
 from flowscribe.gui.state import SUPPORTED_GUI_FORMATS
@@ -28,6 +30,7 @@ from flowscribe.gui.utils.state import (
     GUI_MODEL_OPTIONS,
     GUI_NETWORK_OPTIONS,
     GUI_PRESET_OPTIONS,
+    GUI_THEME_OPTIONS,
 )
 
 if TYPE_CHECKING:
@@ -51,6 +54,72 @@ class SettingsDialog(QDialog):
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
+
+        # Create tab widget
+        self.tabs = QTabWidget()
+
+        # Appearance tab
+        appearance_tab = self._create_appearance_tab()
+        self.tabs.addTab(appearance_tab, "Appearance")
+
+        # Transcription tab
+        transcription_tab = self._create_transcription_tab()
+        self.tabs.addTab(transcription_tab, "Transcription")
+
+        # Network tab
+        network_tab = self._create_network_tab()
+        self.tabs.addTab(network_tab, "Network")
+
+        # Advanced tab
+        advanced_tab = self._create_advanced_tab()
+        self.tabs.addTab(advanced_tab, "Advanced")
+
+        layout.addWidget(self.tabs)
+
+        # Dialog buttons
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel
+            | QDialogButtonBox.StandardButton.Apply
+        )
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        button_box.button(QDialogButtonBox.StandardButton.Apply).clicked.connect(
+            self._apply_settings
+        )
+        layout.addWidget(button_box)
+
+    def _create_appearance_tab(self) -> QWidget:
+        """Create appearance settings tab."""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setSpacing(12)
+        layout.setContentsMargins(12, 12, 12, 12)
+
+        # Theme settings
+        theme_group = QGroupBox("Theme")
+        theme_layout = QGridLayout(theme_group)
+        theme_layout.setHorizontalSpacing(10)
+        theme_layout.setVerticalSpacing(8)
+
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItems(GUI_THEME_OPTIONS)
+        self.theme_combo.currentTextChanged.connect(self._on_theme_changed)
+
+        theme_layout.addWidget(QLabel("Theme"), 0, 0)
+        theme_layout.addWidget(self.theme_combo, 0, 1)
+
+        layout.addWidget(theme_group)
+        layout.addStretch(1)
+
+        return tab
+
+    def _create_transcription_tab(self) -> QWidget:
+        """Create transcription settings tab."""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setSpacing(12)
+        layout.setContentsMargins(12, 12, 12, 12)
 
         # Output Settings
         output_group = QGroupBox("Output Settings")
@@ -119,6 +188,20 @@ class SettingsDialog(QDialog):
         timestamp_layout.addWidget(self.timestamps_check)
         timestamp_layout.addWidget(self.word_timestamps_check)
 
+        layout.addWidget(output_group)
+        layout.addWidget(model_group)
+        layout.addWidget(timestamp_group)
+        layout.addStretch(1)
+
+        return tab
+
+    def _create_network_tab(self) -> QWidget:
+        """Create network settings tab."""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setSpacing(12)
+        layout.setContentsMargins(12, 12, 12, 12)
+
         # Network Settings
         network_group = QGroupBox("Network Settings (for URL sources)")
         network_layout = QGridLayout(network_group)
@@ -146,6 +229,18 @@ class SettingsDialog(QDialog):
         network_layout.addWidget(QLabel("Cookies file"), 2, 0)
         network_layout.addLayout(cookies_row, 2, 1)
 
+        layout.addWidget(network_group)
+        layout.addStretch(1)
+
+        return tab
+
+    def _create_advanced_tab(self) -> QWidget:
+        """Create advanced settings tab."""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setSpacing(12)
+        layout.setContentsMargins(12, 12, 12, 12)
+
         # Progressive Transcription Settings
         progressive_group = QGroupBox("Progressive Transcription")
         progressive_layout = QGridLayout(progressive_group)
@@ -169,28 +264,17 @@ class SettingsDialog(QDialog):
         progressive_layout.addWidget(QLabel("Max workers"), 3, 0)
         progressive_layout.addWidget(self.progressive_max_workers_spin, 3, 1)
 
-        # Add all groups to main layout
-        layout.addWidget(output_group)
-        layout.addWidget(model_group)
-        layout.addWidget(timestamp_group)
-        layout.addWidget(network_group)
         layout.addWidget(progressive_group)
+        layout.addStretch(1)
 
-        # Dialog buttons
-        button_box = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok
-            | QDialogButtonBox.StandardButton.Cancel
-            | QDialogButtonBox.StandardButton.Apply
-        )
-        button_box.accepted.connect(self.accept)
-        button_box.rejected.connect(self.reject)
-        button_box.button(QDialogButtonBox.StandardButton.Apply).clicked.connect(
-            self._apply_settings
-        )
-        layout.addWidget(button_box)
+        return tab
 
     def _load_settings(self, settings: dict) -> None:
         """Load settings into UI widgets."""
+        theme = settings.get("theme", "light")
+        if theme in GUI_THEME_OPTIONS:
+            self.theme_combo.setCurrentText(theme)
+
         self.output_dir_input.setText(settings.get("output_dir", "outputs"))
         self.output_name_input.setText(settings.get("output_name_base", ""))
 
@@ -265,6 +349,7 @@ class SettingsDialog(QDialog):
         cookies_path = Path(cookies_text) if cookies_text else None
 
         return {
+            "theme": self.theme_combo.currentText(),
             "output_dir": self.output_dir_input.text(),
             "output_name_base": self.output_name_input.text(),
             "model_name": self.model_combo.currentText(),
@@ -303,6 +388,22 @@ class SettingsDialog(QDialog):
         )
         if file_path:
             self.cookies_input.setText(file_path)
+
+    def _on_theme_changed(self, theme_name: str) -> None:
+        """Apply theme immediately when changed."""
+        from PySide6.QtWidgets import QApplication
+
+        from flowscribe.gui.theme_manager import apply_theme
+
+        try:
+            app = QApplication.instance()
+            if app:
+                apply_theme(app, theme_name)
+        except (ValueError, FileNotFoundError) as exc:
+            from flowscribe.gui.gui_logging import get_gui_logger
+
+            logger = get_gui_logger(__name__)
+            logger.warning("Failed to apply theme '%s': %s", theme_name, exc)
 
     def _apply_settings(self) -> None:
         """Apply settings without closing dialog."""

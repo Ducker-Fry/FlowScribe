@@ -27,6 +27,19 @@ def run_gui(argv: list[str] | None = None) -> int:
     app.setApplicationName("FlowScribe")
     app.setApplicationVersion(__version__)
     LOGGER.debug("Starting GUI in %s mode.", log_mode)
+
+    from flowscribe.gui.state_manager import load_gui_state
+    from flowscribe.gui.theme_manager import apply_theme
+
+    _, _, preferences, *_ = load_gui_state()
+    theme_name = preferences.get("theme", "light")
+
+    try:
+        apply_theme(app, theme_name)
+        LOGGER.debug("Applied theme: %s", theme_name)
+    except (ValueError, FileNotFoundError) as exc:
+        LOGGER.warning("Failed to apply theme '%s': %s. Using default.", theme_name, exc)
+
     from flowscribe.gui.new_main_window import NewMainWindow
 
     window = NewMainWindow()

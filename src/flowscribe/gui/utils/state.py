@@ -19,6 +19,7 @@ GUI_MODEL_OPTIONS = ("small", "tiny", "base", "medium", "large-v3-turbo", "large
 GUI_LANGUAGE_OPTIONS = ("auto", "zh", "en")
 GUI_PRESET_OPTIONS = ("none", "speed", "quality", "best_quality", "zh")
 GUI_NETWORK_OPTIONS = ("auto", "ipv4", "ipv6")
+GUI_THEME_OPTIONS = ("light", "dark")
 DEFAULT_GUI_PREFERENCES = {
     "output_dir": "outputs",
     "output_name_base": "",
@@ -35,6 +36,7 @@ DEFAULT_GUI_PREFERENCES = {
     "url_auto_bind_media": True,
     "network_family": "auto",
     "proxy": "",
+    "theme": "light",
 }
 DEFAULT_VIEW_PREFERENCES = {
     "visible_tabs": {
@@ -90,6 +92,7 @@ def _normalize_gui_preferences_payload(payload: object) -> dict[str, object]:
     url_media_output_dir = source.get("url_media_output_dir")
     network_family = source.get("network_family")
     proxy = source.get("proxy")
+    theme = source.get("theme")
 
     return {
         "output_dir": output_dir if isinstance(output_dir, str) and output_dir.strip() else "outputs",
@@ -109,6 +112,7 @@ def _normalize_gui_preferences_payload(payload: object) -> dict[str, object]:
         "url_auto_bind_media": bool(source.get("url_auto_bind_media", True)),
         "network_family": network_family if network_family in GUI_NETWORK_OPTIONS else "auto",
         "proxy": proxy if isinstance(proxy, str) else "",
+        "theme": theme if theme in GUI_THEME_OPTIONS else "light",
     }
 
 
