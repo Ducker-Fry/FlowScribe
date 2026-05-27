@@ -300,34 +300,41 @@ class NewMainWindow(QMainWindow):
     # QueueView handlers
     def _on_enqueue_urls(self, text: str) -> None:
         """Enqueue URLs from text."""
-        from flowscribe.app.models import DownloadOptions
+        try:
+            from flowscribe.app.models import DownloadOptions
 
-        urls = parse_urls_from_text(text)
-        settings = self._settings_to_queue_settings()
-        download_opts_dict = self._queue_view.get_download_options()
-        download_opts = DownloadOptions(
-            quality=download_opts_dict["quality"],
-            prefer_format=download_opts_dict["prefer_format"],
-        )
-        items = []
-        for url in urls:
-            source = SourceSpec(
-                kind="url",
-                value=url,
-                keep_media=download_opts_dict["preserve_media"],
-                url_media_kind=download_opts_dict["media_kind"],
-                download_options=download_opts,
-                auto_bind_media=True,
+            urls = parse_urls_from_text(text)
+            if not urls:
+                self.statusBar().showMessage("No valid URLs found in input")
+                return
+
+            settings = self._settings_to_queue_settings()
+            download_opts_dict = self._queue_view.get_download_options()
+            download_opts = DownloadOptions(
+                quality=download_opts_dict["quality"],
+                prefer_format=download_opts_dict["prefer_format"],
             )
-            item = QueueItem(
-                item_id=generate_queue_item_id(source),
-                source=source,
-                settings=settings,
-            )
-            items.append(item)
-            self._queue_store.enqueue(item)
-        self._refresh_queue_view()
-        self.statusBar().showMessage(f"Added {len(items)} URL(s) to queue")
+            items = []
+            for url in urls:
+                source = SourceSpec(
+                    kind="url",
+                    value=url,
+                    keep_media=download_opts_dict["preserve_media"],
+                    url_media_kind=download_opts_dict["media_kind"],
+                    download_options=download_opts,
+                    auto_bind_media=True,
+                )
+                item = QueueItem(
+                    item_id=generate_queue_item_id(source),
+                    source=source,
+                    settings=settings,
+                )
+                items.append(item)
+                self._queue_store.enqueue(item)
+            self._refresh_queue_view()
+            self.statusBar().showMessage(f"Added {len(items)} URL(s) to queue")
+        except Exception as e:
+            self.statusBar().showMessage(f"Error adding URLs: {e}")
 
     def _on_enqueue_files(self, paths: list[Path]) -> None:
         """Enqueue local files."""

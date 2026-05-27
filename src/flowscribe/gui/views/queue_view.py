@@ -248,7 +248,7 @@ class QueueView(QWidget):
 
         self._url_input = QTextEdit()
         self._url_input.setPlaceholderText(
-            "https://example.com/video1\nhttps://example.com/video2\n..."
+            "https://example.com/video1\nhttps://example.com/video2\n...\n(Ctrl+Enter to add)"
         )
         self._url_input.setMaximumHeight(128)
         self._url_input.installEventFilter(self)
@@ -415,15 +415,20 @@ class QueueView(QWidget):
     def _on_add_urls(self) -> None:
         """Add URLs from text input."""
         text = self._url_input.toPlainText().strip()
-        if text:
-            self.enqueue_urls_requested.emit(text)
-            self._url_input.clear()
+        if not text:
+            self._status_label.setText("Please enter at least one URL")
+            return
+        self.enqueue_urls_requested.emit(text)
+        self._url_input.clear()
+        self._status_label.setText("Processing URLs...")
 
     def eventFilter(self, watched, event) -> bool:
         if watched is self._url_input and event.type() == QEvent.Type.KeyPress:
+            # Ctrl+Enter or Ctrl+Return to submit
             if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-                self._on_add_urls()
-                return True
+                if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                    self._on_add_urls()
+                    return True
         return super().eventFilter(watched, event)
 
     def get_download_options(self) -> dict:
