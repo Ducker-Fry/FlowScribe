@@ -14,12 +14,14 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_executable(
     flowscribe-engine
     src/main.cpp
+    src/protocol/codec.cpp
 )
 
 target_include_directories(
     flowscribe-engine
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/whisper.cpp/examples
 )
 
 if(MSVC)
@@ -28,3 +30,21 @@ else()
     target_compile_options(flowscribe-engine PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+add_executable(
+    flowscribe-engine-protocol-tests
+    tests/protocol_tests.cpp
+    src/protocol/codec.cpp
+)
+
+target_include_directories(
+    flowscribe-engine-protocol-tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/whisper.cpp/examples
+)
+
+if(MSVC)
+    target_compile_options(flowscribe-engine-protocol-tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(flowscribe-engine-protocol-tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
