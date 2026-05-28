@@ -27,6 +27,9 @@ dist/
 /test_output/
 *.log
 
+# Local practice workspace
+/practice/
+
 # Sensitive browser/session cookies
 cookies.txt
 *.cookies.txt
