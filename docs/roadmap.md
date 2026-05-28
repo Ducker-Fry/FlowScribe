@@ -128,11 +128,29 @@ repeated daily use.
 Status: partially underway in the current working tree, but not yet wrapped as a
 release milestone.
 
+## v0.9 Native Persistent Whisper.cpp Engine
+
+Goal: reduce repeated transcription startup cost and create a native local
+runtime path for more aggressive long-media throughput tuning.
+
+- Native `whisper.cpp` engine process for Windows.
+- Model persistence across multiple CLI jobs.
+- Python provider adapter instead of a whole-pipeline rewrite.
+- Local IPC over Windows Named Pipe.
+- CLI-first integration before GUI adoption.
+- `v0` whole-file transcription path.
+- `v1` chunked scheduling, progress events, cancellation, and cache groundwork.
+- Chinese throughput-oriented tuning path built on the native runtime boundary.
+
+Status: planned. Design and implementation order are tracked in
+`docs/whispercpp-engine-plan.md`.
+
 ## v1.0 Open Source Release
 
 Goal: polish the project as a public portfolio-quality tool.
 
 - Stable CLI and GUI workflows.
+- Stable native-engine-backed workflow for performance-sensitive local use.
 - Clean release artifacts.
 - Complete user documentation.
 - Demo media workflows.
