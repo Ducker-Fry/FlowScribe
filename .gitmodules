@@ -1,0 +1,3 @@
+[submodule "native/flowscribe-engine/third_party/whisper.cpp"]
+	path = native/flowscribe-engine/third_party/whisper.cpp
+	url = https://github.com/ggml-org/whisper.cpp
