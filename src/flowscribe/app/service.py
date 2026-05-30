@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from shutil import move
 
-from flowscribe.app.models import (
+from flowscribe.tasks.models import (
     ErrorInfo,
     ProgressCallback,
     ProgressEvent,
@@ -27,8 +27,8 @@ from flowscribe.core.models import (
     ProgressiveTranscriptionUpdate,
     TranscriptionChunkPlan,
 )
-from flowscribe.core.pipeline import LocalTranscriptionPipeline
-from flowscribe.core.progressive import tuned_chunk_overlap_seconds
+from flowscribe.pipeline.transcription import LocalTranscriptionPipeline
+from flowscribe.pipeline.progressive import tuned_chunk_overlap_seconds
 from flowscribe.input.local_source import LocalFileSource
 from flowscribe.input.url_downloader import UrlAudioDownloader
 from flowscribe.media.audio_extractor import FfmpegAudioExtractor
@@ -40,7 +40,7 @@ from flowscribe.output.paths import OutputPathBuilder
 from flowscribe.output.srt_writer import SrtTranscriptWriter
 from flowscribe.output.txt_writer import TxtTranscriptWriter
 from flowscribe.output.vtt_writer import VttTranscriptWriter
-from flowscribe.transcription.providers import (
+from flowscribe.providers.transcribe.registry import (
     ProviderTranscriptionSettings,
     is_native_engine_provider_name,
     resolve_transcription_provider,

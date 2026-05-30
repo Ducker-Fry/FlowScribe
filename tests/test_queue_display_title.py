@@ -6,8 +6,8 @@ import pytest
 import importlib
 import importlib.util
 
-from flowscribe.app.models import SourceSpec
-from flowscribe.queue.models import QueueItem, QueueItemSettings
+from flowscribe.tasks.models import SourceSpec
+from flowscribe.tasks.queue_models import QueueItem, QueueItemSettings
 
 
 try:

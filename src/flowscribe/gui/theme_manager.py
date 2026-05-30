@@ -24,6 +24,8 @@ def get_current_theme(app) -> str:
     Returns:
         Current theme name ("light" or "dark"), defaults to "light"
     """
+    if app is None:
+        return "light"
     theme = app.property("current_theme")
     return theme if theme in get_available_themes() else "light"
 

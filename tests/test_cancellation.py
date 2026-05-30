@@ -5,7 +5,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from flowscribe.app.models import ProgressEvent, SourceSpec, TranscriptionJob
+from flowscribe.tasks.models import ProgressEvent, SourceSpec, TranscriptionJob
 from flowscribe.app.service import TranscriptionService
 from flowscribe.core.errors import CancellationError
 from flowscribe.core.models import PreparedAudio, Transcript, TranscriptSegment
@@ -90,7 +90,7 @@ def test_service_cancellation_during_progress(tmp_path):
 
 def test_transcriber_cancellation_during_segment_iteration(mock_audio, mock_transcript):
     """Test that transcriber checks cancellation during segment iteration."""
-    from flowscribe.transcription.local_whisper import LocalWhisperTranscriber
+    from flowscribe.providers.transcribe.local_whisper import LocalWhisperTranscriber
 
     transcriber = LocalWhisperTranscriber(model_name="tiny")
 
@@ -130,7 +130,7 @@ def test_transcriber_cancellation_during_segment_iteration(mock_audio, mock_tran
 
 def test_progressive_executor_cancellation_between_chunks(mock_audio):
     """Test that progressive executor checks cancellation between chunks."""
-    from flowscribe.core.progressive.executor import ProgressiveTranscriptionExecutor
+    from flowscribe.pipeline.progressive.executor import ProgressiveTranscriptionExecutor
     from flowscribe.core.models import TranscriptionChunk, TranscriptionChunkPlan, MediaDurationInfo
 
     mock_transcriber = Mock()
@@ -186,7 +186,7 @@ def test_progressive_executor_cancellation_between_chunks(mock_audio):
 
 def test_pipeline_passes_cancellation_to_transcriber(mock_audio, tmp_path):
     """Test that pipeline passes should_cancel callback to transcriber."""
-    from flowscribe.core.pipeline import LocalTranscriptionPipeline
+    from flowscribe.pipeline.transcription import LocalTranscriptionPipeline
     from flowscribe.core.models import MediaItem
 
     mock_transcriber = Mock()

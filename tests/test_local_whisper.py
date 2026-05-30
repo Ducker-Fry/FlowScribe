@@ -2,7 +2,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from flowscribe.core.models import MediaItem, PreparedAudio
-from flowscribe.transcription.local_whisper import LocalWhisperTranscriber
+from flowscribe.providers.transcribe.local_whisper import LocalWhisperTranscriber
 
 
 ME = "\u6211"
@@ -100,7 +100,7 @@ def test_local_whisper_aligns_chinese_raw_words(monkeypatch, tmp_path: Path) -> 
     transcriber = LocalWhisperTranscriber(model_name="tiny", word_timestamps=True)
     monkeypatch.setattr(transcriber, "_load_model", lambda: model)
     monkeypatch.setattr(
-        "flowscribe.transcription.local_whisper.align_chinese_words",
+        "flowscribe.providers.transcribe.local_whisper.align_chinese_words",
         lambda text, raw_words: (
             raw_words[0],
             raw_words[1],

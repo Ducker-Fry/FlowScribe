@@ -1,7 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 
-from flowscribe.app.models import ProgressEvent, SourceSpec, TranscriptionJob, TranscriptionResult
+from flowscribe.tasks.models import ProgressEvent, SourceSpec, TranscriptionJob, TranscriptionResult
 from flowscribe.core.models import OutputArtifacts, TranscriptSegment
 from flowscribe.gui.export_profiles import ExportProfile
 from flowscribe.gui.utils import (

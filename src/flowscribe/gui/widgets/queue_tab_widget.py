@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from flowscribe.queue.models import QueueItem, QueueItemStatus
+from flowscribe.tasks.queue_models import QueueItem, QueueItemStatus
 
 
 _STATUS_ICONS: dict[QueueItemStatus, str] = {

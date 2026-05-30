@@ -20,10 +20,10 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from flowscribe.app.models import SourceSpec
+from flowscribe.tasks.models import SourceSpec
 from flowscribe.gui.state import SUPPORTED_GUI_FORMATS
 from flowscribe.gui.utils.state import GUI_PROVIDER_LABELS, GUI_PROVIDER_OPTIONS
-from flowscribe.queue.models import QueueItemSettings
+from flowscribe.tasks.queue_models import QueueItemSettings
 
 if TYPE_CHECKING:
     from PySide6.QtWidgets import QWidget

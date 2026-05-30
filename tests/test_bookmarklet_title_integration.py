@@ -7,7 +7,7 @@ import importlib
 import importlib.util
 
 from flowscribe.server.handlers import AddUrlHandler
-from flowscribe.queue.store import BatchQueueStore
+from flowscribe.tasks.queue_store import BatchQueueStore
 
 
 def test_bookmarklet_title_integration(tmp_path):
@@ -131,8 +131,8 @@ except ImportError:
 def test_queue_view_format_with_bookmarklet_title(tmp_path):
     """Test that QueueView formats bookmarklet items with title."""
     from flowscribe.gui.views.queue_view import QueueView
-    from flowscribe.app.models import SourceSpec
-    from flowscribe.queue.models import QueueItem, QueueItemSettings
+    from flowscribe.tasks.models import SourceSpec
+    from flowscribe.tasks.queue_models import QueueItem, QueueItemSettings
     from PySide6.QtWidgets import QApplication
     import sys
 

@@ -6,10 +6,10 @@ from datetime import datetime
 
 from PySide6.QtCore import QObject, Signal, Slot
 
-from flowscribe.app.models import ProgressEvent
+from flowscribe.tasks.models import ProgressEvent
 from flowscribe.app.service import TranscriptionService
-from flowscribe.queue.models import QueueItem
-from flowscribe.queue.store import BatchQueueStore
+from flowscribe.tasks.queue_models import QueueItem
+from flowscribe.tasks.queue_store import BatchQueueStore
 
 
 class QueueRunner(QObject):

@@ -9,7 +9,7 @@ from dataclasses import asdict
 from pathlib import Path
 from urllib.parse import urlparse
 
-from flowscribe.app.models import ProgressEvent, SourceSpec, TranscriptionJob
+from flowscribe.tasks.models import ProgressEvent, SourceSpec, TranscriptionJob
 from flowscribe.app.service import TranscriptionService
 from flowscribe.cli.args import parse_args
 from flowscribe.cli.doctor import run_doctor
@@ -20,7 +20,7 @@ from flowscribe.input.url_inspector import UrlInspector
 from flowscribe.media.inspector import LocalMediaInspector
 from flowscribe.output.time_format import format_timestamp
 from flowscribe.search.transcript_search import search_transcript_file
-from flowscribe.transcription.native_engine import resolve_engine_exe
+from flowscribe.providers.transcribe.native_engine import resolve_engine_exe
 
 CLI_PROGRESSIVE_AUTO_THRESHOLD_SECONDS = 20 * 60
 
@@ -344,7 +344,7 @@ def _job_from_transcribe_options(options) -> TranscriptionJob:
 
 
 def _job_from_url_options(options) -> TranscriptionJob:
-    from flowscribe.app.models import DownloadOptions
+    from flowscribe.tasks.models import DownloadOptions
 
     progressive_enabled, progressive_note = _resolve_cli_progressive_mode_for_url(options)
     if progressive_note:

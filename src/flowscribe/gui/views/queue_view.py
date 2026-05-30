@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from flowscribe.queue.models import QueueItem, QueueItemStatus
+from flowscribe.tasks.queue_models import QueueItem, QueueItemStatus
 from flowscribe.gui.widgets import CollapsibleSection
 
 if TYPE_CHECKING:
@@ -740,7 +740,7 @@ class QueueView(QWidget):
 
     def on_item_progress(self, event) -> None:
         """Handle item progress event."""
-        from flowscribe.app.models import ProgressEvent
+        from flowscribe.tasks.models import ProgressEvent
         if isinstance(event, ProgressEvent) and event.message:
             self._current_run_output += event.message + "\n"
             # Update persistent view dialog if open

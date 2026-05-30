@@ -7,8 +7,8 @@ import pytest
 
 from flowscribe.config.settings import AppSettings
 from flowscribe.core.models import PreparedAudio
-from flowscribe.core.progressive.executor import ProgressiveTranscriptionExecutor
-from flowscribe.transcription.local_whisper import LocalWhisperTranscriber
+from flowscribe.pipeline.progressive.executor import ProgressiveTranscriptionExecutor
+from flowscribe.providers.transcribe.local_whisper import LocalWhisperTranscriber
 
 
 class TestDynamicWorkerCalculation:

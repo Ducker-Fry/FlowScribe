@@ -6,7 +6,7 @@ import warnings
 
 from PySide6.QtCore import QObject, Signal, Slot
 
-from flowscribe.app.models import ProgressEvent
+from flowscribe.tasks.models import ProgressEvent
 from flowscribe.app.service import TranscriptionService
 
 

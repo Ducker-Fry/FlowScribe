@@ -210,6 +210,40 @@ prepare_media -> transcribe -> clean_text -> chunk -> summarize -> export
 
 因此，下一步不需要重写，而是给已有边界更稳定的命名和更通用的上层抽象。
 
+## 当前四层薄实现
+
+当前代码已经落地为四层薄实现，用于在不改变 CLI/GUI 行为的前提下约束后续开发边界：
+
+```text
+src/flowscribe/
+  app/        CLI、GUI 和应用服务入口
+  tasks/      Job、Batch、Queue、Progress、Cache、Export 相关模型和队列逻辑
+  pipeline/   转写流水线、渐进式处理、分块、合并、去重
+  providers/  local-whisper、native-engine、ffmpeg 门面和未来 provider 入口
+```
+
+旧路径仍保留 compatibility shim，用于外部脚本和历史导入兼容：
+
+```text
+flowscribe.app.models
+flowscribe.queue.*
+flowscribe.core.pipeline
+flowscribe.core.progressive.*
+flowscribe.core.deduplication
+flowscribe.core.runner
+flowscribe.transcription.*
+```
+
+新代码应优先使用新路径：
+
+```text
+flowscribe.tasks.*
+flowscribe.pipeline.*
+flowscribe.providers.*
+```
+
+当前阶段暂不拆出 `capabilities/`、`adapters/`、`runtime/` 三个独立包。它们仍作为六层目标架构保留在文档中，等摘要、翻译、说话人分离、知识库入库、模型运行时管理等能力真正进入实现后，再从 `pipeline/` 和 `providers/` 中自然拆出。
+
 ## 是否过度设计
 
 这套架构如果一次性完整实现，就是过度设计。

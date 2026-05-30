@@ -6,9 +6,9 @@ from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QPushButton
 
-from flowscribe.app.models import SourceSpec
+from flowscribe.tasks.models import SourceSpec
 from flowscribe.gui.views.queue_view import QueueItemCard, QueueView
-from flowscribe.queue.models import QueueItem, QueueItemSettings
+from flowscribe.tasks.queue_models import QueueItem, QueueItemSettings
 
 
 def test_refresh_queue_uses_card_widget_without_duplicate_item_text():

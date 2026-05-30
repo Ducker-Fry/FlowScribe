@@ -1,9 +1,9 @@
-"""Tests for flowscribe.queue.models."""
+"""Tests for flowscribe.tasks.queue_models."""
 
 from pathlib import Path
 
-from flowscribe.app.models import SourceSpec
-from flowscribe.queue.models import (
+from flowscribe.tasks.models import SourceSpec
+from flowscribe.tasks.queue_models import (
     QueueItem,
     QueueItemSettings,
     generate_queue_item_id,
@@ -135,13 +135,13 @@ def test_to_job_uses_settings_output_name_base():
 
 
 def test_source_stem_url_with_path():
-    from flowscribe.queue.models import _source_stem
+    from flowscribe.tasks.queue_models import _source_stem
     source = SourceSpec(kind="url", value="https://example.com/path/video.mp4")
     assert _source_stem(source) == "video"
 
 
 def test_source_stem_url_no_path():
-    from flowscribe.queue.models import _source_stem
+    from flowscribe.tasks.queue_models import _source_stem
     source = SourceSpec(kind="url", value="https://example.com/")
     stem = _source_stem(source)
     assert stem.startswith("url-")
@@ -149,20 +149,20 @@ def test_source_stem_url_no_path():
 
 
 def test_source_stem_local():
-    from flowscribe.queue.models import _source_stem
+    from flowscribe.tasks.queue_models import _source_stem
     source = SourceSpec(kind="local", value=r"C:\media\test.wav")
     assert _source_stem(source) == "test"
 
 
 def test_sanitize_dirname_removes_forbidden_chars():
-    from flowscribe.queue.models import _sanitize_dirname
+    from flowscribe.tasks.queue_models import _sanitize_dirname
     assert _sanitize_dirname("video:name") == "video-name"
     assert _sanitize_dirname("video/name") == "video-name"
     assert _sanitize_dirname("video<>name") == "video--name"
 
 
 def test_sanitize_dirname_limits_length():
-    from flowscribe.queue.models import _sanitize_dirname
+    from flowscribe.tasks.queue_models import _sanitize_dirname
     long_name = "a" * 150
     result = _sanitize_dirname(long_name)
     assert len(result) == 100

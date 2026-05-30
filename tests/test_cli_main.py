@@ -9,7 +9,7 @@ from flowscribe.cli.main import (
     _job_from_url_options,
     main,
 )
-from flowscribe.app.models import ProgressEvent
+from flowscribe.tasks.models import ProgressEvent
 from flowscribe.media.inspector import LocalMediaInspection
 from flowscribe.input.url_inspector import UrlInspection
 

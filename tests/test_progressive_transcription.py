@@ -4,8 +4,8 @@ import threading
 import pytest
 
 from flowscribe.core.models import MediaItem, OutputArtifacts, PreparedAudio, Transcript, TranscriptSegment
-from flowscribe.core.pipeline import LocalTranscriptionPipeline
-from flowscribe.core.progressive import (
+from flowscribe.pipeline.transcription import LocalTranscriptionPipeline
+from flowscribe.pipeline.progressive import (
     CHINESE_PROGRESSIVE_CHUNK_OVERLAP_SECONDS,
     FixedDurationChunkPlanner,
     MediaDurationInfo,

@@ -13,7 +13,7 @@ from pathlib import Path
 
 from flowscribe.engine.pipe_client import FlowScribeEngineClient, pywintypes, win32file
 from flowscribe.media.tools import resolve_tool_path
-from flowscribe.transcription.native_engine import resolve_engine_exe
+from flowscribe.providers.transcribe.native_engine import resolve_engine_exe
 
 
 @dataclass(frozen=True)

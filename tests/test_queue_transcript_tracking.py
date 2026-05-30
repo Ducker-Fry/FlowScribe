@@ -3,10 +3,10 @@
 from pathlib import Path
 
 
-from flowscribe.app.models import SourceSpec
+from flowscribe.tasks.models import SourceSpec
 from flowscribe.core.models import OutputArtifacts
-from flowscribe.queue.models import QueueItem, QueueItemSettings
-from flowscribe.queue.store import BatchQueueStore
+from flowscribe.tasks.queue_models import QueueItem, QueueItemSettings
+from flowscribe.tasks.queue_store import BatchQueueStore
 
 
 def test_queue_item_with_transcript_path():

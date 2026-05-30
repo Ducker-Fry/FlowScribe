@@ -5,8 +5,8 @@ from unittest.mock import Mock, patch
 import pytest
 from PySide6.QtWidgets import QApplication
 from flowscribe.gui.views.queue_view import QueueView
-from flowscribe.queue.models import QueueItem, QueueItemSettings
-from flowscribe.app.models import SourceSpec
+from flowscribe.tasks.queue_models import QueueItem, QueueItemSettings
+from flowscribe.tasks.models import SourceSpec
 
 
 @pytest.fixture

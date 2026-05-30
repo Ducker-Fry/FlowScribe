@@ -12,8 +12,8 @@ from flowscribe.core.models import (
     TranscriptSegment,
     TranscriptionChunk,
 )
-from flowscribe.core.progressive.executor import ProgressiveTranscriptionExecutor
-from flowscribe.core.progressive.merger import ConservativeChunkMergePolicy
+from flowscribe.pipeline.progressive.executor import ProgressiveTranscriptionExecutor
+from flowscribe.pipeline.progressive.merger import ConservativeChunkMergePolicy
 
 
 def test_first_chunk_segments_not_dropped():
@@ -189,7 +189,7 @@ def test_deduplication_should_not_drop_first_segments():
     """
     Verify that deduplication doesn't incorrectly drop first segments.
     """
-    from flowscribe.core.deduplication import TranscriptDeduplicator
+    from flowscribe.pipeline.deduplication import TranscriptDeduplicator
 
     deduplicator = TranscriptDeduplicator()
 

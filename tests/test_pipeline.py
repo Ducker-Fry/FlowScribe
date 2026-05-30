@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from flowscribe.core.models import MediaItem, OutputArtifacts, PreparedAudio, Transcript, TranscriptSegment
-from flowscribe.core.pipeline import LocalTranscriptionPipeline
+from flowscribe.pipeline.transcription import LocalTranscriptionPipeline
 
 
 class FakePreparer:

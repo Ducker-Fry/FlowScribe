@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
-from flowscribe.app.models import SourceSpec, TranscriptionJob
+from flowscribe.tasks.models import SourceSpec, TranscriptionJob
 from flowscribe.core.errors import DownloadError
 from flowscribe.input.file_filter import is_supported_media
 from flowscribe.input.url_security import validate_public_http_url

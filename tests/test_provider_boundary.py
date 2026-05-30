@@ -2,11 +2,11 @@ from pathlib import Path
 
 import pytest
 
-from flowscribe.app.models import SourceSpec, TranscriptionJob
+from flowscribe.tasks.models import SourceSpec, TranscriptionJob
 from flowscribe.app.service import _build_pipeline
 from flowscribe.config.settings import AppSettings
-from flowscribe.transcription.local_whisper import LocalWhisperTranscriber
-from flowscribe.transcription.providers import (
+from flowscribe.providers.transcribe.local_whisper import LocalWhisperTranscriber
+from flowscribe.providers.transcribe.registry import (
     LocalWhisperProvider,
     NativeEngineProvider,
     ProviderTranscriptionSettings,

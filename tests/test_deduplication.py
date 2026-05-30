@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from flowscribe.core.deduplication import TranscriptDeduplicator
+from flowscribe.pipeline.deduplication import TranscriptDeduplicator
 from flowscribe.core.models import MediaItem, Transcript, TranscriptSegment, TranscriptWord
 
 

@@ -8,7 +8,7 @@ from PySide6.QtCore import QFileSystemWatcher, QThread, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget, QToolBar
 
-from flowscribe.app.models import SourceSpec
+from flowscribe.tasks.models import SourceSpec
 from flowscribe.gui.dialogs.queue_item_settings_dialog import QueueItemSettingsDialog
 from flowscribe.gui.dialogs.settings_dialog import SettingsDialog
 from flowscribe.gui.icons import (
@@ -25,8 +25,8 @@ from flowscribe.gui.views.queue_view import QueueView
 from flowscribe.gui.views.single_task_view import SingleTaskView
 from flowscribe.gui.workers.bookmarklet_server_worker import BookmarkletServerWorker
 from flowscribe.gui.workers.queue_runner import QueueRunner
-from flowscribe.queue.importers import import_urls_from_file, parse_urls_from_text
-from flowscribe.queue.models import (
+from flowscribe.tasks.queue_importers import import_urls_from_file, parse_urls_from_text
+from flowscribe.tasks.queue_models import (
     QueueItem,
     QueueItemSettings,
     generate_queue_item_id,
@@ -303,7 +303,7 @@ class NewMainWindow(QMainWindow):
     def _on_enqueue_urls(self, text: str) -> None:
         """Enqueue URLs from text."""
         try:
-            from flowscribe.app.models import DownloadOptions
+            from flowscribe.tasks.models import DownloadOptions
 
             urls = parse_urls_from_text(text)
             if not urls:
@@ -356,7 +356,7 @@ class NewMainWindow(QMainWindow):
 
     def _on_import_file(self, file_path: str) -> None:
         """Import URLs from file."""
-        from flowscribe.app.models import DownloadOptions
+        from flowscribe.tasks.models import DownloadOptions
 
         urls = import_urls_from_file(Path(file_path))
         settings = self._settings_to_queue_settings()

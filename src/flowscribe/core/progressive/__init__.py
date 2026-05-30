@@ -1,42 +1,6 @@
-"""Progressive transcription for long media files."""
+"""Compatibility shim for progressive transcription helpers.
 
-# Re-export model classes for backward compatibility
-from flowscribe.core.models import MediaDurationInfo
-from flowscribe.core.progressive.executor import (
-    ProgressiveChunkCache,
-    ProgressiveTranscriptionExecutor,
-)
-from flowscribe.core.progressive.merger import (
-    ChunkMergePolicy,
-    ConservativeChunkMergePolicy,
-    ProgressiveTranscriptConsistencyChecker,
-)
-from flowscribe.core.progressive.planner import (
-    CHINESE_PROGRESSIVE_CHUNK_OVERLAP_SECONDS,
-    DEFAULT_PROGRESSIVE_CHUNK_OVERLAP_SECONDS,
-    ClipTranscriber,
-    FixedDurationChunkPlanner,
-    PreparedAudioDurationProbe,
-    tuned_chunk_overlap_seconds,
-)
+New code should import from ``flowscribe.pipeline.progressive``.
+"""
 
-__all__ = [
-    # Constants
-    "DEFAULT_PROGRESSIVE_CHUNK_OVERLAP_SECONDS",
-    "CHINESE_PROGRESSIVE_CHUNK_OVERLAP_SECONDS",
-    # Protocols
-    "ClipTranscriber",
-    "ChunkMergePolicy",
-    # Planner
-    "PreparedAudioDurationProbe",
-    "FixedDurationChunkPlanner",
-    "tuned_chunk_overlap_seconds",
-    # Merger
-    "ConservativeChunkMergePolicy",
-    "ProgressiveTranscriptConsistencyChecker",
-    # Executor
-    "ProgressiveTranscriptionExecutor",
-    "ProgressiveChunkCache",
-    # Models (re-exported for backward compatibility)
-    "MediaDurationInfo",
-]
+from flowscribe.pipeline.progressive import *  # noqa: F403

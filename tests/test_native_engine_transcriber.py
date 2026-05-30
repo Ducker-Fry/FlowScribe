@@ -7,8 +7,8 @@ import pytest
 from flowscribe.core.errors import CancellationError, TranscriptionError
 from flowscribe.core.models import MediaItem, PreparedAudio
 from flowscribe.engine.protocol import MessageKind
-import flowscribe.transcription.native_engine as native_engine
-from flowscribe.transcription.native_engine import NativeEngineTranscriber
+import flowscribe.providers.transcribe.native_engine as native_engine
+from flowscribe.providers.transcribe.native_engine import NativeEngineTranscriber
 
 
 class FakeProcess:

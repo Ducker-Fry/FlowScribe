@@ -8,14 +8,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from flowscribe.app.models import SourceSpec
+from flowscribe.tasks.models import SourceSpec
 from flowscribe.input.url_security import validate_public_http_url
-from flowscribe.queue.models import (
+from flowscribe.tasks.queue_models import (
     QueueItem,
     QueueItemSettings,
     generate_queue_item_id,
 )
-from flowscribe.queue.store import BatchQueueStore
+from flowscribe.tasks.queue_store import BatchQueueStore
 
 logger = logging.getLogger(__name__)
 

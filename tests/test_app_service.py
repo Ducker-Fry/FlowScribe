@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from flowscribe.app.models import SourceSpec, TranscriptionJob
+from flowscribe.tasks.models import SourceSpec, TranscriptionJob
 from flowscribe.app.service import TranscriptionService
 from flowscribe.core.errors import MediaPreparationError
 from flowscribe.core.models import (

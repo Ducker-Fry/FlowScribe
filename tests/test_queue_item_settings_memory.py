@@ -5,10 +5,10 @@ from pathlib import Path
 import pytest
 from PySide6.QtWidgets import QApplication
 
-from flowscribe.app.models import SourceSpec
+from flowscribe.tasks.models import SourceSpec
 from flowscribe.gui.dialogs.queue_item_settings_dialog import QueueItemSettingsDialog
 from flowscribe.gui.dialogs.settings_dialog import SettingsDialog
-from flowscribe.queue.models import QueueItemSettings
+from flowscribe.tasks.queue_models import QueueItemSettings
 
 
 @pytest.fixture(scope="module")

@@ -6,14 +6,14 @@ from pathlib import Path
 
 from PySide6.QtCore import QThread, QFileSystemWatcher, Qt
 
-from flowscribe.app.models import SourceSpec
+from flowscribe.tasks.models import SourceSpec
 from flowscribe.gui.gui_logging import get_gui_logger
-from flowscribe.queue.models import (
+from flowscribe.tasks.queue_models import (
     QueueItem,
     QueueItemSettings,
     generate_queue_item_id,
 )
-from flowscribe.queue.importers import (
+from flowscribe.tasks.queue_importers import (
     deduplicate_sources,
     import_urls_from_file,
     parse_urls_from_text,
