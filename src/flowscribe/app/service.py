@@ -44,6 +44,7 @@ from flowscribe.providers.transcribe.registry import (
     ProviderTranscriptionSettings,
     is_native_engine_provider_name,
     resolve_transcription_provider,
+    supports_python_progressive_provider_name,
 )
 
 
@@ -195,7 +196,7 @@ class TranscriptionService:
             try:
                 if (
                     job.progressive_enabled
-                    and not is_native_engine_provider_name(job.provider_name)
+                    and supports_python_progressive_provider_name(job.provider_name)
                     and hasattr(pipeline, "process_progressive")
                 ):
                     run_started_at = time.perf_counter()
@@ -338,7 +339,7 @@ class TranscriptionService:
             item = MediaItem(path=download.path)
             if (
                 job.progressive_enabled
-                and not is_native_engine_provider_name(job.provider_name)
+                and supports_python_progressive_provider_name(job.provider_name)
                 and hasattr(pipeline, "process_progressive")
             ):
                 run_started_at = time.perf_counter()

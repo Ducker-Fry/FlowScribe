@@ -225,3 +225,10 @@ def is_native_engine_provider_name(provider_name: str | None) -> bool:
         "whisper.cpp",
         "whisper-cpp",
     }
+
+
+def supports_python_progressive_provider_name(provider_name: str | None) -> bool:
+    """Return whether a provider supports the Python chunked progressive executor."""
+
+    normalized = (provider_name or "").strip().lower()
+    return normalized in {"", "default", "local", "local-whisper", "faster-whisper"}
