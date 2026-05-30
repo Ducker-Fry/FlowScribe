@@ -1,7 +1,7 @@
 """Tests for queue batch edit settings functionality."""
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from PySide6.QtWidgets import QApplication

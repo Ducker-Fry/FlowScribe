@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
-    QFrame,
     QGraphicsDropShadowEffect,
     QGridLayout,
     QGroupBox,

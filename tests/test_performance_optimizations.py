@@ -3,10 +3,7 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from flowscribe.config.settings import AppSettings
-from flowscribe.core.models import PreparedAudio
 from flowscribe.pipeline.progressive.executor import ProgressiveTranscriptionExecutor
 from flowscribe.providers.transcribe.local_whisper import LocalWhisperTranscriber
 

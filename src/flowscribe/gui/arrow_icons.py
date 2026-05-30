@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QByteArray, QSize, Qt
-from PySide6.QtGui import QIcon, QImage, QPainter, QPen, QPixmap
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QIcon, QPainter, QPen, QPixmap
 
 
 def create_arrow_icon(direction: str, color: str, size: int = 12) -> QIcon:

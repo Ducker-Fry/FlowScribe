@@ -20,11 +20,9 @@ from flowscribe.gui.icons import (
     get_check_icon,
     get_delete_icon,
     get_document_icon,
-    get_filter_icon,
     get_folder_icon,
     get_link_icon,
     get_refresh_icon,
-    get_sort_icon,
 )
 from flowscribe.gui.state_manager import transcript_library_store
 from flowscribe.gui.theme_manager import get_current_theme

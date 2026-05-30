@@ -1,11 +1,7 @@
 """Test queue URL addition functionality."""
 import pytest
-from unittest.mock import Mock, patch
-from pathlib import Path
 from PySide6.QtWidgets import QApplication
 from flowscribe.gui.views.queue_view import QueueView
-from flowscribe.tasks.queue_models import QueueItem, QueueItemSettings
-from flowscribe.tasks.models import SourceSpec
 
 
 @pytest.fixture
@@ -98,7 +94,6 @@ def test_ctrl_enter_triggers_add_urls(queue_view):
     """Test that Ctrl+Enter triggers URL addition."""
     from PySide6.QtCore import Qt, QEvent
     from PySide6.QtGui import QKeyEvent
-    from PySide6.QtWidgets import QApplication
 
     # Setup signal spy
     signal_received = []
