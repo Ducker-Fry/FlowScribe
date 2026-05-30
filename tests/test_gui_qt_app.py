@@ -136,6 +136,22 @@ def test_normalize_gui_preferences_payload_filters_invalid_values() -> None:
     }
 
 
+def test_normalize_gui_preferences_payload_accepts_paraformer() -> None:
+    preferences = _normalize_gui_preferences_payload(
+        {
+            "provider_name": "paraformer",
+            "model_name": "paraformer-zh",
+            "language": "zh",
+            "preset": "zh",
+        }
+    )
+
+    assert preferences["provider_name"] == "paraformer"
+    assert preferences["model_name"] == "paraformer-zh"
+    assert preferences["language"] == "zh"
+    assert preferences["preset"] == "zh"
+
+
 def test_onboarding_state_payload_defaults_and_reads_help_seen_flag() -> None:
     assert _onboarding_state_payload(None) == {"help_seen": False}
     assert _onboarding_state_payload({"help_seen": True}) == {"help_seen": True}

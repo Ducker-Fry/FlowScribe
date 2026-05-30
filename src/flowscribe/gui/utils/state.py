@@ -15,11 +15,20 @@ from flowscribe.gui.export_profiles import (
 )
 from flowscribe.gui.state import SUPPORTED_GUI_FORMATS, is_acceptable_local_source
 
-GUI_MODEL_OPTIONS = ("small", "tiny", "base", "medium", "large-v3-turbo", "large-v3")
-GUI_PROVIDER_OPTIONS = ("local-whisper", "native-engine")
+GUI_MODEL_OPTIONS = (
+    "small",
+    "tiny",
+    "base",
+    "medium",
+    "large-v3-turbo",
+    "large-v3",
+    "paraformer-zh",
+)
+GUI_PROVIDER_OPTIONS = ("local-whisper", "native-engine", "paraformer")
 GUI_PROVIDER_LABELS = {
     "local-whisper": "Local faster-whisper",
     "native-engine": "Native whisper.cpp engine",
+    "paraformer": "Paraformer Chinese",
 }
 GUI_LANGUAGE_OPTIONS = ("auto", "zh", "en")
 GUI_PRESET_OPTIONS = ("none", "speed", "quality", "best_quality", "zh")

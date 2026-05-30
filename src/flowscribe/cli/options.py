@@ -15,7 +15,7 @@ class CliOptions:
     inputs: list[Path]
     output_dir: Path
     work_dir: Path | None
-    provider_name: str
+    provider_name: str | None
     model_name: str
     language: str | None
     preset: str | None
@@ -41,7 +41,7 @@ class CliOptions:
 class DoctorOptions:
     command: str
     output_dir: Path
-    provider_name: str
+    provider_name: str | None
     model_name: str
     hello_smoke: bool = False
 

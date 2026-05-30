@@ -21,6 +21,7 @@ from flowscribe.media.inspector import LocalMediaInspector
 from flowscribe.output.time_format import format_timestamp
 from flowscribe.search.transcript_search import search_transcript_file
 from flowscribe.providers.transcribe.native_engine import resolve_engine_exe
+from flowscribe.providers.transcribe.paraformer import PARAFORMER_MODEL_NAME
 
 CLI_PROGRESSIVE_AUTO_THRESHOLD_SECONDS = 20 * 60
 
@@ -60,6 +61,9 @@ def main(argv: list[str] | None = None) -> int:
         print("")
         print("Native engine models:")
         print("- native-engine requires a local whisper.cpp ggml .bin model path")
+        print("")
+        print("Chinese-first models:")
+        print("- paraformer: local FunASR Paraformer provider; model alias paraformer-zh")
         sample_model = Path("models") / "ggml-base.en.bin"
         if sample_model.exists():
             print(f"- example local ggml path: {sample_model.resolve()}")
@@ -72,6 +76,8 @@ def main(argv: list[str] | None = None) -> int:
         print("Examples:")
         print("  flowscribe transcribe video.mp4 --model small --preset speed")
         print("  flowscribe transcribe video.mp4 --model small --preset zh")
+        print("  flowscribe transcribe video.mp4 --preset zh")
+        print("  flowscribe transcribe video.mp4 --provider paraformer --model paraformer-zh")
         print("  flowscribe transcribe video.mp4 --model medium --language en")
         print("  flowscribe transcribe audio.wav --provider native-engine --model models\\ggml-base.en.bin")
         print("  flowscribe url https://example.com/video --provider native-engine --model D:\\models\\ggml-base.en.bin")
@@ -314,6 +320,7 @@ def _job_from_transcribe_options(options) -> TranscriptionJob:
     progressive_enabled, progressive_note = _resolve_cli_progressive_mode_for_transcribe(options)
     if progressive_note:
         print(progressive_note)
+    provider_name, model_name = _resolve_cli_provider_and_model(options)
     return TranscriptionJob(
         sources=tuple(
             SourceSpec(kind="local", value=str(input_path), recursive=options.recursive)
@@ -321,8 +328,8 @@ def _job_from_transcribe_options(options) -> TranscriptionJob:
         ),
         output_dir=options.output_dir,
         work_dir=options.work_dir,
-        provider_name=options.provider_name,
-        model_name=options.model_name,
+        provider_name=provider_name,
+        model_name=model_name,
         language=options.language,
         preset=options.preset,
         task=options.task,
@@ -354,6 +361,7 @@ def _job_from_url_options(options) -> TranscriptionJob:
         quality=options.download_quality,
         prefer_format=options.download_format,
     )
+    provider_name, model_name = _resolve_cli_provider_and_model(options)
 
     source = SourceSpec(
         kind="url",
@@ -367,8 +375,8 @@ def _job_from_url_options(options) -> TranscriptionJob:
         sources=(source,),
         output_dir=options.output_dir,
         work_dir=options.work_dir,
-        provider_name=options.provider_name,
-        model_name=options.model_name,
+        provider_name=provider_name,
+        model_name=model_name,
         language=options.language,
         preset=options.preset,
         task=options.task,
@@ -393,6 +401,16 @@ def _job_from_url_options(options) -> TranscriptionJob:
         progressive_chunk_overlap_seconds=options.progressive_chunk_overlap_seconds,
         progressive_max_workers=options.progressive_max_workers,
     )
+
+
+def _resolve_cli_provider_and_model(options) -> tuple[str, str]:
+    provider_name = options.provider_name
+    model_name = options.model_name
+    if provider_name is None:
+        provider_name = "paraformer" if options.preset == "zh" else "local-whisper"
+    if provider_name == "paraformer" and model_name == "small":
+        model_name = PARAFORMER_MODEL_NAME
+    return provider_name, model_name
 
 
 def _print_cli_progress(event: ProgressEvent) -> None:

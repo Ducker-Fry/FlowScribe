@@ -70,6 +70,23 @@ def test_gui_form_builds_url_job_with_network_options(tmp_path: Path) -> None:
     assert job.cookies_path == cookies
 
 
+def test_gui_form_accepts_paraformer_provider(tmp_path: Path) -> None:
+    media = tmp_path / "video.mp4"
+    form = GuiTranscriptionForm(
+        local_paths=(media,),
+        provider_name="paraformer",
+        model_name="paraformer-zh",
+        language="zh",
+        preset="zh",
+    )
+
+    job = form.to_job()
+
+    assert job.provider_name == "paraformer"
+    assert job.model_name == "paraformer-zh"
+    assert job.language == "zh"
+
+
 def test_gui_form_rejects_empty_sources() -> None:
     form = GuiTranscriptionForm()
 

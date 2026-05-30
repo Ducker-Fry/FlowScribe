@@ -6,9 +6,11 @@ from flowscribe.tasks.models import SourceSpec, TranscriptionJob
 from flowscribe.app.service import _build_pipeline
 from flowscribe.config.settings import AppSettings
 from flowscribe.providers.transcribe.local_whisper import LocalWhisperTranscriber
+from flowscribe.providers.transcribe.paraformer import ParaformerTranscriber
 from flowscribe.providers.transcribe.registry import (
     LocalWhisperProvider,
     NativeEngineProvider,
+    ParaformerProvider,
     ProviderTranscriptionSettings,
     default_transcription_provider,
     is_native_engine_provider_name,
@@ -68,6 +70,33 @@ def test_resolve_transcription_provider_supports_native_engine_aliases() -> None
     assert isinstance(resolve_transcription_provider("whisper.cpp"), NativeEngineProvider)
     assert is_native_engine_provider_name("native-engine") is True
     assert is_native_engine_provider_name("local-whisper") is False
+
+
+def test_resolve_transcription_provider_supports_paraformer_aliases() -> None:
+    assert isinstance(resolve_transcription_provider("paraformer"), ParaformerProvider)
+    assert isinstance(resolve_transcription_provider("funasr"), ParaformerProvider)
+    assert isinstance(resolve_transcription_provider("paraformer-zh"), ParaformerProvider)
+
+    provider = ParaformerProvider()
+    assert provider.capabilities.provider_name == "paraformer"
+    assert provider.capabilities.default_model_name == "paraformer-zh"
+    assert provider.capabilities.supported_model_names == ("paraformer-zh",)
+    assert provider.capabilities.supports_word_timestamps is False
+    assert isinstance(
+        provider.build_transcriber(
+            ProviderTranscriptionSettings(
+                model_name="paraformer-zh",
+                language="zh",
+                task="transcribe",
+                beam_size=5,
+                vad_filter=True,
+                initial_prompt=None,
+                preset="zh",
+                word_timestamps=False,
+            )
+        ),
+        ParaformerTranscriber,
+    )
 
 
 def test_build_pipeline_uses_provider_factory(monkeypatch, tmp_path: Path) -> None:

@@ -63,6 +63,63 @@ def test_parse_transcribe_args_supports_native_provider(tmp_path: Path) -> None:
     assert job.model_name == str(model)
 
 
+def test_parse_transcribe_args_supports_paraformer_provider(tmp_path: Path) -> None:
+    media = tmp_path / "sample.mp4"
+    media.write_bytes(b"media")
+
+    options = parse_args(
+        [
+            "transcribe",
+            str(media),
+            "--provider",
+            "paraformer",
+            "--model",
+            "paraformer-zh",
+        ]
+    )
+    job = _job_from_transcribe_options(options)
+
+    assert options.provider_name == "paraformer"
+    assert job.provider_name == "paraformer"
+    assert job.model_name == "paraformer-zh"
+
+
+def test_zh_preset_auto_selects_paraformer_when_provider_omitted(tmp_path: Path) -> None:
+    media = tmp_path / "sample.mp4"
+    media.write_bytes(b"media")
+
+    options = parse_args(["transcribe", str(media), "--preset", "zh"])
+    job = _job_from_transcribe_options(options)
+
+    assert options.provider_name is None
+    assert job.provider_name == "paraformer"
+    assert job.model_name == "paraformer-zh"
+
+
+def test_explicit_local_whisper_keeps_zh_preset_on_whisper(tmp_path: Path) -> None:
+    media = tmp_path / "sample.mp4"
+    media.write_bytes(b"media")
+
+    options = parse_args(
+        ["transcribe", str(media), "--provider", "local-whisper", "--preset", "zh"]
+    )
+    job = _job_from_transcribe_options(options)
+
+    assert job.provider_name == "local-whisper"
+    assert job.model_name == "small"
+
+
+def test_explicit_paraformer_defaults_to_paraformer_model(tmp_path: Path) -> None:
+    media = tmp_path / "sample.mp4"
+    media.write_bytes(b"media")
+
+    options = parse_args(["transcribe", str(media), "--provider", "paraformer"])
+    job = _job_from_transcribe_options(options)
+
+    assert job.provider_name == "paraformer"
+    assert job.model_name == "paraformer-zh"
+
+
 def test_parse_url_args_supports_native_provider(tmp_path: Path) -> None:
     model = tmp_path / "ggml-base.en.bin"
     model.write_bytes(b"model")
@@ -203,4 +260,5 @@ def test_models_command_mentions_native_engine(monkeypatch, tmp_path: Path) -> N
     output = buffer.getvalue()
     assert exit_code == 0
     assert "native-engine requires a local whisper.cpp ggml .bin model path" in output
+    assert "paraformer-zh" in output
     assert "ggml-base.en.bin" in output

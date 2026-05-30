@@ -82,8 +82,8 @@ class GuiTranscriptionForm:
         if self.url_media_kind not in {"audio", "video"}:
             errors.append("URL media kind must be audio or video.")
 
-        if self.provider_name not in {"local-whisper", "native-engine"}:
-            errors.append("Engine must be local-whisper or native-engine.")
+        if self.provider_name not in {"local-whisper", "native-engine", "paraformer"}:
+            errors.append("Engine must be local-whisper, native-engine, or paraformer.")
 
         if self.native_threads is not None and self.native_threads <= 0:
             errors.append("Native threads must be a positive integer.")

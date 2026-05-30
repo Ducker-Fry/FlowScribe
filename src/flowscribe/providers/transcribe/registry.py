@@ -8,6 +8,10 @@ from typing import Literal, Protocol
 from flowscribe.core.ports import Transcriber
 from flowscribe.providers.transcribe.local_whisper import LocalWhisperTranscriber
 from flowscribe.providers.transcribe.native_engine import NativeEngineTranscriber
+from flowscribe.providers.transcribe.paraformer import (
+    PARAFORMER_MODEL_NAME,
+    ParaformerTranscriber,
+)
 
 ProviderCostTier = Literal["free-local", "usage-based", "fixed-paid", "unknown"]
 ProviderLatencyTier = Literal["fast-local", "medium-local", "network-bound", "unknown"]
@@ -153,6 +157,46 @@ class NativeEngineProvider:
         )
 
 
+class ParaformerProvider:
+    """FunASR Paraformer provider for Chinese-first transcription."""
+
+    _CAPABILITIES = ProviderCapabilities(
+        provider_name="paraformer",
+        display_name="Paraformer Chinese",
+        default_model_name=PARAFORMER_MODEL_NAME,
+        supported_model_names=(PARAFORMER_MODEL_NAME,),
+        supports_language_hint=True,
+        supports_word_timestamps=False,
+        supports_initial_prompt=False,
+        supports_vad_filter=True,
+        supports_presets=True,
+        requires_credentials=False,
+        cost_tier="free-local",
+        latency_tier="fast-local",
+        notes=(
+            "Runs locally through the optional FunASR SDK.",
+            "Designed as the Chinese-first provider while keeping Whisper available.",
+            "Install with: python -m pip install funasr modelscope",
+        ),
+    )
+
+    @property
+    def capabilities(self) -> ProviderCapabilities:
+        return self._CAPABILITIES
+
+    def build_transcriber(self, settings: ProviderTranscriptionSettings) -> Transcriber:
+        return ParaformerTranscriber(
+            model_name=settings.model_name or PARAFORMER_MODEL_NAME,
+            language=settings.language,
+            task=settings.task,
+            beam_size=settings.beam_size,
+            vad_filter=settings.vad_filter,
+            initial_prompt=settings.initial_prompt,
+            preset=settings.preset,
+            word_timestamps=settings.word_timestamps,
+        )
+
+
 def default_transcription_provider() -> TranscriptionProvider:
     """Return the current default provider for FlowScribe."""
 
@@ -167,6 +211,8 @@ def resolve_transcription_provider(provider_name: str | None = None) -> Transcri
         return default_transcription_provider()
     if normalized in {"native", "native-engine", "whisper.cpp", "whisper-cpp"}:
         return NativeEngineProvider()
+    if normalized in {"paraformer", "funasr", "paraformer-zh"}:
+        return ParaformerProvider()
     raise ValueError(f"Unsupported transcription provider: {provider_name}")
 
 

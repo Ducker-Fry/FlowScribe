@@ -434,12 +434,18 @@ class SettingsDialog(QDialog):
 
     def _sync_provider_controls(self) -> None:
         """Adjust model input affordances for the selected transcription engine."""
-        is_native = self.provider_combo.currentData() == "native-engine"
+        provider_name = self.provider_combo.currentData()
+        is_native = provider_name == "native-engine"
+        is_paraformer = provider_name == "paraformer"
         self.model_browse_button.setEnabled(is_native)
         if is_native:
             self.model_combo.setToolTip("Use a local whisper.cpp ggml .bin model file.")
             if self.model_combo.currentText() in GUI_MODEL_OPTIONS:
                 self.model_combo.setCurrentText("models/ggml-base.en.bin")
+        elif is_paraformer:
+            self.model_combo.setToolTip("Use the local FunASR Paraformer Chinese model.")
+            if self.model_combo.currentText() in GUI_MODEL_OPTIONS or not self.model_combo.currentText().strip():
+                self.model_combo.setCurrentText("paraformer-zh")
         else:
             self.model_combo.setToolTip("Use a faster-whisper model name or local model path.")
             if not self.model_combo.currentText().strip():

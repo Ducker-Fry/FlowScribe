@@ -28,9 +28,17 @@ from flowscribe.tasks.queue_models import QueueItemSettings
 if TYPE_CHECKING:
     from PySide6.QtWidgets import QWidget
 
-GUI_MODEL_OPTIONS = ("tiny", "base", "small", "medium", "large-v3-turbo", "large-v3")
+GUI_MODEL_OPTIONS = (
+    "tiny",
+    "base",
+    "small",
+    "medium",
+    "large-v3-turbo",
+    "large-v3",
+    "paraformer-zh",
+)
 GUI_LANGUAGE_OPTIONS = ("auto", "en", "zh", "ja", "ko", "es", "fr", "de", "ru", "pt")
-GUI_PRESET_OPTIONS = ("none", "speed", "quality", "best_quality")
+GUI_PRESET_OPTIONS = ("none", "speed", "quality", "best_quality", "zh")
 GUI_NETWORK_OPTIONS = ("auto", "ipv4", "ipv6")
 GUI_MEDIA_KIND_OPTIONS = ("audio", "video")
 
@@ -343,12 +351,18 @@ class QueueItemSettingsDialog(QDialog):
 
     def _sync_provider_controls(self) -> None:
         """Adjust model controls for the selected provider."""
-        is_native = self.provider_combo.currentData() == "native-engine"
+        provider_name = self.provider_combo.currentData()
+        is_native = provider_name == "native-engine"
+        is_paraformer = provider_name == "paraformer"
         self.model_browse_button.setEnabled(is_native)
         if is_native:
             self.model_combo.setToolTip("Use a local whisper.cpp ggml .bin model file.")
             if self.model_combo.currentText() in GUI_MODEL_OPTIONS:
                 self.model_combo.setCurrentText("models/ggml-base.en.bin")
+        elif is_paraformer:
+            self.model_combo.setToolTip("Use the local FunASR Paraformer Chinese model.")
+            if self.model_combo.currentText() in GUI_MODEL_OPTIONS or not self.model_combo.currentText().strip():
+                self.model_combo.setCurrentText("paraformer-zh")
         else:
             self.model_combo.setToolTip("Use a faster-whisper model name or local model path.")
             if not self.model_combo.currentText().strip():

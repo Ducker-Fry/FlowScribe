@@ -87,12 +87,13 @@ def add_transcription_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--provider",
         dest="provider_name",
-        choices=["local-whisper", "native-engine"],
-        default="local-whisper",
+        choices=["local-whisper", "native-engine", "paraformer"],
+        default=None,
         help=(
             "Transcription provider. Use local-whisper for faster-whisper model names like "
-            "`small`, or native-engine for a local whisper.cpp ggml .bin model path. "
-            "Default: local-whisper"
+            "`small`, native-engine for a local whisper.cpp ggml .bin model path, or "
+            "paraformer for Chinese-first FunASR transcription. Default: local-whisper "
+            "(auto-selects paraformer with --preset zh when omitted)."
         ),
     )
     parser.add_argument(
@@ -102,7 +103,8 @@ def add_transcription_options(parser: argparse.ArgumentParser) -> None:
         default="small",
         help=(
             "Model name or path. local-whisper accepts names like `small` or a local path; "
-            "native-engine requires a local whisper.cpp ggml .bin file path. Default: small"
+            "native-engine requires a local whisper.cpp ggml .bin file path; paraformer "
+            "accepts `paraformer-zh`. Default: small"
         ),
     )
     parser.add_argument(
@@ -209,12 +211,13 @@ def parse_transcribe_args(argv: list[str] | None = None, *, prog: str = "flowscr
     parser.add_argument(
         "--provider",
         dest="provider_name",
-        choices=["local-whisper", "native-engine"],
-        default="local-whisper",
+        choices=["local-whisper", "native-engine", "paraformer"],
+        default=None,
         help=(
             "Transcription provider. Use local-whisper for faster-whisper model names like "
-            "`small`, or native-engine for a local whisper.cpp ggml .bin model path. "
-            "Default: local-whisper"
+            "`small`, native-engine for a local whisper.cpp ggml .bin model path, or "
+            "paraformer for Chinese-first FunASR transcription. Default: local-whisper "
+            "(auto-selects paraformer with --preset zh when omitted)."
         ),
     )
     parser.add_argument(
@@ -224,7 +227,8 @@ def parse_transcribe_args(argv: list[str] | None = None, *, prog: str = "flowscr
         default="small",
         help=(
             "Model name or path. local-whisper accepts names like `small` or a local path; "
-            "native-engine requires a local whisper.cpp ggml .bin file path. Default: small"
+            "native-engine requires a local whisper.cpp ggml .bin file path; paraformer "
+            "accepts `paraformer-zh`. Default: small"
         ),
     )
     parser.add_argument(
@@ -446,7 +450,7 @@ def parse_doctor_args(argv: list[str] | None = None) -> DoctorOptions:
     )
     parser.add_argument(
         "--provider",
-        choices=["local-whisper", "native-engine"],
+        choices=["local-whisper", "native-engine", "paraformer"],
         default="local-whisper",
         help="Provider to validate. Default: local-whisper",
     )
