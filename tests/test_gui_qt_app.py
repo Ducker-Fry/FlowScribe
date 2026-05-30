@@ -96,6 +96,7 @@ def test_normalize_gui_preferences_payload_filters_invalid_values() -> None:
         {
             "output_dir": "",
             "output_name_base": 123,
+            "provider_name": "bad-provider",
             "model_name": "bad-model",
             "language": "fr",
             "preset": "bad-preset",
@@ -109,12 +110,14 @@ def test_normalize_gui_preferences_payload_filters_invalid_values() -> None:
             "url_auto_bind_media": False,
             "network_family": "bad-network",
             "proxy": 123,
+            "native_threads": -1,
         }
     )
 
     assert preferences == {
         "output_dir": "outputs",
         "output_name_base": "",
+        "provider_name": "local-whisper",
         "model_name": "small",
         "language": "auto",
         "preset": "none",
@@ -128,6 +131,8 @@ def test_normalize_gui_preferences_payload_filters_invalid_values() -> None:
         "url_auto_bind_media": False,
         "network_family": "auto",
         "proxy": "",
+        "theme": "light",
+        "native_threads": None,
     }
 
 
@@ -223,6 +228,7 @@ def test_gui_state_payload_uses_nested_preferences_and_local_sources(tmp_path: P
         {
             "output_dir": "saved-outputs",
             "output_name_base": "custom-name",
+            "provider_name": "native-engine",
             "model_name": "medium",
             "language": "zh",
             "preset": "zh",
@@ -236,6 +242,7 @@ def test_gui_state_payload_uses_nested_preferences_and_local_sources(tmp_path: P
             "url_auto_bind_media": True,
             "network_family": "ipv4",
             "proxy": "http://127.0.0.1:7890",
+            "native_threads": 8,
         },
         {
             "recent_transcripts": [str(transcript)],
@@ -271,6 +278,7 @@ def test_gui_state_payload_uses_nested_preferences_and_local_sources(tmp_path: P
         "preferences": {
             "output_dir": "saved-outputs",
             "output_name_base": "custom-name",
+            "provider_name": "native-engine",
             "model_name": "medium",
             "language": "zh",
             "preset": "zh",
@@ -284,6 +292,8 @@ def test_gui_state_payload_uses_nested_preferences_and_local_sources(tmp_path: P
             "url_auto_bind_media": True,
             "network_family": "ipv4",
             "proxy": "http://127.0.0.1:7890",
+            "theme": "light",
+            "native_threads": 8,
         },
         "local_sources": {
             "local_paths": [str(media)],
@@ -344,6 +354,7 @@ def test_normalize_gui_state_payload_supports_nested_and_legacy_formats(tmp_path
             "preferences": {
                 "output_dir": "custom-out",
                 "output_name_base": "phase4-note",
+                "provider_name": "native-engine",
                 "model_name": "medium",
                 "language": "zh",
                 "preset": "zh",
@@ -357,6 +368,7 @@ def test_normalize_gui_state_payload_supports_nested_and_legacy_formats(tmp_path
                 "url_auto_bind_media": False,
                 "network_family": "ipv4",
                 "proxy": "http://127.0.0.1:7890",
+                "native_threads": 4,
             },
             "local_sources": {
                 "local_paths": [str(media)],
@@ -407,11 +419,13 @@ def test_normalize_gui_state_payload_supports_nested_and_legacy_formats(tmp_path
     assert checked == {str(media)}
     assert preferences["output_dir"] == "custom-out"
     assert preferences["output_name_base"] == "phase4-note"
+    assert preferences["provider_name"] == "native-engine"
     assert preferences["model_name"] == "medium"
     assert preferences["output_formats"] == ["txt", "vtt"]
     assert preferences["url_media_kind"] == "video"
     assert preferences["url_media_output_dir"] == "saved-url-media"
     assert preferences["url_auto_bind_media"] is False
+    assert preferences["native_threads"] == 4
     assert recent_work["recent_transcripts"] == [str(transcript)]
     assert recent_work["recent_output_dirs"] == [str(outputs)]
     assert export_profiles[0].name == "Review"
@@ -448,6 +462,7 @@ def test_normalize_gui_state_payload_supports_nested_and_legacy_formats(tmp_path
     assert legacy_checked == {str(media)}
     assert legacy_preferences["output_dir"] == "legacy-out"
     assert legacy_preferences["output_name_base"] == "legacy-name"
+    assert legacy_preferences["provider_name"] == "local-whisper"
     assert legacy_preferences["model_name"] == "tiny"
     assert legacy_preferences["language"] == "en"
     assert legacy_preferences["output_formats"] == ["json"]

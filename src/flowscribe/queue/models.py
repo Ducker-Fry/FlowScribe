@@ -18,6 +18,7 @@ QueueItemStatus = Literal["pending", "running", "completed", "failed", "canceled
 class QueueItemSettings:
     output_dir: Path = field(default_factory=lambda: Path("outputs"))
     output_name_base: str = ""
+    provider_name: str = "local-whisper"
     model_name: str = "small"
     language: str | None = None
     preset: str | None = None
@@ -35,6 +36,7 @@ class QueueItemSettings:
     max_download_mb: int = 2048
     max_duration_seconds: float = 14400.0
     download_timeout_seconds: int = 30
+    native_threads: int | None = None
 
 
 @dataclass(frozen=True)
@@ -76,6 +78,7 @@ class QueueItem:
             sources=(self.source,),
             output_dir=effective_output_dir,
             output_name_base=self.settings.output_name_base or None,
+            provider_name=self.settings.provider_name,
             model_name=self.settings.model_name,
             language=self.settings.language,
             preset=self.settings.preset,
@@ -93,6 +96,7 @@ class QueueItem:
             max_download_mb=self.settings.max_download_mb,
             max_duration_seconds=self.settings.max_duration_seconds,
             download_timeout_seconds=self.settings.download_timeout_seconds,
+            native_threads=self.settings.native_threads,
         )
 
 

@@ -67,6 +67,11 @@ class QueueControlsMixin:
 
         return QueueItemSettings(
             output_dir=Path(self.output_dir_input.text().strip() or "outputs"),
+            provider_name=(
+                self.provider_combo.currentData()
+                if hasattr(self, "provider_combo")
+                else "local-whisper"
+            ) or "local-whisper",
             model_name=self.model_combo.currentText().strip() or "small",
             language=language,
             preset=preset,
@@ -81,6 +86,12 @@ class QueueControlsMixin:
             else None,
             progressive_enabled=self.progressive_enabled_check.isChecked(),
             progressive_resume=self.progressive_resume_check.isChecked(),
+            native_threads=(
+                self.native_threads_spin.value()
+                if hasattr(self, "native_threads_spin")
+                and self.native_threads_spin.value() > 0
+                else None
+            ),
         )
 
     def _enqueue_urls_from_text(self, text: str) -> None:

@@ -38,6 +38,7 @@ def _default_settings() -> dict:
     return {
         "output_dir": "outputs",
         "output_name_base": "",
+        "provider_name": "local-whisper",
         "model_name": "small",
         "language": None,
         "preset": None,
@@ -52,6 +53,7 @@ def _default_settings() -> dict:
         "progressive_resume": True,
         "progressive_chunk_seconds": 30.0,
         "progressive_max_workers": 1,
+        "native_threads": None,
     }
 
 
@@ -579,6 +581,7 @@ class NewMainWindow(QMainWindow):
         return QueueItemSettings(
             output_dir=Path(self._settings["output_dir"]),
             output_name_base=self._settings.get("output_name_base", ""),
+            provider_name=self._settings.get("provider_name", "local-whisper"),
             model_name=self._settings["model_name"],
             language=self._settings["language"],
             preset=self._settings["preset"],
@@ -593,6 +596,7 @@ class NewMainWindow(QMainWindow):
             progressive_resume=self._settings["progressive_resume"],
             progressive_chunk_seconds=self._settings["progressive_chunk_seconds"],
             progressive_max_workers=self._settings["progressive_max_workers"],
+            native_threads=self._settings.get("native_threads"),
         )
 
     def _setup_queue_file_watcher(self) -> None:

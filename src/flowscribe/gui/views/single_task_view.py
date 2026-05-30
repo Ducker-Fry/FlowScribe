@@ -483,6 +483,7 @@ class SingleTaskView(QWidget):
         """Build transcription job from settings and sources."""
         output_dir = Path(self._settings.get("output_dir", "outputs"))
         output_name_base = self._settings.get("output_name_base", "")
+        provider_name = self._settings.get("provider_name", "local-whisper")
         model_name = self._settings.get("model_name", "small")
         language = self._settings.get("language")
         preset = self._settings.get("preset")
@@ -497,6 +498,7 @@ class SingleTaskView(QWidget):
         progressive_resume = self._settings.get("progressive_resume", True)
         progressive_chunk_seconds = self._settings.get("progressive_chunk_seconds", 30.0)
         progressive_max_workers = self._settings.get("progressive_max_workers", 1)
+        native_threads = self._settings.get("native_threads")
 
         # Build sources
         sources: list[SourceSpec] = []
@@ -536,6 +538,7 @@ class SingleTaskView(QWidget):
             sources=tuple(sources),
             output_dir=output_dir,
             output_name_base=output_name_base,
+            provider_name=provider_name,
             model_name=model_name,
             language=language,
             preset=preset,
@@ -550,6 +553,7 @@ class SingleTaskView(QWidget):
             progressive_resume=progressive_resume,
             progressive_chunk_seconds=progressive_chunk_seconds,
             progressive_max_workers=progressive_max_workers,
+            native_threads=native_threads,
         )
 
         return job

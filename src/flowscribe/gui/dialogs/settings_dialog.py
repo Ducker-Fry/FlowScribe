@@ -30,6 +30,8 @@ from flowscribe.gui.utils.state import (
     GUI_MODEL_OPTIONS,
     GUI_NETWORK_OPTIONS,
     GUI_PRESET_OPTIONS,
+    GUI_PROVIDER_LABELS,
+    GUI_PROVIDER_OPTIONS,
     GUI_THEME_OPTIONS,
 )
 
@@ -162,7 +164,19 @@ class SettingsDialog(QDialog):
         model_layout.setVerticalSpacing(8)
 
         self.model_combo = QComboBox()
+        self.model_combo.setEditable(True)
         self.model_combo.addItems(GUI_MODEL_OPTIONS)
+        model_browse_button = QPushButton("Browse")
+        model_browse_button.clicked.connect(self._choose_model_file)
+        model_row = QHBoxLayout()
+        model_row.addWidget(self.model_combo, 1)
+        model_row.addWidget(model_browse_button)
+        self.model_browse_button = model_browse_button
+
+        self.provider_combo = QComboBox()
+        for provider_name in GUI_PROVIDER_OPTIONS:
+            self.provider_combo.addItem(GUI_PROVIDER_LABELS[provider_name], provider_name)
+        self.provider_combo.currentIndexChanged.connect(self._sync_provider_controls)
 
         self.language_combo = QComboBox()
         self.language_combo.addItems(GUI_LANGUAGE_OPTIONS)
@@ -170,12 +184,14 @@ class SettingsDialog(QDialog):
         self.preset_combo = QComboBox()
         self.preset_combo.addItems(GUI_PRESET_OPTIONS)
 
-        model_layout.addWidget(QLabel("Model"), 0, 0)
-        model_layout.addWidget(self.model_combo, 0, 1)
-        model_layout.addWidget(QLabel("Language"), 1, 0)
-        model_layout.addWidget(self.language_combo, 1, 1)
-        model_layout.addWidget(QLabel("Preset"), 2, 0)
-        model_layout.addWidget(self.preset_combo, 2, 1)
+        model_layout.addWidget(QLabel("Engine"), 0, 0)
+        model_layout.addWidget(self.provider_combo, 0, 1)
+        model_layout.addWidget(QLabel("Model"), 1, 0)
+        model_layout.addLayout(model_row, 1, 1)
+        model_layout.addWidget(QLabel("Language"), 2, 0)
+        model_layout.addWidget(self.language_combo, 2, 1)
+        model_layout.addWidget(QLabel("Preset"), 3, 0)
+        model_layout.addWidget(self.preset_combo, 3, 1)
 
         # Timestamp Settings
         timestamp_group = QGroupBox("Timestamp Settings")
@@ -257,12 +273,18 @@ class SettingsDialog(QDialog):
         self.progressive_max_workers_spin = QSpinBox()
         self.progressive_max_workers_spin.setRange(1, 16)
 
+        self.native_threads_spin = QSpinBox()
+        self.native_threads_spin.setRange(0, 128)
+        self.native_threads_spin.setSpecialValueText("Auto")
+
         progressive_layout.addWidget(self.progressive_enabled_check, 0, 0, 1, 2)
         progressive_layout.addWidget(self.progressive_resume_check, 1, 0, 1, 2)
         progressive_layout.addWidget(QLabel("Chunk duration"), 2, 0)
         progressive_layout.addWidget(self.progressive_chunk_seconds_spin, 2, 1)
         progressive_layout.addWidget(QLabel("Max workers"), 3, 0)
         progressive_layout.addWidget(self.progressive_max_workers_spin, 3, 1)
+        progressive_layout.addWidget(QLabel("Native threads"), 4, 0)
+        progressive_layout.addWidget(self.native_threads_spin, 4, 1)
 
         layout.addWidget(progressive_group)
         layout.addStretch(1)
@@ -278,9 +300,12 @@ class SettingsDialog(QDialog):
         self.output_dir_input.setText(settings.get("output_dir", "outputs"))
         self.output_name_input.setText(settings.get("output_name_base", ""))
 
+        provider = settings.get("provider_name", "local-whisper")
+        provider_index = self.provider_combo.findData(provider)
+        self.provider_combo.setCurrentIndex(provider_index if provider_index >= 0 else 0)
+
         model = settings.get("model_name", "small")
-        if model in GUI_MODEL_OPTIONS:
-            self.model_combo.setCurrentText(model)
+        self.model_combo.setCurrentText(model)
 
         language = settings.get("language", "auto")
         if language is None:
@@ -324,6 +349,8 @@ class SettingsDialog(QDialog):
         self.progressive_max_workers_spin.setValue(
             settings.get("progressive_max_workers", 1)
         )
+        self.native_threads_spin.setValue(settings.get("native_threads") or 0)
+        self._sync_provider_controls()
 
     def _collect_settings(self) -> dict:
         """Collect settings from UI widgets."""
@@ -348,11 +375,14 @@ class SettingsDialog(QDialog):
         cookies_text = self.cookies_input.text().strip()
         cookies_path = Path(cookies_text) if cookies_text else None
 
+        native_threads = self.native_threads_spin.value()
+
         return {
             "theme": self.theme_combo.currentText(),
             "output_dir": self.output_dir_input.text(),
             "output_name_base": self.output_name_input.text(),
-            "model_name": self.model_combo.currentText(),
+            "provider_name": self.provider_combo.currentData() or "local-whisper",
+            "model_name": self.model_combo.currentText().strip() or "small",
             "language": language,
             "preset": preset,
             "output_formats": formats,
@@ -368,6 +398,7 @@ class SettingsDialog(QDialog):
                 self.progressive_chunk_seconds_spin.value()
             ),
             "progressive_max_workers": self.progressive_max_workers_spin.value(),
+            "native_threads": native_threads if native_threads > 0 else None,
         }
 
     def _choose_output_dir(self) -> None:
@@ -388,6 +419,31 @@ class SettingsDialog(QDialog):
         )
         if file_path:
             self.cookies_input.setText(file_path)
+
+    def _choose_model_file(self) -> None:
+        """Choose a local native-engine ggml model file."""
+        current = self.model_combo.currentText().strip()
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Choose native engine model",
+            current or str(Path.home()),
+            "Whisper.cpp Models (*.bin);;All files (*.*)",
+        )
+        if file_path:
+            self.model_combo.setCurrentText(file_path)
+
+    def _sync_provider_controls(self) -> None:
+        """Adjust model input affordances for the selected transcription engine."""
+        is_native = self.provider_combo.currentData() == "native-engine"
+        self.model_browse_button.setEnabled(is_native)
+        if is_native:
+            self.model_combo.setToolTip("Use a local whisper.cpp ggml .bin model file.")
+            if self.model_combo.currentText() in GUI_MODEL_OPTIONS:
+                self.model_combo.setCurrentText("models/ggml-base.en.bin")
+        else:
+            self.model_combo.setToolTip("Use a faster-whisper model name or local model path.")
+            if not self.model_combo.currentText().strip():
+                self.model_combo.setCurrentText("small")
 
     def _on_theme_changed(self, theme_name: str) -> None:
         """Apply theme immediately when changed."""

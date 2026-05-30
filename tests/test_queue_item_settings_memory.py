@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QApplication
 
 from flowscribe.app.models import SourceSpec
 from flowscribe.gui.dialogs.queue_item_settings_dialog import QueueItemSettingsDialog
+from flowscribe.gui.dialogs.settings_dialog import SettingsDialog
 from flowscribe.queue.models import QueueItemSettings
 
 
@@ -24,7 +25,9 @@ def test_dialog_loads_provided_settings(qapp):
     custom_settings = QueueItemSettings(
         output_dir=Path("custom_output"),
         output_name_base="custom_name",
-        model_name="large-v3",
+        provider_name="native-engine",
+        native_threads=8,
+        model_name="models/ggml-base.en.bin",
         language="zh",
         preset="best_quality",
         output_formats=("txt", "srt"),
@@ -47,7 +50,9 @@ def test_dialog_loads_provided_settings(qapp):
     # Verify all settings are loaded correctly
     assert dialog.output_dir_input.text() == "custom_output"
     assert dialog.output_name_input.text() == "custom_name"
-    assert dialog.model_combo.currentText() == "large-v3"
+    assert dialog.provider_combo.currentData() == "native-engine"
+    assert dialog.model_combo.currentText() == "models/ggml-base.en.bin"
+    assert dialog.native_threads_spin.value() == 8
     assert dialog.language_combo.currentText() == "zh"
     assert dialog.preset_combo.currentText() == "best_quality"
     assert dialog.format_checks["txt"].isChecked()
@@ -77,6 +82,7 @@ def test_dialog_loads_default_settings(qapp):
     # Verify default settings are loaded
     assert dialog.output_dir_input.text() == "outputs"
     assert dialog.output_name_input.text() == ""
+    assert dialog.provider_combo.currentData() == "local-whisper"
     assert dialog.model_combo.currentText() == "small"
     assert dialog.language_combo.currentText() == "auto"
     assert dialog.preset_combo.currentText() == "none"
@@ -86,6 +92,7 @@ def test_dialog_loads_default_settings(qapp):
     assert dialog._progressive_group.isChecked()
     assert dialog.progressive_chunk_spin.value() == 30
     assert dialog.progressive_workers_spin.value() == 1
+    assert dialog.native_threads_spin.value() == 0
 
 
 def test_reset_to_defaults_button(qapp):
@@ -129,3 +136,24 @@ def test_apply_button_exists(qapp):
 
     # Note: This test may need adjustment based on how QPushButton is found
     # The actual button finding logic might need to be more specific
+
+
+def test_global_settings_dialog_collects_native_engine_settings(qapp):
+    dialog = SettingsDialog(
+        None,
+        {
+            "provider_name": "native-engine",
+            "model_name": "models/ggml-base.en.bin",
+            "native_threads": 6,
+        },
+    )
+
+    assert dialog.provider_combo.currentData() == "native-engine"
+    assert dialog.model_combo.currentText() == "models/ggml-base.en.bin"
+    assert dialog.native_threads_spin.value() == 6
+
+    collected = dialog._collect_settings()
+
+    assert collected["provider_name"] == "native-engine"
+    assert collected["model_name"] == "models/ggml-base.en.bin"
+    assert collected["native_threads"] == 6

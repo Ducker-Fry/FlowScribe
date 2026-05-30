@@ -191,6 +191,7 @@ def _item_to_payload(item: QueueItem) -> dict:
         },
         "settings": {
             "output_dir": str(item.settings.output_dir),
+            "provider_name": item.settings.provider_name,
             "model_name": item.settings.model_name,
             "language": item.settings.language,
             "preset": item.settings.preset,
@@ -210,6 +211,7 @@ def _item_to_payload(item: QueueItem) -> dict:
             "max_download_mb": item.settings.max_download_mb,
             "max_duration_seconds": item.settings.max_duration_seconds,
             "download_timeout_seconds": item.settings.download_timeout_seconds,
+            "native_threads": item.settings.native_threads,
         },
         "status": item.status,
         "priority": item.priority,
@@ -255,6 +257,7 @@ def _item_from_payload(data: object) -> QueueItem | None:
 
         settings = QueueItemSettings(
             output_dir=Path(settings_data.get("output_dir", "outputs")),
+            provider_name=settings_data.get("provider_name", "local-whisper"),
             model_name=settings_data.get("model_name", "small"),
             language=settings_data.get("language"),
             preset=settings_data.get("preset"),
@@ -274,6 +277,7 @@ def _item_from_payload(data: object) -> QueueItem | None:
             max_download_mb=settings_data.get("max_download_mb", 2048),
             max_duration_seconds=settings_data.get("max_duration_seconds", 14400.0),
             download_timeout_seconds=settings_data.get("download_timeout_seconds", 30),
+            native_threads=settings_data.get("native_threads"),
         )
 
         return QueueItem(

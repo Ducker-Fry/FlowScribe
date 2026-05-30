@@ -9,7 +9,11 @@ from flowscribe.cli.args import (
     parse_args,
     parse_time_value,
 )
-from flowscribe.cli.doctor import check_output_dir, resolve_faster_whisper_repo
+from flowscribe.cli.doctor import (
+    check_native_model_path,
+    check_output_dir,
+    resolve_faster_whisper_repo,
+)
 
 
 def test_parse_doctor_args() -> None:
@@ -18,7 +22,25 @@ def test_parse_doctor_args() -> None:
     assert isinstance(options, DoctorOptions)
     assert options.command == "doctor"
     assert options.output_dir == Path("health-out")
+    assert options.provider_name == "local-whisper"
     assert options.model_name == "tiny"
+
+
+def test_parse_doctor_args_supports_native_provider() -> None:
+    options = parse_args(
+        [
+            "doctor",
+            "--provider",
+            "native-engine",
+            "--model",
+            "models\\ggml-base.en.bin",
+            "--hello-smoke",
+        ]
+    )
+
+    assert isinstance(options, DoctorOptions)
+    assert options.provider_name == "native-engine"
+    assert options.hello_smoke is True
 
 
 def test_parse_transcribe_subcommand_args() -> None:
@@ -140,3 +162,21 @@ def test_resolve_known_faster_whisper_model_repo() -> None:
 
 def test_resolve_explicit_hugging_face_repo() -> None:
     assert resolve_faster_whisper_repo("org/model") == "org/model"
+
+
+def test_check_native_model_path_requires_existing_bin(tmp_path: Path) -> None:
+    missing = check_native_model_path(str(tmp_path / "missing.bin"))
+    wrong_suffix = check_native_model_path(str(tmp_path / "model.txt"))
+    valid_model = tmp_path / "model.bin"
+    valid_model.write_bytes(b"model")
+
+    assert missing.ok is False
+    assert "requires --model" in missing.message
+
+    (tmp_path / "model.txt").write_text("bad", encoding="utf-8")
+    wrong_suffix = check_native_model_path(str(tmp_path / "model.txt"))
+    assert wrong_suffix.ok is False
+    assert ".bin" in wrong_suffix.message
+
+    valid = check_native_model_path(str(valid_model))
+    assert valid.ok is True

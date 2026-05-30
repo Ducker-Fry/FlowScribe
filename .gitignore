@@ -16,6 +16,8 @@ dist/
 *.egg-info/
 /tools/wasapi-capture-helper/src/**/bin/
 /tools/wasapi-capture-helper/src/**/obj/
+native/.vs/
+.vscode/
 
 # Runtime outputs
 /outputs/
@@ -39,3 +41,6 @@ cookies.txt
 # Local media samples
 /samples/
 /media/
+
+# download model
+/models/

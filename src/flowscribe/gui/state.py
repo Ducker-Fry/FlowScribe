@@ -24,6 +24,7 @@ class GuiTranscriptionForm:
     url: str = ""
     output_dir: Path = Path("outputs")
     output_name_base: str = ""
+    provider_name: str = "local-whisper"
     model_name: str = "small"
     language: str = ""
     preset: str = ""
@@ -40,6 +41,7 @@ class GuiTranscriptionForm:
     cookies_path: Path | None = None
     progressive_enabled: bool = True
     progressive_resume: bool = True
+    native_threads: int | None = None
 
     def validate(self) -> list[str]:
         errors: list[str] = []
@@ -80,6 +82,12 @@ class GuiTranscriptionForm:
         if self.url_media_kind not in {"audio", "video"}:
             errors.append("URL media kind must be audio or video.")
 
+        if self.provider_name not in {"local-whisper", "native-engine"}:
+            errors.append("Engine must be local-whisper or native-engine.")
+
+        if self.native_threads is not None and self.native_threads <= 0:
+            errors.append("Native threads must be a positive integer.")
+
         if self.keep_media and self.url_media_output_dir is not None:
             candidate = self.url_media_output_dir.expanduser()
             if candidate.exists() and not candidate.is_dir():
@@ -115,6 +123,7 @@ class GuiTranscriptionForm:
             sources=tuple(sources),
             output_dir=self.output_dir,
             output_name_base=sanitize_output_base_name(self.output_name_base),
+            provider_name=self.provider_name,
             model_name=self.model_name.strip() or "small",
             language=language,
             preset=preset,
@@ -127,6 +136,7 @@ class GuiTranscriptionForm:
             cookies_path=self.cookies_path,
             progressive_enabled=self.progressive_enabled,
             progressive_resume=self.progressive_resume,
+            native_threads=self.native_threads,
         )
 
     def preview(self) -> dict:
@@ -147,6 +157,7 @@ class GuiTranscriptionForm:
             ],
             "output_dir": str(job.output_dir),
             "output_name_base": job.output_name_base,
+            "provider_name": job.provider_name,
             "model_name": job.model_name,
             "language": job.language,
             "preset": job.preset,
@@ -159,6 +170,7 @@ class GuiTranscriptionForm:
             "cookies_path": str(job.cookies_path) if job.cookies_path else None,
             "progressive_enabled": job.progressive_enabled,
             "progressive_resume": job.progressive_resume,
+            "native_threads": job.native_threads,
         }
 
 

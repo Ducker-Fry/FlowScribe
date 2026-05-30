@@ -46,6 +46,11 @@ class TranscriptionControlsMixin:
             url=self.url_input.text(),
             output_dir=Path(self.output_dir_input.text().strip() or "outputs"),
             output_name_base=self.output_name_input.text(),
+            provider_name=(
+                self.provider_combo.currentData()
+                if hasattr(self, "provider_combo")
+                else "local-whisper"
+            ) or "local-whisper",
             model_name=self.model_combo.currentText(),
             language="" if language == "auto" else language,
             preset="" if preset == "none" else preset,
@@ -68,6 +73,12 @@ class TranscriptionControlsMixin:
             cookies_path=Path(cookies_text) if cookies_text else None,
             progressive_enabled=self.progressive_enabled_check.isChecked(),
             progressive_resume=self.progressive_resume_check.isChecked(),
+            native_threads=(
+                self.native_threads_spin.value()
+                if hasattr(self, "native_threads_spin")
+                and self.native_threads_spin.value() > 0
+                else None
+            ),
         )
 
     def _start_transcription(self) -> None:

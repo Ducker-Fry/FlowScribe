@@ -20,6 +20,7 @@ from flowscribe.input.url_inspector import UrlInspector
 from flowscribe.media.inspector import LocalMediaInspector
 from flowscribe.output.time_format import format_timestamp
 from flowscribe.search.transcript_search import search_transcript_file
+from flowscribe.transcription.native_engine import resolve_engine_exe
 
 CLI_PROGRESSIVE_AUTO_THRESHOLD_SECONDS = 20 * 60
 
@@ -27,7 +28,12 @@ CLI_PROGRESSIVE_AUTO_THRESHOLD_SECONDS = 20 * 60
 def main(argv: list[str] | None = None) -> int:
     options = parse_args(argv)
     if options.command == "doctor":
-        return run_doctor(output_dir=options.output_dir, model_name=options.model_name)
+        return run_doctor(
+            output_dir=options.output_dir,
+            provider_name=options.provider_name,
+            model_name=options.model_name,
+            hello_smoke=options.hello_smoke,
+        )
     if options.command == "search":
         return run_search(options)
     if options.command == "inspect":
@@ -52,10 +58,23 @@ def main(argv: list[str] | None = None) -> int:
         print("- medium: better accuracy, slower and heavier")
         print("- large-v3 / large-v3-turbo: highest local accuracy, requires more resources")
         print("")
+        print("Native engine models:")
+        print("- native-engine requires a local whisper.cpp ggml .bin model path")
+        sample_model = Path("models") / "ggml-base.en.bin"
+        if sample_model.exists():
+            print(f"- example local ggml path: {sample_model.resolve()}")
+        try:
+            engine_exe = resolve_engine_exe()
+            print(f"- engine executable: {engine_exe}")
+        except FlowScribeError as exc:
+            print(f"- engine executable: not found ({exc})")
+        print("")
         print("Examples:")
         print("  flowscribe transcribe video.mp4 --model small --preset speed")
         print("  flowscribe transcribe video.mp4 --model small --preset zh")
         print("  flowscribe transcribe video.mp4 --model medium --language en")
+        print("  flowscribe transcribe audio.wav --provider native-engine --model models\\ggml-base.en.bin")
+        print("  flowscribe url https://example.com/video --provider native-engine --model D:\\models\\ggml-base.en.bin")
         return 0
     if options.command == "capture":
         print("System audio capture is planned but not implemented yet.")
@@ -302,6 +321,7 @@ def _job_from_transcribe_options(options) -> TranscriptionJob:
         ),
         output_dir=options.output_dir,
         work_dir=options.work_dir,
+        provider_name=options.provider_name,
         model_name=options.model_name,
         language=options.language,
         preset=options.preset,
@@ -347,6 +367,7 @@ def _job_from_url_options(options) -> TranscriptionJob:
         sources=(source,),
         output_dir=options.output_dir,
         work_dir=options.work_dir,
+        provider_name=options.provider_name,
         model_name=options.model_name,
         language=options.language,
         preset=options.preset,

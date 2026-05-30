@@ -86,7 +86,12 @@ def test_queue_item_cannot_retry_when_completed():
 def test_to_job_creates_subdirectory_with_timestamp():
     from datetime import datetime
     source = SourceSpec(kind="url", value="https://example.com/video.mp4")
-    settings = QueueItemSettings(output_dir=Path("out"), model_name="medium")
+    settings = QueueItemSettings(
+        output_dir=Path("out"),
+        provider_name="native-engine",
+        model_name="models/ggml-base.en.bin",
+        native_threads=8,
+    )
     created_at = datetime(2026, 5, 22, 14, 30, 45)
     item = QueueItem(
         item_id="abc123",
@@ -96,7 +101,9 @@ def test_to_job_creates_subdirectory_with_timestamp():
     )
     job = item.to_job()
     assert job.output_dir == Path("out/143045-video")
-    assert job.model_name == "medium"
+    assert job.provider_name == "native-engine"
+    assert job.model_name == "models/ggml-base.en.bin"
+    assert job.native_threads == 8
     assert job.sources == (source,)
 
 

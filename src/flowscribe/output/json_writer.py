@@ -80,6 +80,7 @@ class JsonTranscriptWriter:
             "text": transcript.text,
             "segments": segments,
         }
+        payload.update(transcript.metadata)
 
         # Add media binding information if available
         if self._media_path is not None:

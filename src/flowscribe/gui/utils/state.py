@@ -16,6 +16,11 @@ from flowscribe.gui.export_profiles import (
 from flowscribe.gui.state import SUPPORTED_GUI_FORMATS, is_acceptable_local_source
 
 GUI_MODEL_OPTIONS = ("small", "tiny", "base", "medium", "large-v3-turbo", "large-v3")
+GUI_PROVIDER_OPTIONS = ("local-whisper", "native-engine")
+GUI_PROVIDER_LABELS = {
+    "local-whisper": "Local faster-whisper",
+    "native-engine": "Native whisper.cpp engine",
+}
 GUI_LANGUAGE_OPTIONS = ("auto", "zh", "en")
 GUI_PRESET_OPTIONS = ("none", "speed", "quality", "best_quality", "zh")
 GUI_NETWORK_OPTIONS = ("auto", "ipv4", "ipv6")
@@ -23,6 +28,7 @@ GUI_THEME_OPTIONS = ("light", "dark")
 DEFAULT_GUI_PREFERENCES = {
     "output_dir": "outputs",
     "output_name_base": "",
+    "provider_name": "local-whisper",
     "model_name": "small",
     "language": "auto",
     "preset": "none",
@@ -37,6 +43,7 @@ DEFAULT_GUI_PREFERENCES = {
     "network_family": "auto",
     "proxy": "",
     "theme": "light",
+    "native_threads": None,
 }
 DEFAULT_VIEW_PREFERENCES = {
     "visible_tabs": {
@@ -86,6 +93,7 @@ def _normalize_gui_preferences_payload(payload: object) -> dict[str, object]:
     output_dir = source.get("output_dir")
     output_name_base = source.get("output_name_base")
     model_name = source.get("model_name")
+    provider_name = source.get("provider_name")
     language = source.get("language")
     preset = source.get("preset")
     url_media_kind = source.get("url_media_kind")
@@ -93,10 +101,14 @@ def _normalize_gui_preferences_payload(payload: object) -> dict[str, object]:
     network_family = source.get("network_family")
     proxy = source.get("proxy")
     theme = source.get("theme")
+    native_threads = source.get("native_threads")
+    if isinstance(native_threads, bool) or not isinstance(native_threads, int) or native_threads <= 0:
+        native_threads = None
 
     return {
         "output_dir": output_dir if isinstance(output_dir, str) and output_dir.strip() else "outputs",
         "output_name_base": output_name_base if isinstance(output_name_base, str) else "",
+        "provider_name": provider_name if provider_name in GUI_PROVIDER_OPTIONS else "local-whisper",
         "model_name": model_name if model_name in GUI_MODEL_OPTIONS else "small",
         "language": language if language in GUI_LANGUAGE_OPTIONS else "auto",
         "preset": preset if preset in GUI_PRESET_OPTIONS else "none",
@@ -113,6 +125,7 @@ def _normalize_gui_preferences_payload(payload: object) -> dict[str, object]:
         "network_family": network_family if network_family in GUI_NETWORK_OPTIONS else "auto",
         "proxy": proxy if isinstance(proxy, str) else "",
         "theme": theme if theme in GUI_THEME_OPTIONS else "light",
+        "native_threads": native_threads,
     }
 
 

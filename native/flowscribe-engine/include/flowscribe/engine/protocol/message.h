@@ -21,6 +21,8 @@ enum class MessageKind : uint16_t {
     SubmitJobResult = 0x0021,
     CancelJobRequest = 0x0022,
     CancelJobResult = 0x0023,
+    QueryJobRequest = 0x0024,
+    QueryJobResult = 0x0025,
 
     JobEvent = 0x0030,
     JobResult = 0x0031,
@@ -64,12 +66,14 @@ struct LoadModelResult {
     bool ok = false;
     std::string error;
     int64_t model_load_time_ms = 0;
+    int64_t runtime_count = 0;
 };
 
 struct ProgressiveOptions {
     bool enabled = true;
     double chunk_seconds = 60.0;
     double overlap_seconds = 5.0;
+    int max_workers = 1;
 };
 
 struct SubmitJobRequest {
@@ -79,6 +83,7 @@ struct SubmitJobRequest {
     std::string task = "transcribe";
     bool vad_filter = false;
     int beam_size = 5;
+    int threads = 0;
     std::string initial_prompt;
     ProgressiveOptions progressive;
 };
@@ -99,12 +104,8 @@ struct CancelJobResult {
     std::string error;
 };
 
-struct JobEvent {
+struct QueryJobRequest {
     std::string job_id;
-    std::string status;
-    double progress = 0.0;
-    double current_seconds = 0.0;
-    double total_seconds = 0.0;
 };
 
 struct WordTiming {
@@ -121,10 +122,60 @@ struct TranscriptSegment {
     std::vector<WordTiming> words;
 };
 
+struct JobEvent {
+    std::string job_id;
+    std::string status;
+    double progress = 0.0;
+    double current_seconds = 0.0;
+    double total_seconds = 0.0;
+    int chunk_index = 0;
+    int chunk_count = 0;
+    int completed_chunks = 0;
+    int runtime_slot = -1;
+    std::vector<TranscriptSegment> segments;
+};
+
+struct ChunkMetric {
+    int index = 0;
+    double start = 0.0;
+    double end = 0.0;
+    int runtime_slot = -1;
+    double acquire_wait_seconds = 0.0;
+    double elapsed_seconds = 0.0;
+    int threads = 0;
+};
+
 struct JobResult {
     std::string job_id;
     double duration_seconds = 0.0;
     std::vector<TranscriptSegment> segments;
+    bool chunked_enabled = false;
+    int chunk_count = 0;
+    int runtime_count = 0;
+    int effective_parallel_chunks = 0;
+    int chunk_threads = 0;
+    double chunk_seconds = 0.0;
+    double overlap_seconds = 0.0;
+    std::vector<ChunkMetric> chunk_metrics;
+};
+
+struct JobStatus {
+    std::string job_id;
+    std::string audio_path;
+    std::string status;
+    double progress = 0.0;
+    int64_t created_at = 0;
+    int64_t started_at = 0;
+    int64_t finished_at = 0;
+    std::string error;
+    JobResult result;
+};
+
+struct QueryJobResult {
+    bool ok = false;
+    std::string job_id;
+    std::string error;
+    JobStatus job;
 };
 
 struct JobError {

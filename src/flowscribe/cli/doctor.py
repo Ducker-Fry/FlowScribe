@@ -11,7 +11,9 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
+from flowscribe.engine.pipe_client import FlowScribeEngineClient, pywintypes, win32file
 from flowscribe.media.tools import resolve_tool_path
+from flowscribe.transcription.native_engine import resolve_engine_exe
 
 
 @dataclass(frozen=True)
@@ -25,19 +27,32 @@ class DoctorCheck:
         return "OK" if self.ok else "FAIL"
 
 
-def run_doctor(*, output_dir: Path, model_name: str, print_result: bool = True) -> int:
-    checks = [
-        check_python_version(),
-        check_command("ffmpeg"),
-        check_command("ffprobe"),
-        check_faster_whisper_import(),
-        check_output_dir(output_dir),
-        check_model_download(model_name),
-    ]
+def run_doctor(
+    *,
+    output_dir: Path,
+    provider_name: str,
+    model_name: str,
+    hello_smoke: bool = False,
+    print_result: bool = True,
+) -> int:
+    checks = [check_python_version(), check_command("ffmpeg"), check_command("ffprobe"), check_output_dir(output_dir)]
+    if provider_name == "native-engine":
+        checks.extend(
+            [
+                check_pywin32_import(),
+                check_native_engine_exe(),
+                check_native_model_path(model_name),
+            ]
+        )
+        if hello_smoke:
+            checks.append(check_native_engine_hello_smoke())
+    else:
+        checks.extend([check_faster_whisper_import(), check_model_download(model_name)])
 
     if print_result:
         print("FlowScribe doctor")
         print("=================")
+        print(f"Provider: {provider_name}")
         for check in checks:
             print(f"[{check.marker}] {check.name}: {check.message}")
 
@@ -89,6 +104,16 @@ def check_faster_whisper_import() -> DoctorCheck:
     return DoctorCheck("faster-whisper", True, f"importable, version {version}")
 
 
+def check_pywin32_import() -> DoctorCheck:
+    if pywintypes is None or win32file is None:
+        return DoctorCheck(
+            "pywin32",
+            False,
+            "not importable. Install pywin32 to use native-engine named pipe integration.",
+        )
+    return DoctorCheck("pywin32", True, "importable")
+
+
 def check_output_dir(output_dir: Path) -> DoctorCheck:
     path = output_dir.expanduser().resolve()
     try:
@@ -138,6 +163,73 @@ def check_model_download(model_name: str) -> DoctorCheck:
     if 200 <= status < 400:
         return DoctorCheck("Model access", True, f"{repo_id} is reachable")
     return DoctorCheck("Model access", False, f"{repo_id} returned HTTP {status}")
+
+
+def check_native_engine_exe() -> DoctorCheck:
+    try:
+        engine_exe = resolve_engine_exe()
+    except Exception as exc:
+        return DoctorCheck(
+            "Native engine executable",
+            False,
+            f"{exc}. Build native/flowscribe-engine or set FLOWSCRIBE_ENGINE_EXE.",
+        )
+    return DoctorCheck("Native engine executable", True, f"found: {engine_exe}")
+
+
+def check_native_model_path(model_name: str) -> DoctorCheck:
+    model_path = Path(model_name).expanduser()
+    if not model_path.exists() or not model_path.is_file():
+        return DoctorCheck(
+            "Native model path",
+            False,
+            "native-engine requires --model to point to an existing local whisper.cpp ggml .bin file.",
+        )
+    if model_path.suffix.lower() != ".bin":
+        return DoctorCheck(
+            "Native model path",
+            False,
+            f"{model_path} is not a .bin file. native-engine requires a whisper.cpp ggml .bin model.",
+        )
+    return DoctorCheck("Native model path", True, f"local ggml model exists: {model_path.resolve()}")
+
+
+def check_native_engine_hello_smoke() -> DoctorCheck:
+    try:
+        engine_exe = resolve_engine_exe()
+    except Exception as exc:
+        return DoctorCheck("Native hello smoke", False, f"cannot start smoke check: {exc}")
+
+    try:
+        proc = subprocess.Popen(
+            [str(engine_exe)],
+            cwd=str(engine_exe.parent),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError as exc:
+        return DoctorCheck("Native hello smoke", False, f"failed to launch engine: {exc}")
+
+    client = FlowScribeEngineClient(timeout=1.0)
+    try:
+        if not client.connect(retry=40, delay=0.05):
+            return DoctorCheck(
+                "Native hello smoke",
+                False,
+                "failed to connect to native-engine pipe after launch.",
+            )
+        hello = client.send_hello()
+        if not hello or not hello.get("ok"):
+            return DoctorCheck("Native hello smoke", False, f"hello failed: {hello}")
+        return DoctorCheck("Native hello smoke", True, "launch and hello round-trip succeeded")
+    finally:
+        client.close()
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=5)
 
 
 def resolve_faster_whisper_repo(model_name: str) -> str | None:

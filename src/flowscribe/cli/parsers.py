@@ -63,10 +63,10 @@ def add_progressive_options(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--max-workers",
-        type=positive_int,
+        type=non_negative_int,
         dest="progressive_max_workers",
         default=1,
-        help="Maximum progressive chunk workers. Default: 1",
+        help="Maximum progressive chunk workers. Use 0 for auto. Default: 1",
     )
 
 
@@ -85,11 +85,25 @@ def add_transcription_options(parser: argparse.ArgumentParser) -> None:
         help="Directory for temporary prepared audio. Default: <output-dir>/.flowscribe-work",
     )
     parser.add_argument(
+        "--provider",
+        dest="provider_name",
+        choices=["local-whisper", "native-engine"],
+        default="local-whisper",
+        help=(
+            "Transcription provider. Use local-whisper for faster-whisper model names like "
+            "`small`, or native-engine for a local whisper.cpp ggml .bin model path. "
+            "Default: local-whisper"
+        ),
+    )
+    parser.add_argument(
         "-m",
         "--model",
         dest="model_name",
         default="small",
-        help="Local faster-whisper model name or path. Default: small",
+        help=(
+            "Model name or path. local-whisper accepts names like `small` or a local path; "
+            "native-engine requires a local whisper.cpp ggml .bin file path. Default: small"
+        ),
     )
     parser.add_argument(
         "-l",
@@ -193,11 +207,25 @@ def parse_transcribe_args(argv: list[str] | None = None, *, prog: str = "flowscr
         help="Directory for temporary prepared audio. Default: <output-dir>/.flowscribe-work",
     )
     parser.add_argument(
+        "--provider",
+        dest="provider_name",
+        choices=["local-whisper", "native-engine"],
+        default="local-whisper",
+        help=(
+            "Transcription provider. Use local-whisper for faster-whisper model names like "
+            "`small`, or native-engine for a local whisper.cpp ggml .bin model path. "
+            "Default: local-whisper"
+        ),
+    )
+    parser.add_argument(
         "-m",
         "--model",
         dest="model_name",
         default="small",
-        help="Local faster-whisper model name or path. Default: small",
+        help=(
+            "Model name or path. local-whisper accepts names like `small` or a local path; "
+            "native-engine requires a local whisper.cpp ggml .bin file path. Default: small"
+        ),
     )
     parser.add_argument(
         "-l",
@@ -286,6 +314,7 @@ def parse_transcribe_args(argv: list[str] | None = None, *, prog: str = "flowscr
         inputs=namespace.inputs,
         output_dir=namespace.output_dir,
         work_dir=namespace.work_dir,
+        provider_name=namespace.provider_name,
         model_name=namespace.model_name,
         language=namespace.language,
         preset=namespace.preset,
@@ -372,6 +401,7 @@ def parse_url_args(argv: list[str] | None = None) -> UrlOptions:
         url=namespace.url,
         output_dir=namespace.output_dir,
         work_dir=namespace.work_dir,
+        provider_name=namespace.provider_name,
         model_name=namespace.model_name,
         language=namespace.language,
         preset=namespace.preset,
@@ -415,17 +445,33 @@ def parse_doctor_args(argv: list[str] | None = None) -> DoctorOptions:
         help="Directory to test for transcript output writes. Default: outputs",
     )
     parser.add_argument(
+        "--provider",
+        choices=["local-whisper", "native-engine"],
+        default="local-whisper",
+        help="Provider to validate. Default: local-whisper",
+    )
+    parser.add_argument(
         "-m",
         "--model",
         dest="model_name",
         default="small",
-        help="Local faster-whisper model name or path to check. Default: small",
+        help=(
+            "Model name or path to check. local-whisper accepts names like `small`; "
+            "native-engine requires a local whisper.cpp ggml .bin file path. Default: small"
+        ),
+    )
+    parser.add_argument(
+        "--hello-smoke",
+        action="store_true",
+        help="For native-engine, launch the engine and verify a hello round-trip.",
     )
     namespace = parser.parse_args(argv)
     return DoctorOptions(
         command="doctor",
         output_dir=namespace.output_dir,
+        provider_name=namespace.provider,
         model_name=namespace.model_name,
+        hello_smoke=namespace.hello_smoke,
     )
 
 

@@ -56,6 +56,7 @@ class TranscriptionJob:
     output_dir: Path = Path("outputs")
     output_name_base: str | None = None
     work_dir: Path | None = None
+    provider_name: str = "local-whisper"
     model_name: str = "small"
     language: str | None = None
     preset: str | None = None
@@ -80,6 +81,7 @@ class TranscriptionJob:
     progressive_chunk_seconds: float = 30.0
     progressive_chunk_overlap_seconds: float = 3.0
     progressive_max_workers: int = 1
+    native_threads: int | None = None
     created_at: datetime = field(default_factory=datetime.now)
 
 

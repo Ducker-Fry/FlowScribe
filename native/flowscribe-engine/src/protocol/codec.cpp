@@ -5,18 +5,17 @@
 using nlohmann::json;
 
 namespace flowscribe::engine::protocol {
-namespace {
 
 uint16_t read_u16_le(const uint8_t* data) {
     return static_cast<uint16_t>(data[0]) |
-           static_cast<uint16_t>(static_cast<uint16_t>(data[1]) << 8);
+        static_cast<uint16_t>(static_cast<uint16_t>(data[1]) << 8);
 }
 
 uint32_t read_u32_le(const uint8_t* data) {
     return static_cast<uint32_t>(data[0]) |
-           (static_cast<uint32_t>(data[1]) << 8) |
-           (static_cast<uint32_t>(data[2]) << 16) |
-           (static_cast<uint32_t>(data[3]) << 24);
+        (static_cast<uint32_t>(data[1]) << 8) |
+        (static_cast<uint32_t>(data[2]) << 16) |
+        (static_cast<uint32_t>(data[3]) << 24);
 }
 
 void write_u16_le(std::vector<uint8_t>& buffer, size_t offset, uint16_t value) {
@@ -31,50 +30,32 @@ void write_u32_le(std::vector<uint8_t>& buffer, size_t offset, uint32_t value) {
     buffer[offset + 3] = static_cast<uint8_t>((value >> 24) & 0xFFU);
 }
 
-template <typename T>
-void read_optional(const json& j, const char* key, T& value) {
-    if (j.contains(key) && !j.at(key).is_null()) {
-        j.at(key).get_to(value);
-    }
+MessageKindRegistry::MessageKindRegistry() {
+    REGISTER_MESSAGE_KIND(*this, HelloRequest, "hello_request");
+    REGISTER_MESSAGE_KIND(*this, HelloResult, "hello_result");
+    REGISTER_MESSAGE_KIND(*this, LoadModelRequest, "load_model_request");
+    REGISTER_MESSAGE_KIND(*this, LoadModelResult, "load_model_result");
+    REGISTER_MESSAGE_KIND(*this, SubmitJobRequest, "submit_job_request");
+    REGISTER_MESSAGE_KIND(*this, SubmitJobResult, "submit_job_result");
+    REGISTER_MESSAGE_KIND(*this, CancelJobRequest, "cancel_job_request");
+    REGISTER_MESSAGE_KIND(*this, CancelJobResult, "cancel_job_result");
+    REGISTER_MESSAGE_KIND(*this, QueryJobRequest, "query_job_request");
+    REGISTER_MESSAGE_KIND(*this, QueryJobResult, "query_job_result");
+    REGISTER_MESSAGE_KIND(*this, JobEvent, "job_event");
+    REGISTER_MESSAGE_KIND(*this, JobResult, "job_result");
+    REGISTER_MESSAGE_KIND(*this, JobError, "job_error");
+    REGISTER_MESSAGE_KIND(*this, ShutdownRequest, "shutdown_request");
+    REGISTER_MESSAGE_KIND(*this, ShutdownResult, "shutdown_result");
 }
 
-} // namespace
-
 const char* message_kind_to_str(MessageKind kind) {
-    switch (kind) {
-    case MessageKind::HelloRequest:
-        return "hello_request";
-    case MessageKind::HelloResult:
-        return "hello_result";
-    case MessageKind::LoadModelRequest:
-        return "load_model_request";
-    case MessageKind::LoadModelResult:
-        return "load_model_result";
-    case MessageKind::SubmitJobRequest:
-        return "submit_job_request";
-    case MessageKind::SubmitJobResult:
-        return "submit_job_result";
-    case MessageKind::CancelJobRequest:
-        return "cancel_job_request";
-    case MessageKind::CancelJobResult:
-        return "cancel_job_result";
-    case MessageKind::JobEvent:
-        return "job_event";
-    case MessageKind::JobResult:
-        return "job_result";
-    case MessageKind::JobError:
-        return "job_error";
-    case MessageKind::ShutdownRequest:
-        return "shutdown_request";
-    case MessageKind::ShutdownResult:
-        return "shutdown_result";
-    default:
-        return "unknown";
-    }
+    thread_local std::string name;
+    name = MessageKindRegistry::instance().to_str(kind);
+    return name.c_str();
 }
 
 bool is_known_message_kind(MessageKind kind) {
-    return std::string(message_kind_to_str(kind)) != "unknown";
+    return MessageKindRegistry::instance().is_known(kind);
 }
 
 Message make_message(MessageKind kind, const std::string& json_payload) {
@@ -197,6 +178,7 @@ void to_json(json& j, const LoadModelResult& value) {
         {"ok", value.ok},
         {"error", value.error},
         {"model_load_time_ms", value.model_load_time_ms},
+        {"runtime_count", value.runtime_count},
     };
 }
 
@@ -204,6 +186,7 @@ void from_json(const json& j, LoadModelResult& value) {
     j.at("ok").get_to(value.ok);
     read_optional(j, "error", value.error);
     read_optional(j, "model_load_time_ms", value.model_load_time_ms);
+    read_optional(j, "runtime_count", value.runtime_count);
 }
 
 void to_json(json& j, const ProgressiveOptions& value) {
@@ -211,6 +194,7 @@ void to_json(json& j, const ProgressiveOptions& value) {
         {"enabled", value.enabled},
         {"chunk_seconds", value.chunk_seconds},
         {"overlap_seconds", value.overlap_seconds},
+        {"max_workers", value.max_workers},
     };
 }
 
@@ -218,6 +202,7 @@ void from_json(const json& j, ProgressiveOptions& value) {
     read_optional(j, "enabled", value.enabled);
     read_optional(j, "chunk_seconds", value.chunk_seconds);
     read_optional(j, "overlap_seconds", value.overlap_seconds);
+    read_optional(j, "max_workers", value.max_workers);
 }
 
 void to_json(json& j, const SubmitJobRequest& value) {
@@ -228,6 +213,7 @@ void to_json(json& j, const SubmitJobRequest& value) {
         {"task", value.task},
         {"vad_filter", value.vad_filter},
         {"beam_size", value.beam_size},
+        {"threads", value.threads},
         {"initial_prompt", value.initial_prompt},
         {"progressive", value.progressive},
     };
@@ -240,6 +226,7 @@ void from_json(const json& j, SubmitJobRequest& value) {
     read_optional(j, "task", value.task);
     read_optional(j, "vad_filter", value.vad_filter);
     read_optional(j, "beam_size", value.beam_size);
+    read_optional(j, "threads", value.threads);
     read_optional(j, "initial_prompt", value.initial_prompt);
     read_optional(j, "progressive", value.progressive);
 }
@@ -280,6 +267,14 @@ void from_json(const json& j, CancelJobResult& value) {
     read_optional(j, "error", value.error);
 }
 
+void to_json(json& j, const QueryJobRequest& value) {
+    j = json{{"job_id", value.job_id}};
+}
+
+void from_json(const json& j, QueryJobRequest& value) {
+    j.at("job_id").get_to(value.job_id);
+}
+
 void to_json(json& j, const JobEvent& value) {
     j = json{
         {"job_id", value.job_id},
@@ -287,6 +282,11 @@ void to_json(json& j, const JobEvent& value) {
         {"progress", value.progress},
         {"current_seconds", value.current_seconds},
         {"total_seconds", value.total_seconds},
+        {"chunk_index", value.chunk_index},
+        {"chunk_count", value.chunk_count},
+        {"completed_chunks", value.completed_chunks},
+        {"runtime_slot", value.runtime_slot},
+        {"segments", value.segments},
     };
 }
 
@@ -296,6 +296,11 @@ void from_json(const json& j, JobEvent& value) {
     read_optional(j, "progress", value.progress);
     read_optional(j, "current_seconds", value.current_seconds);
     read_optional(j, "total_seconds", value.total_seconds);
+    read_optional(j, "chunk_index", value.chunk_index);
+    read_optional(j, "chunk_count", value.chunk_count);
+    read_optional(j, "completed_chunks", value.completed_chunks);
+    read_optional(j, "runtime_slot", value.runtime_slot);
+    read_optional(j, "segments", value.segments);
 }
 
 void to_json(json& j, const WordTiming& value) {
@@ -330,11 +335,41 @@ void from_json(const json& j, TranscriptSegment& value) {
     read_optional(j, "words", value.words);
 }
 
+void to_json(json& j, const ChunkMetric& value) {
+    j = json{
+        {"index", value.index},
+        {"start", value.start},
+        {"end", value.end},
+        {"runtime_slot", value.runtime_slot},
+        {"acquire_wait_seconds", value.acquire_wait_seconds},
+        {"elapsed_seconds", value.elapsed_seconds},
+        {"threads", value.threads},
+    };
+}
+
+void from_json(const json& j, ChunkMetric& value) {
+    read_optional(j, "index", value.index);
+    read_optional(j, "start", value.start);
+    read_optional(j, "end", value.end);
+    read_optional(j, "runtime_slot", value.runtime_slot);
+    read_optional(j, "acquire_wait_seconds", value.acquire_wait_seconds);
+    read_optional(j, "elapsed_seconds", value.elapsed_seconds);
+    read_optional(j, "threads", value.threads);
+}
+
 void to_json(json& j, const JobResult& value) {
     j = json{
         {"job_id", value.job_id},
         {"duration_seconds", value.duration_seconds},
         {"segments", value.segments},
+        {"chunked_enabled", value.chunked_enabled},
+        {"chunk_count", value.chunk_count},
+        {"runtime_count", value.runtime_count},
+        {"effective_parallel_chunks", value.effective_parallel_chunks},
+        {"chunk_threads", value.chunk_threads},
+        {"chunk_seconds", value.chunk_seconds},
+        {"overlap_seconds", value.overlap_seconds},
+        {"chunk_metrics", value.chunk_metrics},
     };
 }
 
@@ -342,6 +377,56 @@ void from_json(const json& j, JobResult& value) {
     j.at("job_id").get_to(value.job_id);
     read_optional(j, "duration_seconds", value.duration_seconds);
     read_optional(j, "segments", value.segments);
+    read_optional(j, "chunked_enabled", value.chunked_enabled);
+    read_optional(j, "chunk_count", value.chunk_count);
+    read_optional(j, "runtime_count", value.runtime_count);
+    read_optional(j, "effective_parallel_chunks", value.effective_parallel_chunks);
+    read_optional(j, "chunk_threads", value.chunk_threads);
+    read_optional(j, "chunk_seconds", value.chunk_seconds);
+    read_optional(j, "overlap_seconds", value.overlap_seconds);
+    read_optional(j, "chunk_metrics", value.chunk_metrics);
+}
+
+void to_json(json& j, const JobStatus& value) {
+    j = json{
+        {"job_id", value.job_id},
+        {"audio_path", value.audio_path},
+        {"status", value.status},
+        {"progress", value.progress},
+        {"created_at", value.created_at},
+        {"started_at", value.started_at},
+        {"finished_at", value.finished_at},
+        {"error", value.error},
+        {"result", value.result},
+    };
+}
+
+void from_json(const json& j, JobStatus& value) {
+    j.at("job_id").get_to(value.job_id);
+    read_optional(j, "audio_path", value.audio_path);
+    read_optional(j, "status", value.status);
+    read_optional(j, "progress", value.progress);
+    read_optional(j, "created_at", value.created_at);
+    read_optional(j, "started_at", value.started_at);
+    read_optional(j, "finished_at", value.finished_at);
+    read_optional(j, "error", value.error);
+    read_optional(j, "result", value.result);
+}
+
+void to_json(json& j, const QueryJobResult& value) {
+    j = json{
+        {"ok", value.ok},
+        {"job_id", value.job_id},
+        {"error", value.error},
+        {"job", value.job},
+    };
+}
+
+void from_json(const json& j, QueryJobResult& value) {
+    j.at("ok").get_to(value.ok);
+    j.at("job_id").get_to(value.job_id);
+    read_optional(j, "error", value.error);
+    read_optional(j, "job", value.job);
 }
 
 void to_json(json& j, const JobError& value) {

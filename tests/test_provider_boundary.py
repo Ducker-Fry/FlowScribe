@@ -8,8 +8,10 @@ from flowscribe.config.settings import AppSettings
 from flowscribe.transcription.local_whisper import LocalWhisperTranscriber
 from flowscribe.transcription.providers import (
     LocalWhisperProvider,
+    NativeEngineProvider,
     ProviderTranscriptionSettings,
     default_transcription_provider,
+    is_native_engine_provider_name,
     resolve_transcription_provider,
 )
 
@@ -60,6 +62,14 @@ def test_resolve_transcription_provider_supports_default_aliases() -> None:
         resolve_transcription_provider("remote-api")
 
 
+def test_resolve_transcription_provider_supports_native_engine_aliases() -> None:
+    assert isinstance(resolve_transcription_provider("native-engine"), NativeEngineProvider)
+    assert isinstance(resolve_transcription_provider("native"), NativeEngineProvider)
+    assert isinstance(resolve_transcription_provider("whisper.cpp"), NativeEngineProvider)
+    assert is_native_engine_provider_name("native-engine") is True
+    assert is_native_engine_provider_name("local-whisper") is False
+
+
 def test_build_pipeline_uses_provider_factory(monkeypatch, tmp_path: Path) -> None:
     captured = {}
 
@@ -70,7 +80,7 @@ def test_build_pipeline_uses_provider_factory(monkeypatch, tmp_path: Path) -> No
 
     monkeypatch.setattr(
         "flowscribe.app.service.resolve_transcription_provider",
-        lambda: FakeProvider(),
+        lambda provider_name=None: FakeProvider(),
     )
 
     job = TranscriptionJob(
@@ -86,6 +96,7 @@ def test_build_pipeline_uses_provider_factory(monkeypatch, tmp_path: Path) -> No
         word_timestamps=True,
         output_formats=("txt", "json"),
         overwrite=True,
+        provider_name="native-engine",
     )
     settings = AppSettings.from_options(
         output_dir=job.output_dir,
@@ -107,6 +118,10 @@ def test_build_pipeline_uses_provider_factory(monkeypatch, tmp_path: Path) -> No
     pipeline = _build_pipeline(job, settings)
 
     assert pipeline._transcriber == "fake-transcriber"
+    assert captured["settings"].progressive_enabled is True
+    assert captured["settings"].progressive_chunk_seconds == 30.0
+    assert captured["settings"].progressive_chunk_overlap_seconds == 3.0
+    assert captured["settings"].progressive_max_workers == 1
     assert captured["settings"].model_name == "medium"
     assert captured["settings"].language == "zh"
     assert captured["settings"].preset == "zh"

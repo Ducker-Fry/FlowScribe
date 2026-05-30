@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 
 from flowscribe.app.models import SourceSpec
 from flowscribe.gui.state import SUPPORTED_GUI_FORMATS
+from flowscribe.gui.utils.state import GUI_PROVIDER_LABELS, GUI_PROVIDER_OPTIONS
 from flowscribe.queue.models import QueueItemSettings
 
 if TYPE_CHECKING:
@@ -101,7 +102,19 @@ class QueueItemSettingsDialog(QDialog):
         model_layout.setVerticalSpacing(8)
 
         self.model_combo = QComboBox()
+        self.model_combo.setEditable(True)
         self.model_combo.addItems(GUI_MODEL_OPTIONS)
+        model_browse_button = QPushButton("Browse")
+        model_browse_button.clicked.connect(self._choose_model_file)
+        model_row = QHBoxLayout()
+        model_row.addWidget(self.model_combo, 1)
+        model_row.addWidget(model_browse_button)
+        self.model_browse_button = model_browse_button
+
+        self.provider_combo = QComboBox()
+        for provider_name in GUI_PROVIDER_OPTIONS:
+            self.provider_combo.addItem(GUI_PROVIDER_LABELS[provider_name], provider_name)
+        self.provider_combo.currentIndexChanged.connect(self._sync_provider_controls)
 
         self.language_combo = QComboBox()
         self.language_combo.addItems(GUI_LANGUAGE_OPTIONS)
@@ -109,12 +122,14 @@ class QueueItemSettingsDialog(QDialog):
         self.preset_combo = QComboBox()
         self.preset_combo.addItems(GUI_PRESET_OPTIONS)
 
-        model_layout.addWidget(QLabel("Model"), 0, 0)
-        model_layout.addWidget(self.model_combo, 0, 1)
-        model_layout.addWidget(QLabel("Language"), 1, 0)
-        model_layout.addWidget(self.language_combo, 1, 1)
-        model_layout.addWidget(QLabel("Preset"), 2, 0)
-        model_layout.addWidget(self.preset_combo, 2, 1)
+        model_layout.addWidget(QLabel("Engine"), 0, 0)
+        model_layout.addWidget(self.provider_combo, 0, 1)
+        model_layout.addWidget(QLabel("Model"), 1, 0)
+        model_layout.addLayout(model_row, 1, 1)
+        model_layout.addWidget(QLabel("Language"), 2, 0)
+        model_layout.addWidget(self.language_combo, 2, 1)
+        model_layout.addWidget(QLabel("Preset"), 3, 0)
+        model_layout.addWidget(self.preset_combo, 3, 1)
 
         # Timestamp Settings
         timestamp_group = QGroupBox("Timestamp Settings")
@@ -137,12 +152,17 @@ class QueueItemSettingsDialog(QDialog):
         self.progressive_chunk_spin.setSuffix(" seconds")
         self.progressive_workers_spin = QSpinBox()
         self.progressive_workers_spin.setRange(1, 8)
+        self.native_threads_spin = QSpinBox()
+        self.native_threads_spin.setRange(0, 128)
+        self.native_threads_spin.setSpecialValueText("Auto")
 
         progressive_layout.addWidget(self.progressive_resume_check, 0, 0, 1, 2)
         progressive_layout.addWidget(QLabel("Chunk duration"), 1, 0)
         progressive_layout.addWidget(self.progressive_chunk_spin, 1, 1)
         progressive_layout.addWidget(QLabel("Max workers"), 2, 0)
         progressive_layout.addWidget(self.progressive_workers_spin, 2, 1)
+        progressive_layout.addWidget(QLabel("Native threads"), 3, 0)
+        progressive_layout.addWidget(self.native_threads_spin, 3, 1)
 
         # Network Settings
         network_group = QGroupBox("Network Settings")
@@ -248,6 +268,8 @@ class QueueItemSettingsDialog(QDialog):
 
         self.overwrite_check.setChecked(settings.overwrite)
 
+        provider_index = self.provider_combo.findData(settings.provider_name)
+        self.provider_combo.setCurrentIndex(provider_index if provider_index >= 0 else 0)
         self.model_combo.setCurrentText(settings.model_name)
         self.language_combo.setCurrentText(settings.language or "auto")
         self.preset_combo.setCurrentText(settings.preset or "none")
@@ -259,6 +281,7 @@ class QueueItemSettingsDialog(QDialog):
         self.progressive_resume_check.setChecked(settings.progressive_resume)
         self.progressive_chunk_spin.setValue(int(settings.progressive_chunk_seconds))
         self.progressive_workers_spin.setValue(settings.progressive_max_workers)
+        self.native_threads_spin.setValue(settings.native_threads or 0)
 
         self.network_combo.setCurrentText(settings.network_family)
         self.proxy_input.setText(settings.proxy or "")
@@ -275,6 +298,7 @@ class QueueItemSettingsDialog(QDialog):
         # Hide media group for non-URL sources
         if source.kind != "url":
             self._media_group.hide()
+        self._sync_provider_controls()
 
     def _reset_to_defaults(self) -> None:
         """Reset all settings to default values."""
@@ -305,6 +329,31 @@ class QueueItemSettingsDialog(QDialog):
         if file_path:
             self.cookies_input.setText(file_path)
 
+    def _choose_model_file(self) -> None:
+        """Open file chooser for a native-engine ggml model."""
+        current = self.model_combo.currentText().strip()
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Choose native engine model",
+            current or str(Path.home()),
+            "Whisper.cpp Models (*.bin);;All Files (*.*)",
+        )
+        if file_path:
+            self.model_combo.setCurrentText(file_path)
+
+    def _sync_provider_controls(self) -> None:
+        """Adjust model controls for the selected provider."""
+        is_native = self.provider_combo.currentData() == "native-engine"
+        self.model_browse_button.setEnabled(is_native)
+        if is_native:
+            self.model_combo.setToolTip("Use a local whisper.cpp ggml .bin model file.")
+            if self.model_combo.currentText() in GUI_MODEL_OPTIONS:
+                self.model_combo.setCurrentText("models/ggml-base.en.bin")
+        else:
+            self.model_combo.setToolTip("Use a faster-whisper model name or local model path.")
+            if not self.model_combo.currentText().strip():
+                self.model_combo.setCurrentText("small")
+
     def get_settings(self) -> tuple[QueueItemSettings, SourceSpec] | None:
         """Return updated settings and source if Apply was clicked, None if canceled."""
         if self.result() != QDialog.DialogCode.Accepted:
@@ -331,6 +380,7 @@ class QueueItemSettingsDialog(QDialog):
         settings = QueueItemSettings(
             output_dir=Path(self.output_dir_input.text().strip() or "outputs"),
             output_name_base=self.output_name_input.text().strip(),
+            provider_name=self.provider_combo.currentData() or "local-whisper",
             model_name=self.model_combo.currentText().strip() or "small",
             language=language,
             preset=preset,
@@ -348,6 +398,11 @@ class QueueItemSettingsDialog(QDialog):
             max_download_mb=self.max_download_spin.value(),
             max_duration_seconds=float(self.max_duration_spin.value()),
             download_timeout_seconds=self.download_timeout_spin.value(),
+            native_threads=(
+                self.native_threads_spin.value()
+                if self.native_threads_spin.value() > 0
+                else None
+            ),
         )
 
         # Create updated source with new media settings

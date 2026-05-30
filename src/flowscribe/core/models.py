@@ -70,6 +70,7 @@ class Transcript:
     language: str | None = None
     model_name: str | None = None
     options: TranscriptionOptions | None = None
+    metadata: dict[str, object] = field(default_factory=dict)
     created_at: datetime = field(default_factory=datetime.now)
 
     @property
