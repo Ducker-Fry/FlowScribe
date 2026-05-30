@@ -152,6 +152,23 @@ def test_normalize_gui_preferences_payload_accepts_paraformer() -> None:
     assert preferences["preset"] == "zh"
 
 
+def test_main_window_exposes_paraformer_engine(qtbot):
+    from flowscribe.gui.main_window import MainWindow
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    index = window.provider_combo.findData("paraformer")
+    assert index >= 0
+
+    window.model_combo.setCurrentText("small")
+    window.provider_combo.setCurrentIndex(index)
+
+    assert window.provider_combo.currentData() == "paraformer"
+    assert window.model_combo.currentText() == "paraformer-zh"
+    assert window._current_gui_preferences()["provider_name"] == "paraformer"
+
+
 def test_onboarding_state_payload_defaults_and_reads_help_seen_flag() -> None:
     assert _onboarding_state_payload(None) == {"help_seen": False}
     assert _onboarding_state_payload({"help_seen": True}) == {"help_seen": True}

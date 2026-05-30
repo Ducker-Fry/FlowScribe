@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from flowscribe.core.errors import CancellationError, TranscriptionError
@@ -19,6 +20,11 @@ PARAFORMER_MODEL_NAME = "paraformer-zh"
 PARAFORMER_FUNASR_MODEL_ID = "paraformer-zh"
 PARAFORMER_FUNASR_VAD_MODEL_ID = "fsmn-vad"
 PARAFORMER_FUNASR_PUNC_MODEL_ID = "ct-punc"
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
+MODELS_ROOT = PROJECT_ROOT / "models"
+PARAFORMER_MODEL_DIR = MODELS_ROOT / PARAFORMER_MODEL_NAME
+PARAFORMER_VAD_MODEL_DIR = MODELS_ROOT / PARAFORMER_FUNASR_VAD_MODEL_ID
+PARAFORMER_PUNC_MODEL_DIR = MODELS_ROOT / PARAFORMER_FUNASR_PUNC_MODEL_ID
 
 
 class ParaformerTranscriber:
@@ -73,10 +79,16 @@ class ParaformerTranscriber:
         if self._model is None:
             from funasr import AutoModel
 
+            PARAFORMER_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+            PARAFORMER_VAD_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+            PARAFORMER_PUNC_MODEL_DIR.mkdir(parents=True, exist_ok=True)
             self._model = AutoModel(
                 model=self._resolve_model_id(self._model_name),
+                model_dir=str(PARAFORMER_MODEL_DIR),
                 vad_model=PARAFORMER_FUNASR_VAD_MODEL_ID,
+                vad_model_dir=str(PARAFORMER_VAD_MODEL_DIR),
                 punc_model=PARAFORMER_FUNASR_PUNC_MODEL_ID,
+                punc_model_dir=str(PARAFORMER_PUNC_MODEL_DIR),
             )
         return self._model
 

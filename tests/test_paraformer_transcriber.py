@@ -11,7 +11,7 @@ from flowscribe.providers.transcribe.paraformer import ParaformerTranscriber
 
 def test_paraformer_transcriber_maps_top_level_text(monkeypatch, tmp_path: Path) -> None:
     audio = _prepared_audio(tmp_path, duration_seconds=12.5)
-    _install_fake_funasr(monkeypatch, [{"text": "今天我们测试中文转写。"}])
+    fake_models = _install_fake_funasr(monkeypatch, [{"text": "今天我们测试中文转写。"}])
 
     transcript = ParaformerTranscriber(language="zh").transcribe(audio)
 
@@ -22,6 +22,9 @@ def test_paraformer_transcriber_maps_top_level_text(monkeypatch, tmp_path: Path)
     assert transcript.options.provider_name == "paraformer"
     assert transcript.segments[0].start_seconds == 0.0
     assert transcript.segments[0].end_seconds == 12.5
+    assert Path(fake_models[0].kwargs["model_dir"]).parts[-2:] == ("models", "paraformer-zh")
+    assert Path(fake_models[0].kwargs["vad_model_dir"]).parts[-2:] == ("models", "fsmn-vad")
+    assert Path(fake_models[0].kwargs["punc_model_dir"]).parts[-2:] == ("models", "ct-punc")
 
 
 def test_paraformer_transcriber_maps_sentence_info(monkeypatch, tmp_path: Path) -> None:
@@ -67,10 +70,13 @@ def _prepared_audio(tmp_path: Path, *, duration_seconds: float | None = None) ->
     )
 
 
-def _install_fake_funasr(monkeypatch, result) -> None:
+def _install_fake_funasr(monkeypatch, result):
+    models = []
+
     class FakeAutoModel:
         def __init__(self, **kwargs) -> None:
             self.kwargs = kwargs
+            models.append(self)
 
         def generate(self, **kwargs):
             self.generate_kwargs = kwargs
@@ -79,3 +85,4 @@ def _install_fake_funasr(monkeypatch, result) -> None:
     module = types.ModuleType("funasr")
     module.AutoModel = FakeAutoModel
     monkeypatch.setitem(sys.modules, "funasr", module)
+    return models

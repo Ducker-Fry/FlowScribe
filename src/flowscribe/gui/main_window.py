@@ -43,6 +43,8 @@ from flowscribe.gui.utils import (
     GUI_MODEL_OPTIONS,
     GUI_NETWORK_OPTIONS,
     GUI_PRESET_OPTIONS,
+    GUI_PROVIDER_LABELS,
+    GUI_PROVIDER_OPTIONS,
     _default_recent_work,
     _gui_preferences_payload,
     _model_access_guidance_text,
@@ -302,6 +304,11 @@ class MainWindow(
         self.model_combo = QComboBox()
         self.model_combo.addItems(list(GUI_MODEL_OPTIONS))
 
+        self.provider_combo = QComboBox()
+        for provider_name in GUI_PROVIDER_OPTIONS:
+            self.provider_combo.addItem(GUI_PROVIDER_LABELS[provider_name], provider_name)
+        self.provider_combo.currentIndexChanged.connect(self._sync_provider_controls)
+
         self.language_combo = QComboBox()
         self.language_combo.addItems(list(GUI_LANGUAGE_OPTIONS))
 
@@ -345,25 +352,27 @@ class MainWindow(
         settings_layout.addLayout(output_row, 0, 1)
         settings_layout.addWidget(QLabel("Output name"), 1, 0)
         settings_layout.addWidget(self.output_name_input, 1, 1)
-        settings_layout.addWidget(QLabel("Model"), 2, 0)
-        settings_layout.addWidget(self.model_combo, 2, 1)
-        settings_layout.addWidget(QLabel("Language"), 3, 0)
-        settings_layout.addWidget(self.language_combo, 3, 1)
-        settings_layout.addWidget(QLabel("Preset"), 4, 0)
-        settings_layout.addWidget(self.preset_combo, 4, 1)
-        settings_layout.addWidget(QLabel("Formats"), 5, 0)
-        settings_layout.addLayout(format_row, 5, 1)
-        settings_layout.addWidget(QLabel("Network"), 6, 0)
-        settings_layout.addWidget(self.network_combo, 6, 1)
-        settings_layout.addWidget(QLabel("Proxy"), 7, 0)
-        settings_layout.addWidget(self.proxy_input, 7, 1)
-        settings_layout.addWidget(QLabel("Cookies"), 8, 0)
-        settings_layout.addLayout(cookies_row, 8, 1)
-        settings_layout.addWidget(self.timestamps_check, 9, 1)
-        settings_layout.addWidget(self.word_timestamps_check, 10, 1)
-        settings_layout.addWidget(self.overwrite_check, 11, 1)
-        settings_layout.addWidget(self.progressive_enabled_check, 12, 1)
-        settings_layout.addWidget(self.progressive_resume_check, 13, 1)
+        settings_layout.addWidget(QLabel("Engine"), 2, 0)
+        settings_layout.addWidget(self.provider_combo, 2, 1)
+        settings_layout.addWidget(QLabel("Model"), 3, 0)
+        settings_layout.addWidget(self.model_combo, 3, 1)
+        settings_layout.addWidget(QLabel("Language"), 4, 0)
+        settings_layout.addWidget(self.language_combo, 4, 1)
+        settings_layout.addWidget(QLabel("Preset"), 5, 0)
+        settings_layout.addWidget(self.preset_combo, 5, 1)
+        settings_layout.addWidget(QLabel("Formats"), 6, 0)
+        settings_layout.addLayout(format_row, 6, 1)
+        settings_layout.addWidget(QLabel("Network"), 7, 0)
+        settings_layout.addWidget(self.network_combo, 7, 1)
+        settings_layout.addWidget(QLabel("Proxy"), 8, 0)
+        settings_layout.addWidget(self.proxy_input, 8, 1)
+        settings_layout.addWidget(QLabel("Cookies"), 9, 0)
+        settings_layout.addLayout(cookies_row, 9, 1)
+        settings_layout.addWidget(self.timestamps_check, 10, 1)
+        settings_layout.addWidget(self.word_timestamps_check, 11, 1)
+        settings_layout.addWidget(self.overwrite_check, 12, 1)
+        settings_layout.addWidget(self.progressive_enabled_check, 13, 1)
+        settings_layout.addWidget(self.progressive_resume_check, 14, 1)
 
         action_layout = QGridLayout()
         action_layout.setHorizontalSpacing(8)
