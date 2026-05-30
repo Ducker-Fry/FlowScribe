@@ -6,9 +6,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QThread, Qt, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
+    QFrame,
+    QGraphicsDropShadowEffect,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -17,6 +22,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
+    QSplitter,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -28,7 +34,20 @@ from flowscribe.app.models import (
     SourceSpec,
     TranscriptionJob,
 )
+from flowscribe.gui.icons import (
+    get_add_icon,
+    get_check_icon,
+    get_close_icon,
+    get_document_icon,
+    get_microphone_icon,
+    get_open_icon,
+    get_play_icon,
+    get_settings_icon,
+    get_stop_icon,
+)
 from flowscribe.gui.state import is_acceptable_local_source
+from flowscribe.gui.theme_manager import get_current_theme
+from flowscribe.gui.widgets import CollapsibleSection
 from flowscribe.gui.widgets.source_list_widget import SourceListWidget
 from flowscribe.gui.workers.transcription_worker import TranscriptionWorker
 
@@ -67,132 +86,223 @@ class SingleTaskView(QWidget):
 
     def _setup_ui(self) -> None:
         """Initialize UI components."""
+        self.setProperty("view", "single-task")
         layout = QVBoxLayout(self)
-        layout.setSpacing(12)
-        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+        layout.setContentsMargins(10, 10, 10, 10)
+
+        # Get current theme for icons
+        app = QApplication.instance()
+        theme = get_current_theme(app) if app else "light"
+
+        content_splitter = QSplitter(Qt.Orientation.Vertical, self)
+        content_splitter.setChildrenCollapsible(False)
+        content_splitter.setHandleWidth(6)
+        layout.addWidget(content_splitter, 1)
 
         # Source selection area
-        source_group = QGroupBox("Source")
+        source_group = QGroupBox("Sources")
+        source_group.setProperty("softCard", True)
         source_layout = QVBoxLayout(source_group)
-        source_layout.setSpacing(10)
+        source_layout.setSpacing(8)
+        source_layout.setContentsMargins(10, 12, 10, 10)
+        self._apply_soft_shadow(source_group)
 
-        # Local files section
-        local_label = QLabel("Local Files:")
-        source_layout.addWidget(local_label)
+        source_splitter = QSplitter(Qt.Orientation.Horizontal, source_group)
+        source_splitter.setChildrenCollapsible(False)
+        source_splitter.setHandleWidth(6)
+
+        local_panel = QGroupBox("Local Files")
+        local_panel.setProperty("softCard", True)
+        local_layout = QVBoxLayout(local_panel)
+        local_layout.setSpacing(6)
+        local_layout.setContentsMargins(10, 12, 10, 10)
+        self._apply_soft_shadow(local_panel)
+
+        local_header = QHBoxLayout()
+        local_header.setSpacing(8)
+        local_title = QLabel("Drop media here or add files manually.")
+        local_title.setProperty("helperText", True)
+        self.file_summary_label = QLabel("0 files selected")
+        self.file_summary_label.setProperty("helperText", True)
+        self.file_summary_label.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        local_header.addWidget(local_title, 1)
+        local_header.addWidget(self.file_summary_label)
+        local_layout.addLayout(local_header)
 
         self.file_list = SourceListWidget()
+        self.file_list.setProperty("singleTaskSourceList", True)
         self.file_list.setMinimumHeight(180)
+        self.file_list.setMinimumWidth(320)
+        self.file_list.setAlternatingRowColors(True)
+        self.file_list.setSpacing(2)
         self.file_list.files_dropped.connect(self._add_dropped_files)
         self.file_list.itemChanged.connect(self._on_file_list_changed)
-        source_layout.addWidget(self.file_list)
+        local_layout.addWidget(self.file_list, 1)
 
         file_actions = QHBoxLayout()
-        add_file_button = QPushButton("Add Files")
+        file_actions.setSpacing(6)
+        add_file_button = QPushButton(get_add_icon(theme), "Add Files")
         add_file_button.clicked.connect(self._choose_files)
-        select_all_button = QPushButton("Select All")
+        add_file_button.setProperty("primary", True)
+        select_all_button = QPushButton(get_check_icon(theme), "Select All")
         select_all_button.clicked.connect(self._select_all_files)
-        clear_files_button = QPushButton("Clear")
+        select_all_button.setProperty("secondary", True)
+        clear_files_button = QPushButton(get_close_icon(theme), "Clear")
         clear_files_button.clicked.connect(self._clear_files)
+        clear_files_button.setProperty("secondary", True)
         file_actions.addWidget(add_file_button)
         file_actions.addWidget(select_all_button)
         file_actions.addWidget(clear_files_button)
         file_actions.addStretch(1)
-        source_layout.addLayout(file_actions)
+        local_layout.addLayout(file_actions)
 
-        # URL section
-        url_label = QLabel("URL:")
-        source_layout.addWidget(url_label)
+        url_group = QGroupBox("Online Source")
+        url_group.setProperty("softCard", True)
+        url_layout = QVBoxLayout(url_group)
+        url_layout.setSpacing(6)
+        url_layout.setContentsMargins(10, 12, 10, 10)
+        self._apply_soft_shadow(url_group)
+
+        url_header = QLabel("Paste a video or audio URL for download and transcription.")
+        url_header.setProperty("helperText", True)
+        url_layout.addWidget(url_header)
 
         self.url_input = QLineEdit()
+        self.url_input.setProperty("singleTaskInput", True)
         self.url_input.setPlaceholderText("https://example.com/video")
-        source_layout.addWidget(self.url_input)
+        url_layout.addWidget(self.url_input)
+        self.url_input.returnPressed.connect(self._start_transcription)
 
         # URL download options
-        url_options_layout = QHBoxLayout()
+        url_options_layout = QGridLayout()
+        url_options_layout.setHorizontalSpacing(8)
+        url_options_layout.setVerticalSpacing(6)
 
         self.url_media_preserve_check = QCheckBox("Preserve media")
-        url_options_layout.addWidget(self.url_media_preserve_check)
+        url_options_layout.addWidget(self.url_media_preserve_check, 0, 0, 1, 2)
 
-        url_options_layout.addWidget(QLabel("Type:"))
+        url_options_layout.addWidget(QLabel("Type"), 1, 0)
         self.url_media_type_combo = QComboBox()
+        self.url_media_type_combo.setProperty("singleTaskInput", True)
         self.url_media_type_combo.addItems(["Audio", "Video"])
         self.url_media_type_combo.setCurrentText("Audio")
-        url_options_layout.addWidget(self.url_media_type_combo)
+        url_options_layout.addWidget(self.url_media_type_combo, 1, 1)
 
-        url_options_layout.addWidget(QLabel("Quality:"))
+        url_options_layout.addWidget(QLabel("Quality"), 1, 2)
         self.url_quality_combo = QComboBox()
+        self.url_quality_combo.setProperty("singleTaskInput", True)
         self.url_quality_combo.addItems(["Best", "High", "Medium", "Low"])
         self.url_quality_combo.setCurrentText("Best")
-        url_options_layout.addWidget(self.url_quality_combo)
+        url_options_layout.addWidget(self.url_quality_combo, 1, 3)
 
-        url_options_layout.addWidget(QLabel("Format:"))
+        url_options_layout.addWidget(QLabel("Format"), 1, 4)
         self.url_format_combo = QComboBox()
+        self.url_format_combo.setProperty("singleTaskInput", True)
         self.url_format_combo.addItems(["Auto", "mp4", "webm", "mp3", "m4a", "opus"])
         self.url_format_combo.setCurrentText("Auto")
-        url_options_layout.addWidget(self.url_format_combo)
-
-        url_options_layout.addStretch(1)
-        source_layout.addLayout(url_options_layout)
-
-        # System audio capture section
-        capture_label = QLabel("System Audio Capture:")
-        source_layout.addWidget(capture_label)
-
+        url_options_layout.addWidget(self.url_format_combo, 1, 5)
+        url_options_layout.setColumnStretch(6, 1)
+        url_layout.addLayout(url_options_layout)
+        capture_section = CollapsibleSection("System Audio Capture", expanded=False)
+        capture_layout = capture_section.content_layout
+        capture_layout.setSpacing(6)
+        capture_layout.setContentsMargins(10, 12, 10, 10)
+        capture_hint = QLabel("Capture loopback audio directly when no local file or URL is available.")
+        capture_hint.setProperty("helperText", True)
+        capture_hint.setWordWrap(True)
+        capture_layout.addWidget(capture_hint)
         capture_controls = QHBoxLayout()
-        self.capture_start_button = QPushButton("Start Capture")
+        capture_controls.setSpacing(6)
+        self.capture_start_button = QPushButton(get_microphone_icon(theme), "Start Capture")
         self.capture_start_button.clicked.connect(self._start_capture)
-        self.capture_stop_button = QPushButton("Stop Capture")
+        self.capture_start_button.setProperty("secondary", True)
+        self.capture_stop_button = QPushButton(get_stop_icon(theme), "Stop Capture")
         self.capture_stop_button.clicked.connect(self._stop_capture)
         self.capture_stop_button.setEnabled(False)
+        self.capture_stop_button.setProperty("secondary", True)
         self.capture_status_label = QLabel("Not capturing")
+        self.capture_status_label.setProperty("helperText", True)
         capture_controls.addWidget(self.capture_start_button)
         capture_controls.addWidget(self.capture_stop_button)
         capture_controls.addWidget(self.capture_status_label)
         capture_controls.addStretch(1)
-        source_layout.addLayout(capture_controls)
+        capture_layout.addLayout(capture_controls)
 
-        layout.addWidget(source_group)
+        source_splitter.addWidget(local_panel)
+        right_container = QWidget(source_group)
+        right_layout = QVBoxLayout(right_container)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(8)
+        right_layout.addWidget(url_group)
+        right_layout.addWidget(capture_section)
+        right_layout.addStretch(1)
+        source_splitter.addWidget(right_container)
+        source_splitter.setStretchFactor(0, 4)
+        source_splitter.setStretchFactor(1, 3)
+        source_splitter.setSizes([600, 360])
+
+        source_layout.addWidget(source_splitter)
+        content_splitter.addWidget(source_group)
+
+        lower_panel = QWidget(self)
+        lower_layout = QVBoxLayout(lower_panel)
+        lower_layout.setSpacing(8)
+        lower_layout.setContentsMargins(0, 0, 0, 0)
 
         # Transcription controls
         controls_layout = QHBoxLayout()
-        self.start_button = QPushButton("Start Transcription")
+        controls_layout.setSpacing(6)
+        self.start_button = QPushButton(get_play_icon(theme), "Start Transcription")
         self.start_button.clicked.connect(self._start_transcription)
-        self.cancel_button = QPushButton("Cancel")
+        self.start_button.setProperty("primary", True)
+        self.cancel_button = QPushButton(get_stop_icon(theme), "Cancel")
         self.cancel_button.clicked.connect(self._cancel_transcription)
         self.cancel_button.setEnabled(False)
-        self.settings_button = QPushButton("Settings")
+        self.cancel_button.setProperty("secondary", True)
+        self.settings_button = QPushButton(get_settings_icon(theme), "Settings")
         self.settings_button.clicked.connect(self._request_settings)
-        self.open_transcript_button = QPushButton("Open Transcript")
+        self.settings_button.setProperty("secondary", True)
+        self.open_transcript_button = QPushButton(get_document_icon(theme), "Open Transcript")
         self.open_transcript_button.clicked.connect(self._open_transcript)
+        self.open_transcript_button.setProperty("secondary", True)
 
         controls_layout.addWidget(self.start_button)
         controls_layout.addWidget(self.cancel_button)
         controls_layout.addWidget(self.settings_button)
         controls_layout.addWidget(self.open_transcript_button)
 
-        self.open_view_button = QPushButton("Open View")
+        self.open_view_button = QPushButton(get_open_icon(theme), "Open View")
         self.open_view_button.clicked.connect(self._open_view)
         # Always enabled - View Dialog shows current state
+        self.open_view_button.setProperty("secondary", True)
         controls_layout.addWidget(self.open_view_button)
 
         controls_layout.addStretch(1)
-        layout.addLayout(controls_layout)
+        lower_layout.addLayout(controls_layout)
 
         # Progress bar
         self.progress_bar = QProgressBar()
+        self.progress_bar.setProperty("singleTaskProgress", True)
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
-        layout.addWidget(self.progress_bar)
+        self.progress_bar.setFormat("%p%")
+        self.progress_bar.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        lower_layout.addWidget(self.progress_bar)
 
-        # Tabs for Run Details and Workspace
+        # Run details section
         self.tabs = QTabWidget()
 
         # Run Details tab
         run_details_widget = QWidget()
         run_details_layout = QVBoxLayout(run_details_widget)
         run_details_layout.setContentsMargins(8, 8, 8, 8)
+        run_details_layout.setSpacing(6)
 
         self.preview_output = QPlainTextEdit()
+        self.preview_output.setProperty("singleTaskLog", True)
         self.preview_output.setReadOnly(True)
         self.preview_output.setPlaceholderText("Transcription progress will appear here...")
         run_details_layout.addWidget(self.preview_output)
@@ -202,11 +312,29 @@ class SingleTaskView(QWidget):
         # Note: Workspace tab removed - full workspace is now in the View dialog
         # Access via "Open View" button after transcription completes
 
-        layout.addWidget(self.tabs, 1)
+        lower_layout.addWidget(self.tabs, 1)
 
         # Status label
         self.status_label = QLabel("Ready")
-        layout.addWidget(self.status_label)
+        self.status_label.setProperty("statusText", True)
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lower_layout.addWidget(self.status_label)
+
+        content_splitter.addWidget(lower_panel)
+        content_splitter.setStretchFactor(0, 0)
+        content_splitter.setStretchFactor(1, 1)
+        content_splitter.setSizes([260, 560])
+
+        self._refresh_file_summary()
+
+    @staticmethod
+    def _apply_soft_shadow(widget: QWidget) -> None:
+        """Apply a subtle shadow to card-like panels in light mode."""
+        shadow = QGraphicsDropShadowEffect(widget)
+        shadow.setBlurRadius(14)
+        shadow.setOffset(0, 1)
+        shadow.setColor(QColor(0, 0, 0, 13))
+        widget.setGraphicsEffect(shadow)
 
     def update_settings(self, settings: dict) -> None:
         """Update view with new settings."""
@@ -258,11 +386,24 @@ class SingleTaskView(QWidget):
         """Clear all files from the list."""
         self._local_paths.clear()
         self.file_list.clear()
+        self._refresh_file_summary()
         self.status_label.setText("Files cleared")
 
     def _on_file_list_changed(self) -> None:
         """Handle file list changes."""
-        pass
+        self._refresh_file_summary()
+
+    def _refresh_file_summary(self) -> None:
+        """Refresh compact file selection summary."""
+        total = self.file_list.count()
+        checked = sum(
+            1
+            for i in range(total)
+            if (item := self.file_list.item(i))
+            and item.checkState() == Qt.CheckState.Checked
+        )
+        noun = "file" if total == 1 else "files"
+        self.file_summary_label.setText(f"{checked}/{total} {noun} selected")
 
     def _start_capture(self) -> None:
         """Start system audio capture."""
@@ -342,6 +483,7 @@ class SingleTaskView(QWidget):
         """Build transcription job from settings and sources."""
         output_dir = Path(self._settings.get("output_dir", "outputs"))
         output_name_base = self._settings.get("output_name_base", "")
+        provider_name = self._settings.get("provider_name", "local-whisper")
         model_name = self._settings.get("model_name", "small")
         language = self._settings.get("language")
         preset = self._settings.get("preset")
@@ -356,6 +498,7 @@ class SingleTaskView(QWidget):
         progressive_resume = self._settings.get("progressive_resume", True)
         progressive_chunk_seconds = self._settings.get("progressive_chunk_seconds", 30.0)
         progressive_max_workers = self._settings.get("progressive_max_workers", 1)
+        native_threads = self._settings.get("native_threads")
 
         # Build sources
         sources: list[SourceSpec] = []
@@ -395,6 +538,7 @@ class SingleTaskView(QWidget):
             sources=tuple(sources),
             output_dir=output_dir,
             output_name_base=output_name_base,
+            provider_name=provider_name,
             model_name=model_name,
             language=language,
             preset=preset,
@@ -409,6 +553,7 @@ class SingleTaskView(QWidget):
             progressive_resume=progressive_resume,
             progressive_chunk_seconds=progressive_chunk_seconds,
             progressive_max_workers=progressive_max_workers,
+            native_threads=native_threads,
         )
 
         return job

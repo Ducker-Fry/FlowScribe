@@ -14,6 +14,7 @@ def test_gui_form_builds_local_job(tmp_path: Path) -> None:
         local_paths=(media,),
         output_dir=output,
         output_name_base="custom-lesson",
+        provider_name="native-engine",
         model_name="medium",
         language="zh",
         preset="zh",
@@ -21,6 +22,7 @@ def test_gui_form_builds_local_job(tmp_path: Path) -> None:
         timestamps=True,
         word_timestamps=True,
         overwrite=True,
+        native_threads=6,
     )
 
     job = form.to_job()
@@ -29,6 +31,7 @@ def test_gui_form_builds_local_job(tmp_path: Path) -> None:
     assert job.sources[0].value == str(media)
     assert job.output_dir == output
     assert job.output_name_base == "custom-lesson"
+    assert job.provider_name == "native-engine"
     assert job.model_name == "medium"
     assert job.language == "zh"
     assert job.preset == "zh"
@@ -36,6 +39,7 @@ def test_gui_form_builds_local_job(tmp_path: Path) -> None:
     assert job.timestamps is True
     assert job.word_timestamps is True
     assert job.overwrite is True
+    assert job.native_threads == 6
 
 
 def test_gui_form_builds_url_job_with_network_options(tmp_path: Path) -> None:
@@ -118,6 +122,8 @@ def test_gui_form_preview_is_plain_data(tmp_path: Path) -> None:
     assert preview["sources"][1]["auto_bind_media"] is True
     assert preview["cookies_path"].endswith("cookies.txt")
     assert preview["output_name_base"] is None
+    assert preview["provider_name"] == "local-whisper"
+    assert preview["native_threads"] is None
 
 
 def test_gui_form_rejects_file_path_for_url_media_output_dir(tmp_path: Path) -> None:

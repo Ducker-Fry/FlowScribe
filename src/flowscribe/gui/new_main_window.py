@@ -6,18 +6,26 @@ from pathlib import Path
 
 from PySide6.QtCore import QFileSystemWatcher, QThread, QUrl
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QMainWindow, QStackedWidget, QToolBar
+from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget, QToolBar
 
 from flowscribe.app.models import SourceSpec
 from flowscribe.gui.dialogs.queue_item_settings_dialog import QueueItemSettingsDialog
 from flowscribe.gui.dialogs.settings_dialog import SettingsDialog
+from flowscribe.gui.icons import (
+    get_app_icon,
+    get_application_icon,
+    get_library_icon,
+    get_queue_icon,
+    get_settings_icon,
+)
 from flowscribe.gui.state_manager import batch_queue_store, transcript_library_store
+from flowscribe.gui.theme_manager import get_current_theme
 from flowscribe.gui.views.library_view import LibraryView
 from flowscribe.gui.views.queue_view import QueueView
 from flowscribe.gui.views.single_task_view import SingleTaskView
 from flowscribe.gui.workers.bookmarklet_server_worker import BookmarkletServerWorker
 from flowscribe.gui.workers.queue_runner import QueueRunner
-from flowscribe.queue.importers import parse_urls_from_text, import_urls_from_file
+from flowscribe.queue.importers import import_urls_from_file, parse_urls_from_text
 from flowscribe.queue.models import (
     QueueItem,
     QueueItemSettings,
@@ -30,6 +38,7 @@ def _default_settings() -> dict:
     return {
         "output_dir": "outputs",
         "output_name_base": "",
+        "provider_name": "local-whisper",
         "model_name": "small",
         "language": None,
         "preset": None,
@@ -44,6 +53,7 @@ def _default_settings() -> dict:
         "progressive_resume": True,
         "progressive_chunk_seconds": 30.0,
         "progressive_max_workers": 1,
+        "native_threads": None,
     }
 
 
@@ -72,17 +82,33 @@ class NewMainWindow(QMainWindow):
 
     def _setup_ui(self) -> None:
         """Initialize UI components."""
+        # Get current theme for icons
+        app = QApplication.instance()
+        theme = get_current_theme(app) if app else "light"
+
+        # Set application icon
+        app_icon = get_app_icon()
+        if app:
+            app.setWindowIcon(app_icon)
+        self.setWindowIcon(app_icon)
+
         # Toolbar
         toolbar = QToolBar("Main")
+        toolbar.setMovable(False)
         self.addToolBar(toolbar)
 
-        single_task_action = toolbar.addAction("Single Task")
+        settings_action = toolbar.addAction(get_settings_icon(theme), "Settings")
+        settings_action.triggered.connect(self._show_settings_dialog)
+
+        toolbar.addSeparator()
+
+        single_task_action = toolbar.addAction(get_application_icon(theme), "Single Task")
         single_task_action.triggered.connect(lambda: self._view_stack.setCurrentIndex(0))
 
-        library_action = toolbar.addAction("Library")
+        library_action = toolbar.addAction(get_library_icon(theme), "Library")
         library_action.triggered.connect(lambda: self._view_stack.setCurrentIndex(1))
 
-        queue_action = toolbar.addAction("Queue")
+        queue_action = toolbar.addAction(get_queue_icon(theme), "Queue")
         queue_action.triggered.connect(lambda: self._view_stack.setCurrentIndex(2))
 
         # Views
@@ -139,6 +165,7 @@ class NewMainWindow(QMainWindow):
             self._settings = dialog.get_settings()
             self._single_task_view.update_settings(self._settings)
             self._queue_view.update_settings(self._settings)
+            self._refresh_icons()
             self.statusBar().showMessage("Settings updated")
 
     def _on_settings_changed(self, settings: dict) -> None:
@@ -146,7 +173,30 @@ class NewMainWindow(QMainWindow):
         self._settings = settings
         self._single_task_view.update_settings(settings)
         self._queue_view.update_settings(settings)
+        self._refresh_icons()
         self.statusBar().showMessage("Settings applied")
+
+    def _refresh_icons(self) -> None:
+        """Refresh all icons after theme change."""
+        app = QApplication.instance()
+        theme = get_current_theme(app) if app else "light"
+
+        # Update window icon (app icon doesn't change with theme)
+        app_icon = get_app_icon()
+        if app:
+            app.setWindowIcon(app_icon)
+        self.setWindowIcon(app_icon)
+
+        # Update toolbar icons
+        toolbar = self.findChild(QToolBar, "Main")
+        if toolbar:
+            actions = toolbar.actions()
+            if len(actions) >= 4:
+                actions[0].setIcon(get_settings_icon(theme))  # Settings
+                # Skip separator at index 1
+                actions[2].setIcon(get_application_icon(theme))  # Single Task
+                actions[3].setIcon(get_library_icon(theme))  # Library
+                actions[4].setIcon(get_queue_icon(theme))  # Queue
 
     # SingleTaskView handlers
     def _on_transcription_started(self) -> None:
@@ -252,34 +302,41 @@ class NewMainWindow(QMainWindow):
     # QueueView handlers
     def _on_enqueue_urls(self, text: str) -> None:
         """Enqueue URLs from text."""
-        from flowscribe.app.models import DownloadOptions
+        try:
+            from flowscribe.app.models import DownloadOptions
 
-        urls = parse_urls_from_text(text)
-        settings = self._settings_to_queue_settings()
-        download_opts_dict = self._queue_view.get_download_options()
-        download_opts = DownloadOptions(
-            quality=download_opts_dict["quality"],
-            prefer_format=download_opts_dict["prefer_format"],
-        )
-        items = []
-        for url in urls:
-            source = SourceSpec(
-                kind="url",
-                value=url,
-                keep_media=download_opts_dict["preserve_media"],
-                url_media_kind=download_opts_dict["media_kind"],
-                download_options=download_opts,
-                auto_bind_media=True,
+            urls = parse_urls_from_text(text)
+            if not urls:
+                self.statusBar().showMessage("No valid URLs found in input")
+                return
+
+            settings = self._settings_to_queue_settings()
+            download_opts_dict = self._queue_view.get_download_options()
+            download_opts = DownloadOptions(
+                quality=download_opts_dict["quality"],
+                prefer_format=download_opts_dict["prefer_format"],
             )
-            item = QueueItem(
-                item_id=generate_queue_item_id(source),
-                source=source,
-                settings=settings,
-            )
-            items.append(item)
-            self._queue_store.enqueue(item)
-        self._refresh_queue_view()
-        self.statusBar().showMessage(f"Added {len(items)} URL(s) to queue")
+            items = []
+            for url in urls:
+                source = SourceSpec(
+                    kind="url",
+                    value=url,
+                    keep_media=download_opts_dict["preserve_media"],
+                    url_media_kind=download_opts_dict["media_kind"],
+                    download_options=download_opts,
+                    auto_bind_media=True,
+                )
+                item = QueueItem(
+                    item_id=generate_queue_item_id(source),
+                    source=source,
+                    settings=settings,
+                )
+                items.append(item)
+                self._queue_store.enqueue(item)
+            self._refresh_queue_view()
+            self.statusBar().showMessage(f"Added {len(items)} URL(s) to queue")
+        except Exception as e:
+            self.statusBar().showMessage(f"Error adding URLs: {e}")
 
     def _on_enqueue_files(self, paths: list[Path]) -> None:
         """Enqueue local files."""
@@ -388,25 +445,45 @@ class NewMainWindow(QMainWindow):
         self._queue_store.reorder_items(item_ids)
         self._refresh_queue_view()
 
-    def _on_edit_item_settings(self, item_id: str) -> None:
-        """Edit settings for queue item."""
-        item = self._queue_store.get_item(item_id)
-        if item is None:
+    def _on_edit_item_settings(self, item_ids: list[str]) -> None:
+        """Edit settings for queue items (supports batch editing)."""
+        if not item_ids:
+            self.statusBar().showMessage("No items selected")
+            return
+
+        # Get first item as template
+        first_item = self._queue_store.get_item(item_ids[0])
+        if first_item is None:
             self.statusBar().showMessage("Item not found")
             return
 
-        dialog = QueueItemSettingsDialog(self, item.settings, item.source, item.display_label)
+        # Determine label for dialog
+        is_batch = len(item_ids) > 1
+        if is_batch:
+            item_label = f"{len(item_ids)} items"
+        else:
+            item_label = first_item.display_label
+
+        # Show dialog with first item's settings as template
+        dialog = QueueItemSettingsDialog(
+            self, first_item.settings, first_item.source, item_label, is_batch=is_batch
+        )
         if dialog.exec():
             result = dialog.get_settings()
             if result is not None:
                 updated_settings, updated_source = result
-                self._queue_store.update_item(
-                    item.item_id,
-                    settings=updated_settings,
-                    source=updated_source,
-                )
+                # Apply to all selected items
+                for item_id in item_ids:
+                    self._queue_store.update_item(
+                        item_id,
+                        settings=updated_settings,
+                        source=updated_source,
+                    )
                 self._refresh_queue_view()
-                self.statusBar().showMessage("Item settings updated")
+                if is_batch:
+                    self.statusBar().showMessage(f"Updated settings for {len(item_ids)} items")
+                else:
+                    self.statusBar().showMessage("Item settings updated")
 
     def _on_server_start(self, port: int) -> None:
         """Start bookmarklet server."""
@@ -504,6 +581,7 @@ class NewMainWindow(QMainWindow):
         return QueueItemSettings(
             output_dir=Path(self._settings["output_dir"]),
             output_name_base=self._settings.get("output_name_base", ""),
+            provider_name=self._settings.get("provider_name", "local-whisper"),
             model_name=self._settings["model_name"],
             language=self._settings["language"],
             preset=self._settings["preset"],
@@ -518,6 +596,7 @@ class NewMainWindow(QMainWindow):
             progressive_resume=self._settings["progressive_resume"],
             progressive_chunk_seconds=self._settings["progressive_chunk_seconds"],
             progressive_max_workers=self._settings["progressive_max_workers"],
+            native_threads=self._settings.get("native_threads"),
         )
 
     def _setup_queue_file_watcher(self) -> None:

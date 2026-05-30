@@ -153,11 +153,39 @@ def test_corrupt_file_recovery(store, tmp_path):
 
 
 def test_persistence_roundtrip(store):
-    item = _make_item()
+    source = SourceSpec(kind="url", value="https://example.com/a.mp4")
+    item = QueueItem(
+        item_id=generate_queue_item_id(source),
+        source=source,
+        settings=QueueItemSettings(
+            provider_name="native-engine",
+            model_name="models/ggml-base.en.bin",
+            native_threads=6,
+        ),
+    )
     store.enqueue(item)
     new_store = BatchQueueStore(store._path)
     items = new_store.load_items()
     assert len(items) == 1
     assert items[0].item_id == item.item_id
     assert items[0].source.kind == "url"
-    assert items[0].settings.model_name == "small"
+    assert items[0].settings.provider_name == "native-engine"
+    assert items[0].settings.model_name == "models/ggml-base.en.bin"
+    assert items[0].settings.native_threads == 6
+
+
+def test_load_legacy_queue_settings_defaults_provider(store):
+    source = SourceSpec(kind="url", value="https://example.com/a.mp4")
+    item = _make_item()
+    store.enqueue(item)
+    payload = store._path.read_text(encoding="utf-8")
+    payload = payload.replace('          "provider_name": "local-whisper",\n', "")
+    payload = payload.replace('          "native_threads": null\n', '          "legacy_marker": true\n')
+    store._path.write_text(payload, encoding="utf-8")
+
+    items = store.load_items()
+
+    assert len(items) == 1
+    assert items[0].source.value == source.value
+    assert items[0].settings.provider_name == "local-whisper"
+    assert items[0].settings.native_threads is None

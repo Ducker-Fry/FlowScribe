@@ -16,6 +16,8 @@ dist/
 *.egg-info/
 /tools/wasapi-capture-helper/src/**/bin/
 /tools/wasapi-capture-helper/src/**/obj/
+native/.vs/
+.vscode/
 
 # Runtime outputs
 /outputs/
@@ -27,6 +29,9 @@ dist/
 /test_output/
 *.log
 
+# Local practice workspace
+/practice/
+
 # Sensitive browser/session cookies
 cookies.txt
 *.cookies.txt
@@ -36,3 +41,6 @@ cookies.txt
 # Local media samples
 /samples/
 /media/
+
+# download model
+/models/

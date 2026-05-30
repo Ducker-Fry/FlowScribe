@@ -7,6 +7,7 @@ from typing import Literal, Protocol
 
 from flowscribe.core.ports import Transcriber
 from flowscribe.transcription.local_whisper import LocalWhisperTranscriber
+from flowscribe.transcription.native_engine import NativeEngineTranscriber
 
 ProviderCostTier = Literal["free-local", "usage-based", "fixed-paid", "unknown"]
 ProviderLatencyTier = Literal["fast-local", "medium-local", "network-bound", "unknown"]
@@ -43,6 +44,11 @@ class ProviderTranscriptionSettings:
     initial_prompt: str | None
     preset: str | None
     word_timestamps: bool
+    progressive_enabled: bool = True
+    progressive_chunk_seconds: float = 30.0
+    progressive_chunk_overlap_seconds: float = 3.0
+    progressive_max_workers: int = 1
+    native_threads: int | None = None
 
 
 class TranscriptionProvider(Protocol):
@@ -103,6 +109,50 @@ class LocalWhisperProvider:
         )
 
 
+class NativeEngineProvider:
+    """Native whisper.cpp engine provider."""
+
+    _CAPABILITIES = ProviderCapabilities(
+        provider_name="native-engine",
+        display_name="Native whisper.cpp engine",
+        default_model_name="models/ggml-base.en.bin",
+        supported_model_names=(),
+        supports_language_hint=True,
+        supports_word_timestamps=True,
+        supports_initial_prompt=True,
+        supports_vad_filter=True,
+        supports_presets=True,
+        requires_credentials=False,
+        cost_tier="free-local",
+        latency_tier="fast-local",
+        notes=(
+            "Runs a local C++ whisper.cpp engine over the FlowScribe named-pipe protocol.",
+            "The model setting must be a local ggml .bin file path.",
+        ),
+    )
+
+    @property
+    def capabilities(self) -> ProviderCapabilities:
+        return self._CAPABILITIES
+
+    def build_transcriber(self, settings: ProviderTranscriptionSettings) -> Transcriber:
+        return NativeEngineTranscriber(
+            model_name=settings.model_name,
+            language=settings.language,
+            task=settings.task,
+            beam_size=settings.beam_size,
+            vad_filter=settings.vad_filter,
+            initial_prompt=settings.initial_prompt,
+            preset=settings.preset,
+            word_timestamps=settings.word_timestamps,
+            progressive_enabled=settings.progressive_enabled,
+            progressive_chunk_seconds=settings.progressive_chunk_seconds,
+            progressive_chunk_overlap_seconds=settings.progressive_chunk_overlap_seconds,
+            progressive_max_workers=settings.progressive_max_workers,
+            threads=settings.native_threads,
+        )
+
+
 def default_transcription_provider() -> TranscriptionProvider:
     """Return the current default provider for FlowScribe."""
 
@@ -115,4 +165,17 @@ def resolve_transcription_provider(provider_name: str | None = None) -> Transcri
     normalized = (provider_name or "").strip().lower()
     if normalized in {"", "default", "local", "local-whisper", "faster-whisper"}:
         return default_transcription_provider()
+    if normalized in {"native", "native-engine", "whisper.cpp", "whisper-cpp"}:
+        return NativeEngineProvider()
     raise ValueError(f"Unsupported transcription provider: {provider_name}")
+
+
+def is_native_engine_provider_name(provider_name: str | None) -> bool:
+    """Return whether a provider name resolves to the native engine provider."""
+
+    return (provider_name or "").strip().lower() in {
+        "native",
+        "native-engine",
+        "whisper.cpp",
+        "whisper-cpp",
+    }

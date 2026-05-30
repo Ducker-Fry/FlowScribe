@@ -137,19 +137,25 @@ class LocalWhisperTranscriber:
         if self._model is None:
             from faster_whisper import WhisperModel
 
-            # CPU optimization: use int8 quantization for better performance
+            # Determine device and compute type
             device = "auto"
             compute_type = "auto"
 
-            # Try to detect if CUDA is available
-            try:
-                import ctranslate2
-                if ctranslate2.get_cuda_device_count() == 0:
-                    # No GPU, optimize for CPU
-                    device = "cpu"
-                    compute_type = "int8"
-            except Exception:
-                pass
+            # Apply speed preset optimizations
+            if self._preset == "speed":
+                # Speed preset: force int8 for maximum speed
+                device = "cpu"
+                compute_type = "int8"
+            else:
+                # Try to detect if CUDA is available
+                try:
+                    import ctranslate2
+                    if ctranslate2.get_cuda_device_count() == 0:
+                        # No GPU, optimize for CPU
+                        device = "cpu"
+                        compute_type = "int8"
+                except Exception:
+                    pass
 
             self._model = WhisperModel(
                 self._model_name,

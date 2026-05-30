@@ -482,6 +482,47 @@ def test_transcription_service_emits_progressive_chunk_updates(monkeypatch, tmp_
     assert transcribe_event.segments[0].text == "hello"
 
 
+def test_transcription_service_does_not_use_python_progressive_for_native_provider(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    media = tmp_path / "sample.mp4"
+    media.write_bytes(b"media")
+    artifact = OutputArtifacts(paths=(tmp_path / "out" / "sample.txt",))
+    captured = {"classic": False}
+
+    class FakeLocalFileSource:
+        def __init__(self, inputs, recursive: bool) -> None:
+            self.inputs = inputs
+            self.recursive = recursive
+
+        def discover(self):
+            return [MediaItem(path=media)]
+
+    class FakePipeline:
+        def process(self, item: MediaItem, *, should_cancel=None) -> OutputArtifacts:
+            captured["classic"] = True
+            return artifact
+
+        def process_progressive(self, *args, **kwargs):
+            raise AssertionError("native provider should not use Python progressive executor")
+
+    monkeypatch.setattr("flowscribe.app.service.LocalFileSource", FakeLocalFileSource)
+    monkeypatch.setattr("flowscribe.app.service._build_pipeline", lambda job, settings: FakePipeline())
+
+    job = TranscriptionJob(
+        sources=(SourceSpec(kind="local", value=str(media)),),
+        output_dir=tmp_path / "out",
+        provider_name="native-engine",
+        progressive_enabled=True,
+    )
+
+    result = TranscriptionService().run(job)
+
+    assert result.ok is True
+    assert captured["classic"] is True
+
+
 def test_transcription_service_uses_more_conservative_default_overlap_for_chinese(
     monkeypatch,
     tmp_path: Path,

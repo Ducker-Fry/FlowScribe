@@ -1,10 +1,13 @@
 from pathlib import Path
+import io
+from contextlib import redirect_stdout
 
 from flowscribe.cli.args import parse_args
 from flowscribe.cli.main import (
     _cli_progress_line,
     _job_from_transcribe_options,
     _job_from_url_options,
+    main,
 )
 from flowscribe.app.models import ProgressEvent
 from flowscribe.media.inspector import LocalMediaInspection
@@ -35,6 +38,50 @@ def test_parse_transcribe_args_supports_progressive_flags(tmp_path: Path) -> Non
     assert options.progressive_chunk_overlap_seconds == 5.0
     assert options.progressive_resume is True
     assert options.progressive_max_workers == 2
+
+
+def test_parse_transcribe_args_supports_native_provider(tmp_path: Path) -> None:
+    media = tmp_path / "sample.mp4"
+    model = tmp_path / "ggml-base.en.bin"
+    media.write_bytes(b"media")
+    model.write_bytes(b"model")
+
+    options = parse_args(
+        [
+            "transcribe",
+            str(media),
+            "--provider",
+            "native-engine",
+            "--model",
+            str(model),
+        ]
+    )
+    job = _job_from_transcribe_options(options)
+
+    assert options.provider_name == "native-engine"
+    assert job.provider_name == "native-engine"
+    assert job.model_name == str(model)
+
+
+def test_parse_url_args_supports_native_provider(tmp_path: Path) -> None:
+    model = tmp_path / "ggml-base.en.bin"
+    model.write_bytes(b"model")
+
+    options = parse_args(
+        [
+            "url",
+            "https://example.com/watch",
+            "--provider",
+            "native-engine",
+            "--model",
+            str(model),
+            "--no-progressive",
+        ]
+    )
+    job = _job_from_url_options(options)
+
+    assert options.provider_name == "native-engine"
+    assert job.provider_name == "native-engine"
 
 
 def test_job_from_transcribe_options_auto_enables_progressive_for_long_single_file(
@@ -140,3 +187,20 @@ def test_cli_progress_line_includes_chunk_metrics() -> None:
     assert "Speed 2.5x" in line
     assert "ETA 00:00:30.000" in line
     assert "resumed" in line
+
+
+def test_models_command_mentions_native_engine(monkeypatch, tmp_path: Path) -> None:
+    buffer = io.StringIO()
+    model_dir = tmp_path / "models"
+    model_dir.mkdir()
+    sample_model = model_dir / "ggml-base.en.bin"
+    sample_model.write_bytes(b"model")
+    monkeypatch.chdir(tmp_path)
+
+    with redirect_stdout(buffer):
+        exit_code = main(["models"])
+
+    output = buffer.getvalue()
+    assert exit_code == 0
+    assert "native-engine requires a local whisper.cpp ggml .bin model path" in output
+    assert "ggml-base.en.bin" in output

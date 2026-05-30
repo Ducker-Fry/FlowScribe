@@ -8,6 +8,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Set console output encoding to UTF-8 to fix Chinese character display
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+
 $ProjectRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $HelperProject = Join-Path $ProjectRoot "tools\wasapi-capture-helper\src\WasapiCaptureHelper\WasapiCaptureHelper.csproj"
 $DefaultOutputDir = Join-Path $ProjectRoot "build\wasapi-helper"

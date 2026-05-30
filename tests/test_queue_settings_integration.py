@@ -26,6 +26,7 @@ def test_queue_item_settings_persistence(tmp_path):
     # Verify item was added with default settings
     retrieved_item = store.get_item(item.item_id)
     assert retrieved_item is not None
+    assert retrieved_item.settings.provider_name == "local-whisper"
     assert retrieved_item.settings.model_name == "small"
     assert retrieved_item.settings.language is None
     assert retrieved_item.settings.progressive_chunk_seconds == 30.0
@@ -33,7 +34,9 @@ def test_queue_item_settings_persistence(tmp_path):
     # Simulate editing settings (what the dialog would do)
     updated_settings = QueueItemSettings(
         output_dir=Path("custom_output"),
+        provider_name="native-engine",
         model_name="large-v3",
+        native_threads=6,
         language="zh",
         progressive_chunk_seconds=60.0,
         output_formats=("txt", "srt"),
@@ -45,7 +48,9 @@ def test_queue_item_settings_persistence(tmp_path):
     # Retrieve again and verify settings persisted
     final_item = store.get_item(item.item_id)
     assert final_item is not None
+    assert final_item.settings.provider_name == "native-engine"
     assert final_item.settings.model_name == "large-v3"
+    assert final_item.settings.native_threads == 6
     assert final_item.settings.language == "zh"
     assert final_item.settings.progressive_chunk_seconds == 60.0
     assert final_item.settings.output_formats == ("txt", "srt")
@@ -54,7 +59,9 @@ def test_queue_item_settings_persistence(tmp_path):
     # Simulate opening dialog again - should load the updated settings
     # (This is what QueueItemSettingsDialog does in __init__)
     reopened_settings = final_item.settings
+    assert reopened_settings.provider_name == "native-engine"
     assert reopened_settings.model_name == "large-v3"
+    assert reopened_settings.native_threads == 6
     assert reopened_settings.language == "zh"
     assert reopened_settings.progressive_chunk_seconds == 60.0
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import time
+import inspect
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -41,6 +42,7 @@ from flowscribe.output.txt_writer import TxtTranscriptWriter
 from flowscribe.output.vtt_writer import VttTranscriptWriter
 from flowscribe.transcription.providers import (
     ProviderTranscriptionSettings,
+    is_native_engine_provider_name,
     resolve_transcription_provider,
 )
 
@@ -191,7 +193,11 @@ class TranscriptionService:
                 )
             )
             try:
-                if job.progressive_enabled and hasattr(pipeline, "process_progressive"):
+                if (
+                    job.progressive_enabled
+                    and not is_native_engine_provider_name(job.provider_name)
+                    and hasattr(pipeline, "process_progressive")
+                ):
                     run_started_at = time.perf_counter()
                     artifacts, _ = pipeline.process_progressive(
                         item,
@@ -221,7 +227,25 @@ class TranscriptionService:
                         should_cancel=should_cancel,
                     )
                 else:
-                    artifacts = pipeline.process(item, should_cancel=should_cancel)
+                    artifacts = _process_with_optional_progress(
+                        pipeline,
+                        item,
+                        should_cancel=should_cancel,
+                        progress=(
+                            lambda event: self._emit_progress(
+                                progress,
+                                should_cancel,
+                                _with_source_and_totals(
+                                    event,
+                                    source=str(item.path),
+                                    current=item_index,
+                                    total=len(items),
+                                ),
+                            )
+                        )
+                        if is_native_engine_provider_name(job.provider_name)
+                        else None,
+                    )
             except FlowScribeError as exc:
                 errors.append(_error_from_exception(exc, source=str(item.path)))
                 self._emit_progress(
@@ -312,7 +336,11 @@ class TranscriptionService:
             pipeline = _build_pipeline(job, settings)
             self._ensure_not_canceled(should_cancel)
             item = MediaItem(path=download.path)
-            if job.progressive_enabled and hasattr(pipeline, "process_progressive"):
+            if (
+                job.progressive_enabled
+                and not is_native_engine_provider_name(job.provider_name)
+                and hasattr(pipeline, "process_progressive")
+            ):
                 run_started_at = time.perf_counter()
                 artifacts, _ = pipeline.process_progressive(
                     item,
@@ -342,7 +370,25 @@ class TranscriptionService:
                     should_cancel=should_cancel,
                 )
             else:
-                artifacts = pipeline.process(item, should_cancel=should_cancel)
+                artifacts = _process_with_optional_progress(
+                    pipeline,
+                    item,
+                    should_cancel=should_cancel,
+                    progress=(
+                        lambda event: self._emit_progress(
+                            progress,
+                            should_cancel,
+                            _with_source_and_totals(
+                                event,
+                                source=str(download.path),
+                                current=current,
+                                total=total,
+                            ),
+                        )
+                    )
+                    if is_native_engine_provider_name(job.provider_name)
+                    else None,
+                )
             preserved_media_path = self._preserve_url_media(
                 download,
                 source=source,
@@ -577,7 +623,7 @@ def _build_pipeline(job: TranscriptionJob, settings: AppSettings) -> LocalTransc
         overwrite=settings.overwrite,
         base_name=job.output_name_base,
     )
-    provider = resolve_transcription_provider()
+    provider = resolve_transcription_provider(job.provider_name)
     provider_settings = ProviderTranscriptionSettings(
         model_name=settings.model_name,
         language=settings.language,
@@ -587,6 +633,11 @@ def _build_pipeline(job: TranscriptionJob, settings: AppSettings) -> LocalTransc
         initial_prompt=settings.initial_prompt,
         preset=settings.preset,
         word_timestamps=settings.word_timestamps,
+        progressive_enabled=job.progressive_enabled,
+        progressive_chunk_seconds=job.progressive_chunk_seconds,
+        progressive_chunk_overlap_seconds=job.progressive_chunk_overlap_seconds,
+        progressive_max_workers=job.progressive_max_workers,
+        native_threads=job.native_threads,
     )
     return LocalTranscriptionPipeline(
         media_preparer=FfmpegAudioExtractor(sample_rate=settings.sample_rate),
@@ -610,6 +661,53 @@ def _build_pipeline(job: TranscriptionJob, settings: AppSettings) -> LocalTransc
             if settings.language == "zh" or settings.preset == "zh"
             else None
         ),
+    )
+
+
+def _process_with_optional_progress(
+    pipeline,
+    item: MediaItem,
+    *,
+    should_cancel: Callable[[], bool],
+    progress: Callable[[ProgressEvent], None] | None,
+) -> OutputArtifacts:
+    if progress is None or not _callable_accepts_keyword(pipeline.process, "progress"):
+        return pipeline.process(item, should_cancel=should_cancel)
+    return pipeline.process(item, should_cancel=should_cancel, progress=progress)
+
+
+def _callable_accepts_keyword(func, name: str) -> bool:
+    try:
+        signature = inspect.signature(func)
+    except (TypeError, ValueError):
+        return False
+    return name in signature.parameters
+
+
+def _with_source_and_totals(
+    event: ProgressEvent,
+    *,
+    source: str,
+    current: int,
+    total: int,
+) -> ProgressEvent:
+    return ProgressEvent(
+        stage=event.stage,
+        message=event.message,
+        source=event.source or source,
+        current=event.current if event.current is not None else current,
+        total=event.total if event.total is not None else total,
+        path=event.path,
+        processed_duration_seconds=event.processed_duration_seconds,
+        total_duration_seconds=event.total_duration_seconds,
+        eta_seconds=event.eta_seconds,
+        realtime_factor=event.realtime_factor,
+        chunk_index=event.chunk_index,
+        chunk_count=event.chunk_count,
+        completed_chunks=event.completed_chunks,
+        failed_chunks=event.failed_chunks,
+        segments=event.segments,
+        resumed=event.resumed,
     )
 
 

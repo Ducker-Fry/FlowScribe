@@ -55,7 +55,8 @@
       "PowerShell(python -c \"from flowscribe.gui.utils import _build_library_entry; print\\('utils module OK'\\)\")",
       "PowerShell(Get-ChildItem -Path dist -Recurse -Directory | Select-Object FullName | ForEach-Object { $dir = $_.FullName; $size = \\(Get-ChildItem $dir -Recurse -File | Measure-Object -Property Length -Sum\\).Sum; [PSCustomObject]@{Directory = $dir; SizeMB = [math]::Round\\($size/1MB, 1\\)} } | Sort-Object SizeMB -Descending)",
       "PowerShell(Get-ChildItem dist\\\\FlowScribeGUI\\\\_internal\\\\ -Directory | ForEach-Object { $size = \\(Get-ChildItem $_.FullName -Recurse -File | Measure-Object -Property Length -Sum\\).Sum; \"$\\($_.Name\\): $\\([math]::Round\\($size/1MB, 1\\)\\) MB\" } | Sort-Object {[double]\\($_ -split ': '\\)[1]} -Descending)",
-      "PowerShell(cd \"e:\\\\Draft\\\\FlowScribe\"; python -m pytest -p no:cacheprovider --basetemp=\"$env:TEMP\\\\pytest-fs\" 2>&1 | Select-Object -Last 3)"
+      "PowerShell(cd \"e:\\\\Draft\\\\FlowScribe\"; python -m pytest -p no:cacheprovider --basetemp=\"$env:TEMP\\\\pytest-fs\" 2>&1 | Select-Object -Last 3)",
+      "WebSearch"
     ]
   }
 }

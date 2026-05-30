@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QHBoxLayout,
     QLabel,
@@ -15,14 +16,25 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from flowscribe.gui.icons import (
+    get_check_icon,
+    get_delete_icon,
+    get_document_icon,
+    get_filter_icon,
+    get_folder_icon,
+    get_link_icon,
+    get_refresh_icon,
+    get_sort_icon,
+)
+from flowscribe.gui.state_manager import transcript_library_store
+from flowscribe.gui.theme_manager import get_current_theme
+from flowscribe.gui.utils.library import _library_entry_list_label, _library_results_summary
 from flowscribe.library import (
     TranscriptLibraryEntry,
     TranscriptLibraryStore,
     filter_transcript_library_entries,
     sort_transcript_library_entries,
 )
-from flowscribe.gui.state_manager import transcript_library_store
-from flowscribe.gui.utils.library import _library_entry_list_label, _library_results_summary
 
 if TYPE_CHECKING:
     from PySide6.QtWidgets import QWidget as QWidgetType
@@ -50,6 +62,10 @@ class LibraryView(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
+
+        # Get current theme for icons
+        app = QApplication.instance()
+        theme = get_current_theme(app) if app else "light"
 
         # Header
         header_label = QLabel("Transcript Library")
@@ -115,27 +131,27 @@ class LibraryView(QWidget):
         # Actions
         actions_row = QHBoxLayout()
 
-        self._select_all_btn = QPushButton("Select All")
+        self._select_all_btn = QPushButton(get_check_icon(theme), "Select All")
         self._select_all_btn.clicked.connect(self._on_select_all)
         actions_row.addWidget(self._select_all_btn)
 
-        self._open_btn = QPushButton("Open Transcript")
+        self._open_btn = QPushButton(get_document_icon(theme), "Open Transcript")
         self._open_btn.clicked.connect(self._on_open_transcript)
         actions_row.addWidget(self._open_btn)
 
-        self._open_dir_btn = QPushButton("Open Output Directory")
+        self._open_dir_btn = QPushButton(get_folder_icon(theme), "Open Output Directory")
         self._open_dir_btn.clicked.connect(self._on_open_output_dir)
         actions_row.addWidget(self._open_dir_btn)
 
-        self._rebind_btn = QPushButton("Bind/Rebind Media")
+        self._rebind_btn = QPushButton(get_link_icon(theme), "Bind/Rebind Media")
         self._rebind_btn.clicked.connect(self._on_rebind_media)
         actions_row.addWidget(self._rebind_btn)
 
-        self._remove_btn = QPushButton("Remove from Library")
+        self._remove_btn = QPushButton(get_delete_icon(theme), "Remove from Library")
         self._remove_btn.clicked.connect(self._on_remove_entry)
         actions_row.addWidget(self._remove_btn)
 
-        self._cleanup_btn = QPushButton("Clean Missing Entries")
+        self._cleanup_btn = QPushButton(get_refresh_icon(theme), "Clean Missing Entries")
         self._cleanup_btn.clicked.connect(self._on_cleanup_missing)
         actions_row.addWidget(self._cleanup_btn)
 

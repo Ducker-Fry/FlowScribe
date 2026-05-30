@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from flowscribe.core.models import (
     MediaDurationInfo,
@@ -71,8 +73,13 @@ class LocalTranscriptionPipeline:
         item: MediaItem,
         *,
         should_cancel: Callable[[], bool] | None = None,
+        progress: Callable[[Any], None] | None = None,
     ) -> OutputArtifacts:
-        transcript = self.build_transcript(item, should_cancel=should_cancel)
+        transcript = self.build_transcript(
+            item,
+            should_cancel=should_cancel,
+            progress=progress,
+        )
         return self._artifact_writer.write_all(transcript, self._output_dir)
 
     def build_transcript(
@@ -80,11 +87,15 @@ class LocalTranscriptionPipeline:
         item: MediaItem,
         *,
         should_cancel: Callable[[], bool] | None = None,
+        progress: Callable[[Any], None] | None = None,
     ) -> Transcript:
         item_work_dir = self._work_dir / item.path.stem
         prepared_audio = self._prepare_or_cache(item, item_work_dir)
         try:
-            transcript = self._transcriber.transcribe(prepared_audio, should_cancel=should_cancel)
+            kwargs = {"should_cancel": should_cancel}
+            if progress is not None and _transcriber_accepts_progress(self._transcriber):
+                kwargs["progress"] = progress
+            transcript = self._transcriber.transcribe(prepared_audio, **kwargs)
             if self._transcript_normalizer is not None:
                 transcript = self._transcript_normalizer(transcript)
             if self._deduplicator is not None:
@@ -192,3 +203,11 @@ class LocalTranscriptionPipeline:
 
     def clear_progressive_cache(self, item: MediaItem) -> None:
         ProgressiveChunkCache((self._work_dir / item.path.stem) / ".progressive").clear()
+
+
+def _transcriber_accepts_progress(transcriber: Transcriber) -> bool:
+    try:
+        signature = inspect.signature(transcriber.transcribe)
+    except (TypeError, ValueError):
+        return False
+    return "progress" in signature.parameters

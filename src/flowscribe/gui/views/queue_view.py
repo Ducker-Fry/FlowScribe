@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from flowscribe.queue.models import QueueItem, QueueItemStatus
+from flowscribe.gui.widgets import CollapsibleSection
 
 if TYPE_CHECKING:
     from PySide6.QtWidgets import QWidget as QWidgetType
@@ -35,6 +36,133 @@ _STATUS_ICONS: dict[QueueItemStatus, str] = {
     "failed": "[ERR]",
     "canceled": "[---]",
 }
+
+_STATUS_COLORS: dict[QueueItemStatus, str] = {
+    "pending": "#6B7280",
+    "running": "#2563EB",
+    "completed": "#10B981",
+    "failed": "#EF4444",
+    "canceled": "#F59E0B",
+}
+
+_STATUS_LABELS: dict[QueueItemStatus, str] = {
+    "pending": "Pending",
+    "running": "Running",
+    "completed": "Completed",
+    "failed": "Failed",
+    "canceled": "Canceled",
+}
+
+
+class QueueItemCard(QWidget):
+    """Compact card widget used as the visual representation of a queue item."""
+
+    retry_requested = Signal(str)
+    remove_requested = Signal(str)
+    checked_changed = Signal(str, bool)
+
+    def __init__(self, item: QueueItem, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._item_id = item.item_id
+        self.setProperty("card", True)
+        self.setProperty("selected", False)
+
+        root_layout = QHBoxLayout(self)
+        root_layout.setContentsMargins(10, 10, 10, 10)
+        root_layout.setSpacing(10)
+
+        self._check_button = QPushButton("✓")
+        self._check_button.setProperty("queueCheck", True)
+        self._check_button.setCheckable(True)
+        self._check_button.setChecked(False)
+        self._check_button.clicked.connect(self._on_checked_changed)
+        root_layout.addWidget(self._check_button, 0, Qt.AlignmentFlag.AlignTop)
+
+        status_label = QLabel(_STATUS_LABELS.get(item.status, "Unknown"))
+        status_color = _STATUS_COLORS.get(item.status, "#6B7280")
+        status_label.setStyleSheet(
+            f"background-color: {status_color}; color: white; border-radius: 10px; "
+            "padding: 2px 8px; font-size: 11px; font-weight: 600;"
+        )
+        root_layout.addWidget(status_label, 0, Qt.AlignmentFlag.AlignTop)
+
+        text_column = QVBoxLayout()
+        text_column.setContentsMargins(0, 0, 0, 0)
+        text_column.setSpacing(4)
+
+        title_label = QLabel(self._primary_text(item))
+        title_label.setWordWrap(True)
+        title_label.setStyleSheet("font-weight: 600;")
+        text_column.addWidget(title_label)
+
+        detail_label = QLabel(self._secondary_text(item))
+        detail_label.setWordWrap(True)
+        detail_label.setStyleSheet("color: #6B7280; font-size: 11px;")
+        text_column.addWidget(detail_label)
+
+        if item.error_message and item.status == "failed":
+            error_label = QLabel(item.error_message[:120])
+            error_label.setWordWrap(True)
+            error_label.setStyleSheet("color: #EF4444; font-size: 11px;")
+            text_column.addWidget(error_label)
+        elif item.status == "running":
+            running_label = QLabel(f"Attempt {item.attempt_count + 1} in progress")
+            running_label.setStyleSheet("color: #2563EB; font-size: 11px;")
+            text_column.addWidget(running_label)
+
+        root_layout.addLayout(text_column, 1)
+
+        actions_column = QVBoxLayout()
+        actions_column.setContentsMargins(0, 0, 0, 0)
+        actions_column.setSpacing(6)
+
+        retry_button = QPushButton("Retry")
+        retry_button.setProperty("secondary", True)
+        retry_button.setProperty("cardAction", True)
+        retry_button.clicked.connect(lambda: self.retry_requested.emit(self._item_id))
+        retry_button.setVisible(item.status in {"failed", "canceled"})
+        actions_column.addWidget(retry_button)
+
+        remove_button = QPushButton("Remove")
+        remove_button.setProperty("secondary", True)
+        remove_button.setProperty("cardAction", True)
+        remove_button.clicked.connect(lambda: self.remove_requested.emit(self._item_id))
+        actions_column.addWidget(remove_button)
+        actions_column.addStretch()
+
+        root_layout.addLayout(actions_column)
+
+    def set_checked(self, checked: bool) -> None:
+        """Synchronize checkbox state without relying on list item painting."""
+        self._check_button.blockSignals(True)
+        self._check_button.setChecked(checked)
+        self._check_button.blockSignals(False)
+
+    def set_selected(self, selected: bool) -> None:
+        """Update visual selection state for the card."""
+        self.setProperty("selected", selected)
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.update()
+
+    def _on_checked_changed(self, checked: bool) -> None:
+        """Propagate card checkbox changes back to the queue view."""
+        self.checked_changed.emit(self._item_id, checked)
+
+    @staticmethod
+    def _primary_text(item: QueueItem) -> str:
+        if item.source.kind == "local":
+            return Path(item.source.value).name
+        display_name = item.display_label
+        if len(display_name) > 90:
+            return display_name[:87] + "..."
+        return display_name
+
+    @staticmethod
+    def _secondary_text(item: QueueItem) -> str:
+        if item.source.kind == "local":
+            return f"Local file - {Path(item.source.value)}"
+        return f"URL - {item.source.value}"
 
 
 class QueueView(QWidget):
@@ -51,7 +179,7 @@ class QueueView(QWidget):
     remove_items_requested = Signal(list)  # list[str]
     clear_completed_requested = Signal()
     reorder_requested = Signal(list)
-    edit_item_settings_requested = Signal(str)
+    edit_item_settings_requested = Signal(list)  # list[str] - item_ids
     server_start_requested = Signal(int)  # port
     server_stop_requested = Signal()
 
@@ -60,6 +188,7 @@ class QueueView(QWidget):
         self._settings = settings
         self._item_ids: list[str] = []
         self._items_cache: dict[str, QueueItem] = {}
+        self._checked_item_ids: set[str] = set()
         self._current_running_item_id: str | None = None
         self._current_run_output: str = ""
         self._view_dialog = None  # Persistent dialog like Single Task
@@ -70,12 +199,12 @@ class QueueView(QWidget):
         """Initialize UI components."""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(10)
+        layout.setSpacing(12)
 
         # Bookmarklet Server section
-        server_group = QGroupBox("Bookmarklet Server")
-        server_layout = QVBoxLayout(server_group)
-        server_layout.setSpacing(6)
+        advanced_section = CollapsibleSection("Advanced Settings", expanded=False)
+        advanced_layout = advanced_section.content_layout
+        advanced_layout.setSpacing(8)
 
         server_control_row = QHBoxLayout()
         self._server_enabled_check = QCheckBox("Enable Server")
@@ -89,7 +218,7 @@ class QueueView(QWidget):
         self._server_port_spin = QSpinBox()
         self._server_port_spin.setRange(1024, 65535)
         self._server_port_spin.setValue(8765)
-        self._server_port_spin.setMaximumWidth(80)
+        self._server_port_spin.setFixedWidth(118)
         server_control_row.addWidget(self._server_port_spin)
 
         self._server_status_label = QLabel("Server: Stopped")
@@ -97,75 +226,64 @@ class QueueView(QWidget):
         server_control_row.addWidget(self._server_status_label)
         server_control_row.addStretch()
 
-        server_layout.addLayout(server_control_row)
-
         server_info = QLabel(
             "Enable server to add URLs from browser. "
             "Visit http://127.0.0.1:8765/bookmarklet.js for installation."
         )
         server_info.setWordWrap(True)
         server_info.setStyleSheet("color: gray; font-size: 10px;")
-        server_layout.addWidget(server_info)
-
-        layout.addWidget(server_group)
+        server_info.setProperty("compactNote", True)
+        advanced_layout.addLayout(server_control_row)
+        advanced_layout.addWidget(server_info)
 
         # Add sources section
         add_group = QGroupBox("Add Sources")
         add_layout = QVBoxLayout(add_group)
-        add_layout.setSpacing(8)
+        add_layout.setSpacing(10)
 
-        # Local files
-        local_label = QLabel("Local Files:")
-        add_layout.addWidget(local_label)
-
-        local_buttons = QHBoxLayout()
         self._add_files_btn = QPushButton("Add Local Files...")
         self._add_files_btn.clicked.connect(self._on_add_local_files)
-        local_buttons.addWidget(self._add_files_btn)
-        local_buttons.addStretch()
-        add_layout.addLayout(local_buttons)
-
-        # URLs
-        url_label = QLabel("URLs (one per line):")
-        add_layout.addWidget(url_label)
+        self._add_files_btn.setProperty("primary", True)
+        add_layout.addWidget(self._add_files_btn)
 
         self._url_input = QTextEdit()
         self._url_input.setPlaceholderText(
-            "https://example.com/video1\nhttps://example.com/video2\n..."
+            "https://example.com/video1\nhttps://example.com/video2\n...\n(Ctrl+Enter to add)"
         )
-        self._url_input.setMaximumHeight(80)
+        self._url_input.setMaximumHeight(128)
+        self._url_input.installEventFilter(self)
         add_layout.addWidget(self._url_input)
 
-        url_buttons = QHBoxLayout()
+        url_actions = QHBoxLayout()
+        url_actions.setSpacing(8)
         self._add_urls_btn = QPushButton("Add URLs")
         self._add_urls_btn.clicked.connect(self._on_add_urls)
-        url_buttons.addWidget(self._add_urls_btn)
-
+        self._add_urls_btn.setProperty("primary", True)
         self._import_file_btn = QPushButton("Import from File...")
         self._import_file_btn.clicked.connect(self._on_import_file)
-        url_buttons.addWidget(self._import_file_btn)
-        url_buttons.addStretch()
-        add_layout.addLayout(url_buttons)
-
-        layout.addWidget(add_group)
+        self._import_file_btn.setProperty("secondary", True)
+        url_actions.addWidget(self._add_urls_btn)
+        url_actions.addWidget(self._import_file_btn)
+        url_actions.addStretch()
+        add_layout.addLayout(url_actions)
 
         # Default settings for new items
         defaults_group = QGroupBox("Default Settings for New Items")
         defaults_layout = QVBoxLayout(defaults_group)
         defaults_layout.setSpacing(8)
 
-        # Queue settings
         settings_row = QHBoxLayout()
         settings_row.addWidget(QLabel("Max Retries:"))
         self._max_retries_spin = QSpinBox()
         self._max_retries_spin.setRange(0, 10)
         self._max_retries_spin.setValue(2)
+        self._max_retries_spin.setFixedWidth(92)
         settings_row.addWidget(self._max_retries_spin)
         settings_row.addStretch()
         defaults_layout.addLayout(settings_row)
 
-        # Download options row
         download_row = QHBoxLayout()
+        download_row.setSpacing(8)
 
         self._preserve_media_check = QCheckBox("Preserve media")
         download_row.addWidget(self._preserve_media_check)
@@ -191,70 +309,92 @@ class QueueView(QWidget):
         download_row.addStretch()
         defaults_layout.addLayout(download_row)
 
-        layout.addWidget(defaults_group)
+        advanced_layout.addWidget(defaults_group)
+        advanced_layout.addStretch()
+        layout.addWidget(advanced_section)
+        layout.addWidget(add_group, 2)
 
-        # Queue list
-        queue_label = QLabel("Queue:")
-        layout.addWidget(queue_label)
+        # Queue section
+        queue_group = QGroupBox("Queue")
+        queue_layout = QVBoxLayout(queue_group)
+        queue_layout.setSpacing(8)
 
+        queue_header = QHBoxLayout()
+        self._queue_summary_label = QLabel("0 total | 0 pending | 0 running | 0 completed | 0 failed")
+        self._queue_summary_label.setStyleSheet("color: gray;")
+        queue_header.addWidget(self._queue_summary_label)
+        queue_header.addStretch()
+        queue_layout.addLayout(queue_header)
+
+        queue_content_layout = QHBoxLayout()
+        queue_content_layout.setSpacing(10)
         self._queue_list = QListWidget()
+        self._queue_list.setProperty("cardList", True)
         self._queue_list.setDragDropMode(QListWidget.DragDropMode.InternalMove)
         self._queue_list.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self._queue_list.setAlternatingRowColors(True)
+        self._queue_list.setSpacing(2)
+        self._queue_list.setMinimumHeight(260)
         self._queue_list.model().rowsMoved.connect(self._on_rows_moved)
-        self._queue_list.itemChanged.connect(self._update_button_states)
         self._queue_list.itemSelectionChanged.connect(self._update_button_states)
-        layout.addWidget(self._queue_list, 1)
+        self._queue_list.itemSelectionChanged.connect(self._sync_card_selection_states)
+        self._queue_list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
+        queue_content_layout.addWidget(self._queue_list, 1)
 
-        # Queue controls
-        controls_row = QHBoxLayout()
+        actions_group = QGroupBox("Actions")
+        actions_layout = QHBoxLayout(actions_group)
+        actions_layout.setSpacing(8)
+
         self._start_queue_btn = QPushButton("Start Queue")
         self._start_queue_btn.clicked.connect(self._on_start_queue)
-        controls_row.addWidget(self._start_queue_btn)
+        self._start_queue_btn.setProperty("primary", True)
+        actions_layout.addWidget(self._start_queue_btn)
 
         self._cancel_queue_btn = QPushButton("Cancel Queue")
         self._cancel_queue_btn.clicked.connect(self._on_cancel_queue)
         self._cancel_queue_btn.setEnabled(False)
-        controls_row.addWidget(self._cancel_queue_btn)
+        self._cancel_queue_btn.setProperty("secondary", True)
+        actions_layout.addWidget(self._cancel_queue_btn)
 
         self._skip_current_btn = QPushButton("Skip Current")
         self._skip_current_btn.clicked.connect(self._on_skip_current)
         self._skip_current_btn.setEnabled(False)
-        controls_row.addWidget(self._skip_current_btn)
-
-        controls_row.addStretch()
-        layout.addLayout(controls_row)
-
-        item_controls_row = QHBoxLayout()
-        self._edit_settings_btn = QPushButton("Edit Settings")
-        self._edit_settings_btn.clicked.connect(self._on_edit_settings)
-        item_controls_row.addWidget(self._edit_settings_btn)
-
-        self._retry_btn = QPushButton("Retry Failed")
-        self._retry_btn.clicked.connect(self._on_retry_failed)
-        item_controls_row.addWidget(self._retry_btn)
+        self._skip_current_btn.setProperty("secondary", True)
+        actions_layout.addWidget(self._skip_current_btn)
 
         self._open_view_btn = QPushButton("Open View")
         self._open_view_btn.clicked.connect(self._on_open_view)
-        item_controls_row.addWidget(self._open_view_btn)
+        self._open_view_btn.setProperty("secondary", True)
+        actions_layout.addWidget(self._open_view_btn)
+
+        self._edit_settings_btn = QPushButton("Edit Settings")
+        self._edit_settings_btn.clicked.connect(self._on_edit_settings)
+        actions_layout.addWidget(self._edit_settings_btn)
+
+        self._retry_btn = QPushButton("Retry Failed")
+        self._retry_btn.clicked.connect(self._on_retry_failed)
+        actions_layout.addWidget(self._retry_btn)
 
         self._remove_btn = QPushButton("Remove Selected")
         self._remove_btn.clicked.connect(self._on_remove_selected)
-        item_controls_row.addWidget(self._remove_btn)
+        actions_layout.addWidget(self._remove_btn)
 
         self._clear_completed_btn = QPushButton("Clear Completed")
         self._clear_completed_btn.clicked.connect(self._on_clear_completed)
-        item_controls_row.addWidget(self._clear_completed_btn)
+        actions_layout.addWidget(self._clear_completed_btn)
 
         self._select_all_btn = QPushButton("Select All")
         self._select_all_btn.clicked.connect(self._on_select_all)
-        item_controls_row.addWidget(self._select_all_btn)
+        actions_layout.addWidget(self._select_all_btn)
 
-        item_controls_row.addStretch()
-        layout.addLayout(item_controls_row)
+        queue_layout.addLayout(queue_content_layout, 1)
+        queue_layout.addWidget(actions_group)
 
         # Status label
         self._status_label = QLabel("Queue is empty")
-        layout.addWidget(self._status_label)
+        queue_layout.addWidget(self._status_label)
+
+        layout.addWidget(queue_group, 1)
 
         self._update_button_states()
 
@@ -275,9 +415,21 @@ class QueueView(QWidget):
     def _on_add_urls(self) -> None:
         """Add URLs from text input."""
         text = self._url_input.toPlainText().strip()
-        if text:
-            self.enqueue_urls_requested.emit(text)
-            self._url_input.clear()
+        if not text:
+            self._status_label.setText("Please enter at least one URL")
+            return
+        self.enqueue_urls_requested.emit(text)
+        self._url_input.clear()
+        self._status_label.setText("Processing URLs...")
+
+    def eventFilter(self, watched, event) -> bool:
+        if watched is self._url_input and event.type() == QEvent.Type.KeyPress:
+            # Ctrl+Enter or Ctrl+Return to submit
+            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                    self._on_add_urls()
+                    return True
+        return super().eventFilter(watched, event)
 
     def get_download_options(self) -> dict:
         """Get current download options from UI."""
@@ -329,10 +481,10 @@ class QueueView(QWidget):
         self.skip_current_requested.emit()
 
     def _on_edit_settings(self) -> None:
-        """Edit settings for selected item."""
+        """Edit settings for selected items (supports batch editing)."""
         selected = self._get_selected_item_ids()
         if selected:
-            self.edit_item_settings_requested.emit(selected[0])
+            self.edit_item_settings_requested.emit(selected)
 
     def _on_retry_failed(self) -> None:
         """Retry failed items."""
@@ -345,6 +497,14 @@ class QueueView(QWidget):
         selected = self._get_selected_item_ids()
         if selected:
             self.remove_items_requested.emit(selected)
+
+    def _on_retry_single_item(self, item_id: str) -> None:
+        """Retry a single item from its card action."""
+        self.retry_item_requested.emit(item_id)
+
+    def _on_remove_single_item(self, item_id: str) -> None:
+        """Remove a single item from its card action."""
+        self.remove_items_requested.emit([item_id])
 
     def _create_view_dialog(self) -> None:
         """Create View Dialog at initialization (like Single Task)."""
@@ -432,10 +592,9 @@ class QueueView(QWidget):
 
     def _on_select_all(self) -> None:
         """Select all items."""
-        for i in range(self._queue_list.count()):
-            item = self._queue_list.item(i)
-            if item:
-                item.setCheckState(Qt.CheckState.Checked)
+        self._checked_item_ids = set(self._item_ids)
+        self._sync_all_card_check_states()
+        self._update_button_states()
 
     def _on_rows_moved(self, parent, start: int, end: int, dest, row: int) -> None:
         """Handle drag-drop reordering."""
@@ -443,12 +602,13 @@ class QueueView(QWidget):
 
     def _get_selected_item_ids(self) -> list[str]:
         """Get IDs of checked items."""
-        selected = []
+        selected: list[str] = []
+        selected_rows = {index.row() for index in self._queue_list.selectedIndexes()}
         for i in range(self._queue_list.count()):
-            item = self._queue_list.item(i)
-            if item and item.checkState() == Qt.CheckState.Checked:
-                if i < len(self._item_ids):
-                    selected.append(self._item_ids[i])
+            if i < len(self._item_ids):
+                item_id = self._item_ids[i]
+                if item_id in self._checked_item_ids or i in selected_rows:
+                    selected.append(item_id)
         return selected
 
     def _collect_item_order(self) -> list[str]:
@@ -471,22 +631,50 @@ class QueueView(QWidget):
         self._clear_completed_btn.setEnabled(has_items)
         self._select_all_btn.setEnabled(has_items)
 
+    def _sync_all_card_check_states(self) -> None:
+        """Refresh all visible card checkboxes from the checked item set."""
+        for row, item_id in enumerate(self._item_ids):
+            list_item = self._queue_list.item(row)
+            if list_item is None:
+                continue
+
+            card = self._queue_list.itemWidget(list_item)
+            if isinstance(card, QueueItemCard):
+                card.set_checked(item_id in self._checked_item_ids)
+
+    def _sync_card_selection_states(self) -> None:
+        """Refresh card selection styling from the current list selection."""
+        selected_rows = {index.row() for index in self._queue_list.selectedIndexes()}
+        for row in range(self._queue_list.count()):
+            list_item = self._queue_list.item(row)
+            if list_item is None:
+                continue
+
+            card = self._queue_list.itemWidget(list_item)
+            if isinstance(card, QueueItemCard):
+                card.set_selected(row in selected_rows)
+
     def refresh_queue(self, items: list[QueueItem]) -> None:
         """Refresh queue display with current items."""
         self._queue_list.clear()
         self._item_ids.clear()
         self._items_cache.clear()
+        self._checked_item_ids.clear()
 
         for item in items:
             self._item_ids.append(item.item_id)
             self._items_cache[item.item_id] = item  # Cache item for later access
             display_text = self._format_item_display(item)
-            list_item = QListWidgetItem(display_text)
-            list_item.setFlags(
-                list_item.flags() | Qt.ItemFlag.ItemIsUserCheckable
-            )
-            list_item.setCheckState(Qt.CheckState.Unchecked)
+            list_item = QListWidgetItem()
+            list_item.setToolTip(display_text)
             self._queue_list.addItem(list_item)
+            card = QueueItemCard(item, self._queue_list)
+            card.set_checked(False)
+            card.checked_changed.connect(self._on_card_checked_changed)
+            card.retry_requested.connect(self._on_retry_single_item)
+            card.remove_requested.connect(self._on_remove_single_item)
+            list_item.setSizeHint(card.sizeHint())
+            self._queue_list.setItemWidget(list_item, card)
 
         count = len(items)
         pending = sum(1 for item in items if item.status == "pending")
@@ -494,11 +682,22 @@ class QueueView(QWidget):
         completed = sum(1 for item in items if item.status == "completed")
         failed = sum(1 for item in items if item.status == "failed")
 
-        self._status_label.setText(
-            f"Queue: {count} total | {pending} pending | {running} running | "
+        summary_text = (
+            f"{count} total | {pending} pending | {running} running | "
             f"{completed} completed | {failed} failed"
         )
+        self._queue_summary_label.setText(summary_text)
+        self._status_label.setText("Queue is empty" if count == 0 else "Select items to manage the queue")
 
+        self._sync_card_selection_states()
+        self._update_button_states()
+
+    def _on_card_checked_changed(self, item_id: str, checked: bool) -> None:
+        """Track card checkbox changes using an explicit checked item set."""
+        if checked:
+            self._checked_item_ids.add(item_id)
+        else:
+            self._checked_item_ids.discard(item_id)
         self._update_button_states()
 
     def _format_item_display(self, item: QueueItem) -> str:

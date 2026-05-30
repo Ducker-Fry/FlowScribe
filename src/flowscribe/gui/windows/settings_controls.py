@@ -33,6 +33,11 @@ class SettingsControlsMixin:
         return {
             "output_dir": self.output_dir_input.text().strip() or "outputs",
             "output_name_base": self.output_name_input.text(),
+            "provider_name": (
+                self.provider_combo.currentData()
+                if hasattr(self, "provider_combo")
+                else "local-whisper"
+            ) or "local-whisper",
             "model_name": self.model_combo.currentText(),
             "language": self.language_combo.currentText(),
             "preset": self.preset_combo.currentText(),
@@ -54,6 +59,12 @@ class SettingsControlsMixin:
             "url_auto_bind_media": self.url_auto_bind_check.isChecked(),
             "network_family": self.network_combo.currentText(),
             "proxy": self.proxy_input.text(),
+            "native_threads": (
+                self.native_threads_spin.value()
+                if hasattr(self, "native_threads_spin")
+                and self.native_threads_spin.value() > 0
+                else None
+            ),
         }
 
     def _current_export_preferences(self: MainWindow) -> dict[str, object]:
@@ -74,6 +85,10 @@ class SettingsControlsMixin:
     def _apply_gui_preferences(self: MainWindow, preferences: dict[str, object]) -> None:
         self.output_dir_input.setText(str(preferences["output_dir"]))
         self.output_name_input.setText(str(preferences["output_name_base"]))
+        if hasattr(self, "provider_combo"):
+            index = self.provider_combo.findData(preferences.get("provider_name", "local-whisper"))
+            if index >= 0:
+                self.provider_combo.setCurrentIndex(index)
         self.model_combo.setCurrentText(str(preferences["model_name"]))
         self.language_combo.setCurrentText(str(preferences["language"]))
         self.preset_combo.setCurrentText(str(preferences["preset"]))
@@ -89,6 +104,8 @@ class SettingsControlsMixin:
         self.url_auto_bind_check.setChecked(bool(preferences.get("url_auto_bind_media", True)))
         self.network_combo.setCurrentText(str(preferences["network_family"]))
         self.proxy_input.setText(str(preferences["proxy"]))
+        if hasattr(self, "native_threads_spin"):
+            self.native_threads_spin.setValue(int(preferences.get("native_threads") or 0))
         self._apply_export_preferences(preferences)
         self.overwrite_check.setChecked(bool(preferences["overwrite"]))
         self._sync_url_media_controls()

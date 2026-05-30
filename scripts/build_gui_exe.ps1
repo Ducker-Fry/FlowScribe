@@ -8,6 +8,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Set console output encoding to UTF-8 to fix Chinese character display
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+
 $ProjectRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $DistRoot = Join-Path $ProjectRoot "dist"
 $BuildRoot = Join-Path $ProjectRoot "build"
@@ -138,9 +142,39 @@ try {
 
     if (-not $SkipClean) {
         Write-Step "Clean previous GUI build artifacts"
+
+        # Check and close running FlowScribeGUI processes
+        $runningProcesses = Get-Process | Where-Object { $_.ProcessName -like "*FlowScribe*" }
+        if ($runningProcesses) {
+            Write-Host "  Found running FlowScribeGUI processes. Attempting to close..." -ForegroundColor Yellow
+            foreach ($proc in $runningProcesses) {
+                Write-Host "    Closing process: $($proc.ProcessName) (PID: $($proc.Id))" -ForegroundColor Yellow
+                try {
+                    $proc.CloseMainWindow() | Out-Null
+                    Start-Sleep -Milliseconds 500
+                    if (-not $proc.HasExited) {
+                        Write-Host "    Process did not exit gracefully, forcing termination..." -ForegroundColor Yellow
+                        $proc.Kill()
+                    }
+                    Write-Host "    Process closed successfully" -ForegroundColor Green
+                } catch {
+                    Write-Host "    Warning: Could not close process: $_" -ForegroundColor Yellow
+                }
+            }
+            # Wait a bit for file handles to be released
+            Start-Sleep -Seconds 1
+        }
+
         Assert-InProject -Path $PackageDir
         if (Test-Path $PackageDir) {
-            Remove-Item -LiteralPath $PackageDir -Recurse -Force
+            try {
+                Remove-Item -LiteralPath $PackageDir -Recurse -Force -ErrorAction Stop
+            } catch {
+                Write-Host "  Error: Cannot delete $PackageDir" -ForegroundColor Red
+                Write-Host "  The directory may still be in use by another process." -ForegroundColor Red
+                Write-Host "  Please close all FlowScribeGUI windows and try again." -ForegroundColor Red
+                throw $_
+            }
         }
 
         $guiBuildDir = Join-Path $BuildRoot $AppName
@@ -151,6 +185,18 @@ try {
     }
 
     Write-Step "Build GUI one-folder executable"
+
+    # Check if icon file exists
+    $IconPath = Join-Path $ProjectRoot "icons\flowscribe.ico"
+    if (-not (Test-Path $IconPath)) {
+        Write-Host "  Warning: Icon file not found at $IconPath" -ForegroundColor Yellow
+        Write-Host "  Run 'python scripts/convert_icon.py' to create it" -ForegroundColor Yellow
+        $IconArg = @()
+    } else {
+        Write-Host "  Using icon: $IconPath" -ForegroundColor Green
+        $IconArg = @("--icon", $IconPath)
+    }
+
     & $Python -s -m PyInstaller `
         --name $AppName `
         --onedir `
@@ -163,6 +209,9 @@ try {
         --hidden-import PySide6.QtMultimedia `
         --hidden-import PySide6.QtMultimediaWidgets `
         --hidden-import PySide6.QtWidgets `
+        --hidden-import PySide6.QtSvg `
+        --add-data "icons;icons" `
+        @IconArg `
         "src\flowscribe\gui\__main__.py"
 
     $exePath = Join-Path $PackageDir "$AppName.exe"
