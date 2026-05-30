@@ -15,6 +15,7 @@ from flowscribe.providers.transcribe.registry import (
     default_transcription_provider,
     is_native_engine_provider_name,
     resolve_transcription_provider,
+    supports_python_progressive_provider_name,
 )
 
 
@@ -76,6 +77,7 @@ def test_resolve_transcription_provider_supports_paraformer_aliases() -> None:
     assert isinstance(resolve_transcription_provider("paraformer"), ParaformerProvider)
     assert isinstance(resolve_transcription_provider("funasr"), ParaformerProvider)
     assert isinstance(resolve_transcription_provider("paraformer-zh"), ParaformerProvider)
+    assert supports_python_progressive_provider_name("paraformer") is True
 
     provider = ParaformerProvider()
     assert provider.capabilities.provider_name == "paraformer"

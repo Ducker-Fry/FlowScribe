@@ -231,4 +231,13 @@ def supports_python_progressive_provider_name(provider_name: str | None) -> bool
     """Return whether a provider supports the Python chunked progressive executor."""
 
     normalized = (provider_name or "").strip().lower()
-    return normalized in {"", "default", "local", "local-whisper", "faster-whisper"}
+    return normalized in {
+        "",
+        "default",
+        "local",
+        "local-whisper",
+        "faster-whisper",
+        "paraformer",
+        "funasr",
+        "paraformer-zh",
+    }

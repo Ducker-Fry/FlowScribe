@@ -2,29 +2,36 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from flowscribe.core.errors import CancellationError, TranscriptionError
 from flowscribe.core.models import (
+    MediaItem,
     PreparedAudio,
     Transcript,
     TranscriptSegment,
     TranscriptWord,
     TranscriptionOptions,
 )
+from flowscribe.media.tools import resolve_tool_path
 
 PARAFORMER_PROVIDER_NAME = "paraformer"
 PARAFORMER_MODEL_NAME = "paraformer-zh"
-PARAFORMER_FUNASR_MODEL_ID = "paraformer-zh"
-PARAFORMER_FUNASR_VAD_MODEL_ID = "fsmn-vad"
-PARAFORMER_FUNASR_PUNC_MODEL_ID = "ct-punc"
+PARAFORMER_FUNASR_MODEL_ID = (
+    "iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch"
+)
+PARAFORMER_FUNASR_VAD_MODEL_ID = "iic/speech_fsmn_vad_zh-cn-16k-common-pytorch"
+PARAFORMER_FUNASR_PUNC_MODEL_ID = "iic/punc_ct-transformer_cn-en-common-vocab471067-large"
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 MODELS_ROOT = PROJECT_ROOT / "models"
 PARAFORMER_MODEL_DIR = MODELS_ROOT / PARAFORMER_MODEL_NAME
-PARAFORMER_VAD_MODEL_DIR = MODELS_ROOT / PARAFORMER_FUNASR_VAD_MODEL_ID
-PARAFORMER_PUNC_MODEL_DIR = MODELS_ROOT / PARAFORMER_FUNASR_PUNC_MODEL_ID
+PARAFORMER_VAD_MODEL_DIR = MODELS_ROOT / "fsmn-vad"
+PARAFORMER_PUNC_MODEL_DIR = MODELS_ROOT / "ct-punc"
+DEFAULT_EXTERNAL_MODEL_CACHE_ROOT = Path("E:/Download Resource/FlowScribe/model-cache")
 
 
 class ParaformerTranscriber:
@@ -51,6 +58,7 @@ class ParaformerTranscriber:
         self._preset = preset
         self._word_timestamps = word_timestamps
         self._model = None
+        self._ffmpeg_executable = resolve_tool_path("ffmpeg")
 
     def transcribe(
         self,
@@ -75,20 +83,51 @@ class ParaformerTranscriber:
         except Exception as exc:
             raise TranscriptionError(f"Paraformer transcription failed for {audio.path}: {exc}") from exc
 
+    def transcribe_clip(
+        self,
+        audio: PreparedAudio,
+        *,
+        start_seconds: float,
+        end_seconds: float,
+        should_cancel: Callable[[], bool] | None = None,
+    ) -> Transcript:
+        clip_audio = self._extract_clip_audio(
+            audio,
+            start_seconds=start_seconds,
+            end_seconds=end_seconds,
+        )
+        try:
+            return self.transcribe(clip_audio, should_cancel=should_cancel)
+        except TranscriptionError as exc:
+            raise TranscriptionError(
+                f"Paraformer clip transcription failed for {audio.path} "
+                f"[{start_seconds}, {end_seconds}]: {exc}"
+            ) from exc
+        finally:
+            clip_audio.path.unlink(missing_ok=True)
+
     def _load_model(self):
         if self._model is None:
+            self._configure_external_model_cache()
             from funasr import AutoModel
 
-            PARAFORMER_MODEL_DIR.mkdir(parents=True, exist_ok=True)
-            PARAFORMER_VAD_MODEL_DIR.mkdir(parents=True, exist_ok=True)
-            PARAFORMER_PUNC_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+            model_path = self._ensure_model_snapshot(
+                self._resolve_model_id(self._model_name),
+                PARAFORMER_MODEL_DIR,
+            )
+            vad_model_path = self._ensure_model_snapshot(
+                PARAFORMER_FUNASR_VAD_MODEL_ID,
+                PARAFORMER_VAD_MODEL_DIR,
+            )
+            punc_model_path = self._ensure_model_snapshot(
+                PARAFORMER_FUNASR_PUNC_MODEL_ID,
+                PARAFORMER_PUNC_MODEL_DIR,
+            )
             self._model = AutoModel(
-                model=self._resolve_model_id(self._model_name),
-                model_dir=str(PARAFORMER_MODEL_DIR),
-                vad_model=PARAFORMER_FUNASR_VAD_MODEL_ID,
-                vad_model_dir=str(PARAFORMER_VAD_MODEL_DIR),
-                punc_model=PARAFORMER_FUNASR_PUNC_MODEL_ID,
-                punc_model_dir=str(PARAFORMER_PUNC_MODEL_DIR),
+                model=str(model_path),
+                vad_model=str(vad_model_path),
+                punc_model=str(punc_model_path),
+                disable_update=True,
             )
         return self._model
 
@@ -102,6 +141,54 @@ class ParaformerTranscriber:
         if self._language:
             kwargs["language"] = self._language
         return kwargs
+
+    def _extract_clip_audio(
+        self,
+        audio: PreparedAudio,
+        *,
+        start_seconds: float,
+        end_seconds: float,
+    ) -> PreparedAudio:
+        if end_seconds <= start_seconds:
+            raise TranscriptionError("Clip end must be greater than clip start.")
+        clip_dir = audio.path.parent / ".paraformer-clips"
+        clip_dir.mkdir(parents=True, exist_ok=True)
+        clip_path = clip_dir / (
+            f"{audio.path.stem}-{_safe_timestamp(start_seconds)}-"
+            f"{_safe_timestamp(end_seconds)}.wav"
+        )
+        duration_seconds = end_seconds - start_seconds
+        command = [
+            self._ffmpeg_executable,
+            "-y",
+            "-ss",
+            f"{start_seconds:.3f}",
+            "-t",
+            f"{duration_seconds:.3f}",
+            "-i",
+            str(audio.path),
+            "-vn",
+            "-ac",
+            "1",
+            "-ar",
+            str(audio.sample_rate),
+            "-acodec",
+            "pcm_s16le",
+            str(clip_path),
+        ]
+        try:
+            subprocess.run(command, capture_output=True, text=True, check=True)
+        except FileNotFoundError as exc:
+            raise TranscriptionError("ffmpeg was not found. Install ffmpeg and add it to PATH.") from exc
+        except subprocess.CalledProcessError as exc:
+            message = exc.stderr.strip() or exc.stdout.strip() or str(exc)
+            raise TranscriptionError(f"ffmpeg failed while slicing Paraformer clip: {message}") from exc
+        return PreparedAudio(
+            source=MediaItem(path=audio.source.path),
+            path=clip_path,
+            sample_rate=audio.sample_rate,
+            duration_seconds=duration_seconds,
+        )
 
     def _build_transcript(
         self,
@@ -233,6 +320,37 @@ class ParaformerTranscriber:
         return model_name
 
     @staticmethod
+    def _ensure_model_snapshot(model_id: str, target_dir: Path) -> Path:
+        target_dir.mkdir(parents=True, exist_ok=True)
+        if _looks_like_funasr_model_dir(target_dir):
+            return target_dir
+
+        try:
+            from modelscope.hub.snapshot_download import snapshot_download
+        except ImportError as exc:
+            raise ImportError("modelscope is required to download Paraformer models") from exc
+
+        snapshot_path = snapshot_download(
+            model_id=model_id,
+            local_dir=str(target_dir),
+            cache_dir=str(DEFAULT_EXTERNAL_MODEL_CACHE_ROOT / "modelscope"),
+        )
+        return Path(snapshot_path)
+
+    @staticmethod
+    def _configure_external_model_cache() -> None:
+        cache_root = DEFAULT_EXTERNAL_MODEL_CACHE_ROOT
+        cache_root.mkdir(parents=True, exist_ok=True)
+        defaults = {
+            "HF_HOME": cache_root / "huggingface",
+            "HUGGINGFACE_HUB_CACHE": cache_root / "huggingface" / "hub",
+            "TRANSFORMERS_CACHE": cache_root / "huggingface" / "transformers",
+            "MODELSCOPE_CACHE": cache_root / "modelscope",
+        }
+        for name, path in defaults.items():
+            os.environ.setdefault(name, str(path))
+
+    @staticmethod
     def _timestamp_seconds(value: Any) -> float | None:
         number = ParaformerTranscriber._optional_float(value)
         if number is None:
@@ -256,3 +374,11 @@ class ParaformerTranscriber:
             return float(value)
         except (TypeError, ValueError):
             return None
+
+
+def _looks_like_funasr_model_dir(path: Path) -> bool:
+    return (path / "configuration.json").exists() or (path / "config.yaml").exists()
+
+
+def _safe_timestamp(value: float) -> str:
+    return f"{max(0.0, value):.3f}".replace(".", "p")

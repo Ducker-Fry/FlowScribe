@@ -523,14 +523,14 @@ def test_transcription_service_does_not_use_python_progressive_for_native_provid
     assert captured["classic"] is True
 
 
-def test_transcription_service_does_not_use_python_progressive_for_paraformer_provider(
+def test_transcription_service_uses_python_progressive_for_paraformer_provider(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
     media = tmp_path / "sample.mp4"
     media.write_bytes(b"media")
     artifact = OutputArtifacts(paths=(tmp_path / "out" / "sample.txt",))
-    captured = {"classic": False}
+    captured = {"progressive": False}
 
     class FakeLocalFileSource:
         def __init__(self, inputs, recursive: bool) -> None:
@@ -542,11 +542,69 @@ def test_transcription_service_does_not_use_python_progressive_for_paraformer_pr
 
     class FakePipeline:
         def process(self, item: MediaItem, *, should_cancel=None) -> OutputArtifacts:
-            captured["classic"] = True
-            return artifact
+            raise AssertionError("paraformer provider should use Python progressive executor")
 
-        def process_progressive(self, *args, **kwargs):
-            raise AssertionError("paraformer provider should not use Python progressive executor")
+        def process_progressive(
+            self,
+            item: MediaItem,
+            *,
+            chunk_duration_seconds: float,
+            chunk_overlap_seconds: float,
+            resume: bool,
+            keep_progressive_cache: bool,
+            max_workers: int,
+            plan_callback,
+            update_callback,
+            should_cancel=None,
+        ):
+            captured["progressive"] = True
+            duration_info = MediaDurationInfo(
+                source=item,
+                prepared_audio_path=tmp_path / "prepared.wav",
+                sample_rate=16000,
+                duration_seconds=60.0,
+            )
+            chunk_plan = TranscriptionChunkPlan(
+                duration_info=duration_info,
+                chunks=(
+                    TranscriptionChunk(
+                        index=1,
+                        start_seconds=0.0,
+                        end_seconds=30.0,
+                        overlap_seconds=3.0,
+                    ),
+                ),
+                chunk_duration_seconds=30.0,
+                chunk_overlap_seconds=3.0,
+            )
+            plan_callback(duration_info, chunk_plan)
+            transcript = Transcript(
+                source=item,
+                segments=(TranscriptSegment(text="hello", start_seconds=0.0, end_seconds=5.0),),
+            )
+            state = ProgressiveTranscriptionState(
+                source=item,
+                duration_info=duration_info,
+                chunk_plan=chunk_plan,
+                chunk_results=(
+                    ChunkTranscriptionResult(
+                        chunk=chunk_plan.chunks[0],
+                        status="done",
+                        transcript=transcript,
+                    ),
+                ),
+                transcript=transcript,
+                processed_duration_seconds=30.0,
+            )
+            update_callback(
+                ProgressiveTranscriptionUpdate(
+                    state=state,
+                    chunk_result=state.chunk_results[0],
+                    appended_segments=transcript.segments,
+                    resumed=False,
+                )
+            )
+            return artifact, state
 
     monkeypatch.setattr("flowscribe.app.service.LocalFileSource", FakeLocalFileSource)
     monkeypatch.setattr("flowscribe.app.service._build_pipeline", lambda job, settings: FakePipeline())
@@ -558,10 +616,15 @@ def test_transcription_service_does_not_use_python_progressive_for_paraformer_pr
         progressive_enabled=True,
     )
 
-    result = TranscriptionService().run(job)
+    events = []
+    result = TranscriptionService().run(job, progress=events.append)
 
     assert result.ok is True
-    assert captured["classic"] is True
+    assert captured["progressive"] is True
+    assert any(
+        event.stage == "transcribe" and event.chunk_index == 1
+        for event in events
+    )
 
 
 def test_transcription_service_uses_more_conservative_default_overlap_for_chinese(
