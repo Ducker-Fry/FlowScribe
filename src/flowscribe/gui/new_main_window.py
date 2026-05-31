@@ -79,6 +79,7 @@ class NewMainWindow(QMainWindow):
         self._setup_ui()
         self._connect_signals()
         self._setup_queue_file_watcher()
+        self._refresh_queue_view()
 
     def _setup_ui(self) -> None:
         """Initialize UI components."""
@@ -602,10 +603,32 @@ class NewMainWindow(QMainWindow):
     def _setup_queue_file_watcher(self) -> None:
         """Setup file watcher for queue file."""
         queue_file = self._queue_store._path
+        queue_file.parent.mkdir(parents=True, exist_ok=True)
+        self._queue_file_watcher = QFileSystemWatcher(self)
+
         if queue_file.exists():
-            self._queue_file_watcher = QFileSystemWatcher([str(queue_file)], self)
-            self._queue_file_watcher.fileChanged.connect(self._on_queue_file_changed)
+            self._queue_file_watcher.addPath(str(queue_file))
+        self._queue_file_watcher.addPath(str(queue_file.parent))
+
+        self._queue_file_watcher.fileChanged.connect(self._on_queue_file_changed)
+        self._queue_file_watcher.directoryChanged.connect(self._on_queue_directory_changed)
+
+    def _watch_queue_file_if_available(self) -> None:
+        """Ensure the queue file is watched after it is created or rewritten."""
+        if self._queue_file_watcher is None:
+            return
+        queue_file = self._queue_store._path
+        if queue_file.exists():
+            watched_files = set(self._queue_file_watcher.files())
+            if str(queue_file) not in watched_files:
+                self._queue_file_watcher.addPath(str(queue_file))
 
     def _on_queue_file_changed(self, path: str) -> None:
         """Handle queue file changes (e.g., from bookmarklet server)."""
+        self._watch_queue_file_if_available()
+        self._refresh_queue_view()
+
+    def _on_queue_directory_changed(self, path: str) -> None:
+        """Handle queue file creation from external sources."""
+        self._watch_queue_file_if_available()
         self._refresh_queue_view()

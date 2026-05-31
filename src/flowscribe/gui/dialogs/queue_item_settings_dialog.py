@@ -16,8 +16,11 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QSpinBox,
     QVBoxLayout,
+    QWidget,
 )
 
 from flowscribe.tasks.models import SourceSpec
@@ -57,7 +60,9 @@ class QueueItemSettingsDialog(QDialog):
         super().__init__(parent)
         title = f"Batch Edit Settings ({item_label})" if is_batch else f"Edit Settings - {item_label}"
         self.setWindowTitle(title)
-        self.resize(600, 700)
+        self.setMinimumSize(520, 420)
+        self.resize(760, 680)
+        self.setSizeGripEnabled(True)
 
         self._settings = settings
         self._source = source
@@ -68,6 +73,20 @@ class QueueItemSettingsDialog(QDialog):
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
+        layout.setContentsMargins(12, 12, 12, 12)
+
+        scroll_area = QScrollArea(self)
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll_area.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
+        )
+
+        content_widget = QWidget(scroll_area)
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setSpacing(12)
+        content_layout.setContentsMargins(0, 0, 0, 0)
 
         # Output Settings
         output_group = QGroupBox("Output Settings")
@@ -234,15 +253,20 @@ class QueueItemSettingsDialog(QDialog):
         media_layout.addWidget(self.auto_bind_media_check, 2, 0, 1, 2)
 
         # Add all groups to main layout
-        layout.addWidget(output_group)
-        layout.addWidget(model_group)
-        layout.addWidget(timestamp_group)
-        layout.addWidget(progressive_group)
-        layout.addWidget(network_group)
-        layout.addWidget(media_group)
+        content_layout.addWidget(output_group)
+        content_layout.addWidget(model_group)
+        content_layout.addWidget(timestamp_group)
+        content_layout.addWidget(progressive_group)
+        content_layout.addWidget(network_group)
+        content_layout.addWidget(media_group)
+        content_layout.addStretch(1)
+
+        scroll_area.setWidget(content_widget)
+        layout.addWidget(scroll_area, 1)
 
         # Store reference to media group for conditional visibility
         self._media_group = media_group
+        self._scroll_area = scroll_area
 
         # Buttons
         button_layout = QHBoxLayout()

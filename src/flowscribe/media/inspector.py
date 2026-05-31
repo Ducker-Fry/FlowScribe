@@ -9,6 +9,7 @@ from pathlib import Path
 
 from flowscribe.core.errors import MediaPreparationError
 from flowscribe.media.tools import resolve_tool_path
+from flowscribe.utils.subprocess import hidden_subprocess_kwargs
 
 
 @dataclass(frozen=True)
@@ -62,6 +63,7 @@ class LocalMediaInspector:
                 text=True,
                 timeout=self._timeout_seconds,
                 check=True,
+                **hidden_subprocess_kwargs(),
             )
         except FileNotFoundError as exc:
             raise MediaPreparationError("ffprobe was not found. Install ffmpeg and add it to PATH.") from exc

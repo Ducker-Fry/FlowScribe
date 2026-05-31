@@ -7,6 +7,8 @@ import os
 import sys
 from typing import Literal
 
+from flowscribe.utils.runtime_logging import configure_runtime_logging
+
 GuiLogMode = Literal["dev", "user"]
 
 GUI_LOG_MODE_ENV = "FLOWSCRIBE_GUI_LOG_MODE"
@@ -47,8 +49,11 @@ def qt_logging_filter_rules(mode: GuiLogMode) -> str:
 
 def configure_gui_logging(mode: GuiLogMode | None = None) -> GuiLogMode:
     resolved_mode = resolve_gui_log_mode() if mode is None else mode
+    log_path = configure_runtime_logging("FlowScribeGUI")
     _configure_python_logging(resolved_mode)
     _configure_qt_logging(resolved_mode)
+    if log_path is not None:
+        get_gui_logger().info("GUI log file: %s", log_path)
     return resolved_mode
 
 
@@ -59,7 +64,7 @@ def get_gui_logger(name: str = GUI_LOGGER_NAME) -> logging.Logger:
 def _configure_python_logging(mode: GuiLogMode) -> None:
     root_logger = logging.getLogger()
     logger = logging.getLogger(GUI_LOGGER_NAME)
-    logger.setLevel(logging.DEBUG if mode == "dev" else logging.WARNING)
+    logger.setLevel(logging.DEBUG if mode == "dev" else logging.INFO)
     if not root_logger.handlers:
         logging.basicConfig(
             level=logging.WARNING,

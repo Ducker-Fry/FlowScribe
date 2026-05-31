@@ -3,7 +3,7 @@
 from pathlib import Path
 
 import pytest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QPushButton, QScrollArea
 
 from flowscribe.tasks.models import SourceSpec
 from flowscribe.gui.dialogs.queue_item_settings_dialog import QueueItemSettingsDialog
@@ -51,6 +51,29 @@ def test_dialog_hides_media_group_for_local_source(qapp):
 
     # Verify media group is hidden
     assert dialog._media_group.isHidden() is True
+
+
+def test_dialog_keeps_action_buttons_outside_scroll_area(qapp):
+    """Long settings content should scroll while action buttons stay reachable."""
+    settings = QueueItemSettings()
+    source = SourceSpec(kind="url", value="https://example.com/video")
+
+    dialog = QueueItemSettingsDialog(None, settings, source, "Test Item")
+
+    assert dialog.minimumWidth() <= 520
+    assert dialog.minimumHeight() <= 420
+    assert dialog.isSizeGripEnabled() is True
+
+    scroll_area = dialog.findChild(QScrollArea)
+    assert scroll_area is not None
+    assert scroll_area.widgetResizable() is True
+
+    button_texts = {
+        button.text()
+        for button in dialog.findChildren(QPushButton)
+        if button.parent() is dialog
+    }
+    assert {"Reset to Defaults", "Cancel", "Apply"}.issubset(button_texts)
 
 
 def test_dialog_returns_updated_source(qapp):

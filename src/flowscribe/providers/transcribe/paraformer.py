@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
+import logging
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -18,6 +20,7 @@ from flowscribe.core.models import (
     TranscriptionOptions,
 )
 from flowscribe.media.tools import resolve_tool_path
+from flowscribe.utils.subprocess import hidden_subprocess_kwargs
 
 PARAFORMER_PROVIDER_NAME = "paraformer"
 PARAFORMER_MODEL_NAME = "paraformer-zh"
@@ -27,11 +30,22 @@ PARAFORMER_FUNASR_MODEL_ID = (
 PARAFORMER_FUNASR_VAD_MODEL_ID = "iic/speech_fsmn_vad_zh-cn-16k-common-pytorch"
 PARAFORMER_FUNASR_PUNC_MODEL_ID = "iic/punc_ct-transformer_cn-en-common-vocab471067-large"
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
-MODELS_ROOT = PROJECT_ROOT / "models"
+
+
+def _default_models_root() -> Path:
+    """Resolve bundled/source model root without pointing frozen builds at _internal."""
+    if bool(getattr(sys, "frozen", False)):
+        executable_dir = Path(sys.executable).resolve().parent
+        return executable_dir / "models"
+    return PROJECT_ROOT / "models"
+
+
+MODELS_ROOT = Path(os.environ.get("FLOWSCRIBE_MODELS_DIR") or _default_models_root())
 PARAFORMER_MODEL_DIR = MODELS_ROOT / PARAFORMER_MODEL_NAME
 PARAFORMER_VAD_MODEL_DIR = MODELS_ROOT / "fsmn-vad"
 PARAFORMER_PUNC_MODEL_DIR = MODELS_ROOT / "ct-punc"
 DEFAULT_EXTERNAL_MODEL_CACHE_ROOT = Path("E:/Download Resource/FlowScribe/model-cache")
+LOGGER = logging.getLogger(__name__)
 
 
 class ParaformerTranscriber:
@@ -123,6 +137,14 @@ class ParaformerTranscriber:
                 PARAFORMER_FUNASR_PUNC_MODEL_ID,
                 PARAFORMER_PUNC_MODEL_DIR,
             )
+            LOGGER.info(
+                "Loading Paraformer model: model=%s vad=%s punc=%s frozen=%s executable=%s",
+                model_path,
+                vad_model_path,
+                punc_model_path,
+                bool(getattr(sys, "frozen", False)),
+                sys.executable,
+            )
             self._model = AutoModel(
                 model=str(model_path),
                 vad_model=str(vad_model_path),
@@ -177,7 +199,13 @@ class ParaformerTranscriber:
             str(clip_path),
         ]
         try:
-            subprocess.run(command, capture_output=True, text=True, check=True)
+            subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                check=True,
+                **hidden_subprocess_kwargs(),
+            )
         except FileNotFoundError as exc:
             raise TranscriptionError("ffmpeg was not found. Install ffmpeg and add it to PATH.") from exc
         except subprocess.CalledProcessError as exc:
@@ -323,6 +351,7 @@ class ParaformerTranscriber:
     def _ensure_model_snapshot(model_id: str, target_dir: Path) -> Path:
         target_dir.mkdir(parents=True, exist_ok=True)
         if _looks_like_funasr_model_dir(target_dir):
+            LOGGER.debug("Using existing Paraformer model directory for %s: %s", model_id, target_dir)
             return target_dir
 
         try:

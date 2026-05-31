@@ -22,11 +22,17 @@ from flowscribe.output.time_format import format_timestamp
 from flowscribe.search.transcript_search import search_transcript_file
 from flowscribe.providers.transcribe.native_engine import resolve_engine_exe
 from flowscribe.providers.transcribe.paraformer import PARAFORMER_MODEL_NAME
+from flowscribe.utils.runtime_logging import configure_runtime_logging
+
+LOGGER = logging.getLogger(__name__)
 
 CLI_PROGRESSIVE_AUTO_THRESHOLD_SECONDS = 20 * 60
 
 
 def main(argv: list[str] | None = None) -> int:
+    log_path = configure_runtime_logging("FlowScribeCLI")
+    if log_path is not None:
+        LOGGER.debug("CLI log file: %s", log_path)
     options = parse_args(argv)
     if options.command == "doctor":
         return run_doctor(

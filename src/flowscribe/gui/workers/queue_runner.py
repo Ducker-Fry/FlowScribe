@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import logging
 
 from PySide6.QtCore import QObject, Signal, Slot
 
@@ -10,6 +11,8 @@ from flowscribe.tasks.models import ProgressEvent
 from flowscribe.app.service import TranscriptionService
 from flowscribe.tasks.queue_models import QueueItem
 from flowscribe.tasks.queue_store import BatchQueueStore
+
+LOGGER = logging.getLogger(__name__)
 
 
 class QueueRunner(QObject):
@@ -31,6 +34,7 @@ class QueueRunner(QObject):
 
     @Slot()
     def run(self) -> None:
+        LOGGER.info("Queue runner started.")
         items = self._store.load_items()
         total = sum(1 for i in items if i.status == "pending")
         completed = 0
@@ -47,11 +51,20 @@ class QueueRunner(QObject):
                 completed += 1
             self.queue_progress.emit(completed, total)
 
+        LOGGER.info("Queue runner finished. Completed %s of %s pending item(s).", completed, total)
         self.queue_finished.emit()
 
     def _process_item(self, item: QueueItem) -> bool:
         job = item.to_job()
-        print(f"[QueueRunner] Processing job with output_dir={job.output_dir}, formats={job.output_formats}")
+        LOGGER.info(
+            "Processing queue item %s: source=%s provider=%s model=%s output_dir=%s formats=%s",
+            item.item_id,
+            item.source.value,
+            job.provider_name,
+            job.model_name,
+            job.output_dir,
+            job.output_formats,
+        )
         try:
             result = TranscriptionService().run(
                 job,
@@ -59,14 +72,19 @@ class QueueRunner(QObject):
                 should_cancel=lambda: self._cancel_current or self._cancel_all,
             )
         except Exception as exc:
-            print(f"[QueueRunner] Exception during transcription: {exc}")
+            LOGGER.exception("Unhandled exception while processing queue item %s.", item.item_id)
             self._mark_failed(item, str(exc))
             return False
 
-        print(f"[QueueRunner] Result: canceled={result.canceled}, errors={len(result.errors)}, outputs={len(result.outputs)}")
-        if result.outputs:
-            for idx, output in enumerate(result.outputs):
-                print(f"[QueueRunner] Output {idx}: paths={output.paths}")
+        LOGGER.info(
+            "Queue item %s result: canceled=%s errors=%s outputs=%s",
+            item.item_id,
+            result.canceled,
+            len(result.errors),
+            len(result.outputs),
+        )
+        for idx, output in enumerate(result.outputs):
+            LOGGER.debug("Queue item %s output %s: paths=%s", item.item_id, idx, output.paths)
 
         if result.canceled:
             self._store.update_item(
@@ -76,11 +94,11 @@ class QueueRunner(QObject):
             return False
 
         if result.errors:
-            print(f"[QueueRunner] Marking as failed due to errors: {result.errors[0].message}")
+            LOGGER.error("Queue item %s failed: %s", item.item_id, result.errors[0].message)
             self._mark_failed(item, result.errors[0].message)
             return False
 
-        print("[QueueRunner] Marking as completed")
+        LOGGER.info("Queue item %s completed.", item.item_id)
         transcript_path = None
         if result.outputs:
             transcript_path = result.outputs[0].json_path

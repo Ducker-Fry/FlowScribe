@@ -19,6 +19,7 @@ from flowscribe.input.proxy import proxy_environment, proxy_handler, yt_dlp_prox
 from flowscribe.input.url_inspector import friendly_ytdlp_error
 from flowscribe.input.url_security import NetworkFamily, validate_public_http_url
 from flowscribe.media.tools import resolve_tool_path
+from flowscribe.utils.subprocess import hidden_subprocess_kwargs
 
 AUDIO_EXTENSIONS = {".aac", ".aiff", ".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav", ".wma"}
 VIDEO_EXTENSIONS = SUPPORTED_MEDIA_EXTENSIONS - AUDIO_EXTENSIONS
@@ -170,6 +171,7 @@ class UrlAudioDownloader:
                 timeout=process_timeout,
                 check=True,
                 env=proxy_environment(self._proxy),
+                **hidden_subprocess_kwargs(),
             )
         except FileNotFoundError as exc:
             raise DownloadError("ffmpeg was not found. Install ffmpeg and add it to PATH.") from exc
@@ -396,6 +398,7 @@ class UrlAudioDownloader:
                 timeout=process_timeout,
                 check=True,
                 env=proxy_environment(self._proxy),
+                **hidden_subprocess_kwargs(),
             )
         except FileNotFoundError:
             import warnings
@@ -471,6 +474,7 @@ class UrlAudioDownloader:
                 timeout=process_timeout,
                 check=True,
                 env=proxy_environment(self._proxy),
+                **hidden_subprocess_kwargs(),
             )
         except FileNotFoundError as exc:
             raise DownloadError("ffmpeg was not found. Install ffmpeg and add it to PATH.") from exc
@@ -523,6 +527,7 @@ class UrlAudioDownloader:
                 timeout=self._timeout_seconds,
                 check=True,
                 env=proxy_environment(self._proxy),
+                **hidden_subprocess_kwargs(),
             )
         except FileNotFoundError as exc:
             raise DownloadError("ffprobe was not found. Install ffmpeg and add it to PATH.") from exc

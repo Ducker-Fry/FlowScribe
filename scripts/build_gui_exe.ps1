@@ -21,6 +21,7 @@ $HelperBuildScript = Join-Path $ProjectRoot "scripts\build_wasapi_helper.ps1"
 $HelperStageDir = Join-Path $ProjectRoot "build\wasapi-helper"
 $UserBase = Join-Path $ProjectRoot ".py-user-base"
 $DependencyChecker = Join-Path $PSScriptRoot "Check-BuildDependencies.ps1"
+$ModelsSourceDir = Join-Path $ProjectRoot "models"
 
 function Write-Step {
     param([string]$Message)
@@ -118,6 +119,26 @@ function Copy-WasapiHelper {
     }
 }
 
+function Copy-ModelAssets {
+    param(
+        [string]$SourceDir,
+        [string]$DestinationDir
+    )
+
+    if (-not (Test-Path $SourceDir)) {
+        Write-Host "  No models directory found at $SourceDir; packaged app may download models on first use." -ForegroundColor Yellow
+        return
+    }
+
+    $releaseModelsDir = Join-Path $DestinationDir "models"
+    if (Test-Path $releaseModelsDir) {
+        Remove-Item -LiteralPath $releaseModelsDir -Recurse -Force
+    }
+
+    Copy-Item -LiteralPath $SourceDir -Destination $releaseModelsDir -Recurse -Force
+    Write-Host "Copied model assets to $releaseModelsDir"
+}
+
 Push-Location $ProjectRoot
 try {
     Write-Step "Check build dependencies"
@@ -210,6 +231,10 @@ try {
         --hidden-import PySide6.QtMultimediaWidgets `
         --hidden-import PySide6.QtWidgets `
         --hidden-import PySide6.QtSvg `
+        --hidden-import funasr `
+        --hidden-import modelscope `
+        --collect-all funasr `
+        --collect-all modelscope `
         --add-data "icons;icons" `
         @IconArg `
         "src\flowscribe\gui\__main__.py"
@@ -225,6 +250,9 @@ try {
     Write-Step "Copy ffmpeg and ffprobe into GUI release folder"
     Copy-Tool -Name "ffmpeg" -DestinationDir $PackageDir
     Copy-Tool -Name "ffprobe" -DestinationDir $PackageDir
+
+    Write-Step "Copy model assets into GUI release folder"
+    Copy-ModelAssets -SourceDir $ModelsSourceDir -DestinationDir $PackageDir
 
     Write-Step "Done"
     Write-Host "GUI release folder: $PackageDir" -ForegroundColor Green

@@ -22,6 +22,7 @@ from flowscribe.core.models import (
 )
 from flowscribe.engine.pipe_client import FlowScribeEngineClient
 from flowscribe.engine.protocol import MessageKind
+from flowscribe.utils.subprocess import hidden_subprocess_kwargs
 
 NATIVE_ENGINE_PROVIDER_NAME = "native-engine"
 
@@ -164,6 +165,7 @@ class NativeEngineTranscriber:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                **hidden_subprocess_kwargs(),
             )
         except OSError as exc:
             raise TranscriptionError(f"Failed to start native engine {engine_exe}: {exc}") from exc

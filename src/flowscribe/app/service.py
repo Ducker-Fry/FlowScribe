@@ -5,6 +5,7 @@ from __future__ import annotations
 import shutil
 import time
 import inspect
+import logging
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -47,6 +48,8 @@ from flowscribe.providers.transcribe.registry import (
     supports_python_progressive_provider_name,
 )
 
+LOGGER = logging.getLogger(__name__)
+
 
 class TranscriptionService:
     """Run transcription jobs through a stable app-facing interface."""
@@ -62,6 +65,14 @@ class TranscriptionService:
         started_at = datetime.now()
         outputs: list[OutputArtifacts] = []
         errors: list[ErrorInfo] = []
+        LOGGER.info(
+            "Starting transcription job: sources=%s provider=%s model=%s output_dir=%s progressive=%s",
+            len(job.sources),
+            job.provider_name,
+            job.model_name,
+            job.output_dir,
+            job.progressive_enabled,
+        )
 
         try:
             self._emit_progress(
@@ -87,6 +98,7 @@ class TranscriptionService:
                 outputs.extend(source_outputs)
                 errors.extend(source_errors)
         except CancellationError:
+            LOGGER.info("Transcription job canceled.")
             progress(
                 ProgressEvent(
                     stage="canceled",
@@ -111,6 +123,16 @@ class TranscriptionService:
                 total=len(job.sources),
             ),
         )
+        if errors:
+            for error in errors:
+                LOGGER.error(
+                    "Transcription job source failed: source=%s code=%s message=%s",
+                    error.source,
+                    error.code,
+                    error.message,
+                )
+        else:
+            LOGGER.info("Transcription job completed successfully with %s output(s).", len(outputs))
         return TranscriptionResult(
             job=job,
             outputs=tuple(outputs),
@@ -139,6 +161,7 @@ class TranscriptionService:
         except CancellationError:
             raise
         except FlowScribeError as exc:
+            LOGGER.exception("Source failed: source=%s kind=%s", source.value, source.kind)
             error = _error_from_exception(exc, source=source.value)
             self._emit_progress(
                 progress,
@@ -248,6 +271,7 @@ class TranscriptionService:
                         else None,
                     )
             except FlowScribeError as exc:
+                LOGGER.exception("Local media item failed: %s", item.path)
                 errors.append(_error_from_exception(exc, source=str(item.path)))
                 self._emit_progress(
                     progress,

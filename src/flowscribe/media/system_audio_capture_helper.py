@@ -20,6 +20,7 @@ from flowscribe.media.system_audio_capture_models import (
     CaptureStartResult,
     CaptureSupportStatus,
 )
+from flowscribe.utils.subprocess import hidden_subprocess_kwargs
 
 HELPER_EXE_NAME = "WasapiCaptureHelper.exe"
 
@@ -121,6 +122,7 @@ class WasapiHelperCaptureRecorder:
             text=True,
             encoding="utf-8",
             errors="replace",
+            **hidden_subprocess_kwargs(),
         )
         self._process = process
         self._active_output_path = output_path
@@ -356,6 +358,7 @@ def _run_json_command(
             errors="replace",
             timeout=timeout_seconds,
             check=False,
+            **hidden_subprocess_kwargs(),
         )
     except FileNotFoundError as exc:
         raise MediaPreparationError(f"WASAPI helper was not found: {helper_path}") from exc

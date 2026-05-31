@@ -96,6 +96,45 @@ def test_paraformer_transcribe_clip_slices_audio_and_maps_local_timestamps(
     assert not Path(fake_models[0].generate_kwargs["input"]).exists()
 
 
+def test_paraformer_clip_uses_hidden_subprocess_kwargs(monkeypatch, tmp_path: Path) -> None:
+    _redirect_model_dirs(monkeypatch, tmp_path)
+    audio = _prepared_audio(tmp_path, duration_seconds=30.0)
+    _install_fake_funasr(monkeypatch, [{"text": "clip text"}])
+    _install_fake_modelscope(monkeypatch)
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(kwargs)
+        Path(command[-1]).write_bytes(b"clip")
+
+        class Result:
+            stdout = ""
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr("flowscribe.providers.transcribe.paraformer.subprocess.run", fake_run)
+    monkeypatch.setattr(
+        "flowscribe.providers.transcribe.paraformer.hidden_subprocess_kwargs",
+        lambda: {"creationflags": 123},
+    )
+
+    ParaformerTranscriber(language="zh").transcribe_clip(
+        audio,
+        start_seconds=10.0,
+        end_seconds=15.5,
+    )
+
+    assert calls[0]["creationflags"] == 123
+
+
+def test_default_models_root_uses_executable_dir_for_frozen_build(monkeypatch) -> None:
+    monkeypatch.setattr(paraformer.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(paraformer.sys, "executable", r"E:\Software\FlowScribeGUI\FlowScribeGUI.exe")
+
+    assert paraformer._default_models_root() == Path(r"E:\Software\FlowScribeGUI\models")
+
+
 def test_paraformer_transcriber_reports_missing_dependency(monkeypatch, tmp_path: Path) -> None:
     audio = _prepared_audio(tmp_path)
 
