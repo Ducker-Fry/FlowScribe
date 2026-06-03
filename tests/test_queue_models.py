@@ -6,6 +6,7 @@ from flowscribe.tasks.models import SourceSpec
 from flowscribe.tasks.queue_models import (
     QueueItem,
     QueueItemSettings,
+    apply_source_edit_options,
     generate_queue_item_id,
 )
 
@@ -100,7 +101,7 @@ def test_to_job_creates_subdirectory_with_timestamp():
         created_at=created_at,
     )
     job = item.to_job()
-    assert job.output_dir == Path("out/143045-video")
+    assert job.output_dir == Path("out/143045-abc123-video")
     assert job.provider_name == "native-engine"
     assert job.model_name == "models/ggml-base.en.bin"
     assert job.native_threads == 8
@@ -119,7 +120,58 @@ def test_to_job_creates_subdirectory_for_local():
         created_at=created_at,
     )
     job = item.to_job()
-    assert job.output_dir == Path("out/090530-lecture")
+    assert job.output_dir == Path("out/090530-abc123-lecture")
+
+
+def test_to_job_disambiguates_items_created_same_second_with_same_stem():
+    from datetime import datetime
+
+    created_at = datetime(2026, 5, 22, 14, 30, 45)
+    settings = QueueItemSettings(output_dir=Path("out"))
+    first_source = SourceSpec(kind="url", value="https://example.com/a/video.mp4")
+    second_source = SourceSpec(kind="url", value="https://example.com/b/video.mp4")
+
+    first = QueueItem(
+        item_id="first123",
+        source=first_source,
+        settings=settings,
+        created_at=created_at,
+    )
+    second = QueueItem(
+        item_id="second456",
+        source=second_source,
+        settings=settings,
+        created_at=created_at,
+    )
+
+    assert first.to_job().output_dir == Path("out/143045-first123-video")
+    assert second.to_job().output_dir == Path("out/143045-second456-video")
+    assert first.to_job().output_dir != second.to_job().output_dir
+
+
+def test_apply_source_edit_options_preserves_source_identity():
+    source = SourceSpec(
+        kind="url",
+        value="https://example.com/original.mp4",
+        keep_media=False,
+        url_media_kind="audio",
+        auto_bind_media=False,
+    )
+    edited = SourceSpec(
+        kind="url",
+        value="https://example.com/other.mp4",
+        keep_media=True,
+        url_media_kind="video",
+        auto_bind_media=True,
+    )
+
+    updated = apply_source_edit_options(source, edited)
+
+    assert updated.kind == source.kind
+    assert updated.value == source.value
+    assert updated.keep_media is True
+    assert updated.url_media_kind == "video"
+    assert updated.auto_bind_media is True
 
 
 def test_to_job_uses_settings_output_name_base():

@@ -11,6 +11,7 @@ from flowscribe.gui.gui_logging import get_gui_logger
 from flowscribe.tasks.queue_models import (
     QueueItem,
     QueueItemSettings,
+    apply_source_edit_options,
     generate_queue_item_id,
 )
 from flowscribe.tasks.queue_importers import (
@@ -290,7 +291,14 @@ class QueueControlsMixin:
             new_settings, new_source = result
             # Apply to all selected items
             for item_id in item_ids:
-                self._queue_store.update_item(item_id, settings=new_settings, source=new_source)
+                current_item = self._queue_store.get_item(item_id)
+                if current_item is None:
+                    continue
+                self._queue_store.update_item(
+                    item_id,
+                    settings=new_settings,
+                    source=apply_source_edit_options(current_item.source, new_source),
+                )
             self._refresh_queue_tab()
             if is_batch:
                 self.status_label.setText(f"Updated settings for {len(item_ids)} items")

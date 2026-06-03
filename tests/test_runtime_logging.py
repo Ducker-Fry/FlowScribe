@@ -1,11 +1,13 @@
 import logging
 import sys
+from datetime import datetime
 
 from flowscribe.utils import runtime_logging
 from flowscribe.utils.runtime_logging import (
     configure_runtime_logging,
     flowscribe_log_dir,
     install_null_standard_streams,
+    select_log_path,
 )
 
 
@@ -42,6 +44,41 @@ def test_configure_runtime_logging_writes_file(monkeypatch, tmp_path) -> None:
     log_path = configure_runtime_logging("FlowScribeTest")
     logging.getLogger("flowscribe.test").error("runtime log smoke")
 
-    assert log_path == tmp_path / "FlowScribeTest.log"
+    expected_name = f"FlowScribeTest-{datetime.now().strftime('%Y-%m-%d')}.log"
+    assert log_path == tmp_path / expected_name
     assert log_path.exists()
     assert "runtime log smoke" in log_path.read_text(encoding="utf-8")
+
+
+def test_select_log_path_uses_current_date_name(tmp_path) -> None:
+    log_path = select_log_path(tmp_path, "FlowScribeTest", now=datetime(2026, 6, 3, 10, 30, 0))
+
+    assert log_path == tmp_path / "FlowScribeTest-2026-06-03.log"
+
+
+def test_select_log_path_rolls_to_numbered_file_when_day_log_is_full(tmp_path) -> None:
+    first_log = tmp_path / "FlowScribeTest-2026-06-03.log"
+    first_log.write_bytes(b"x" * 10)
+
+    log_path = select_log_path(
+        tmp_path,
+        "FlowScribeTest",
+        now=datetime(2026, 6, 3, 10, 30, 0),
+        max_bytes=10,
+    )
+
+    assert log_path == tmp_path / "FlowScribeTest-2026-06-03-1.log"
+
+
+def test_select_log_path_skips_full_numbered_logs(tmp_path) -> None:
+    (tmp_path / "FlowScribeTest-2026-06-03.log").write_bytes(b"x" * 10)
+    (tmp_path / "FlowScribeTest-2026-06-03-1.log").write_bytes(b"x" * 10)
+
+    log_path = select_log_path(
+        tmp_path,
+        "FlowScribeTest",
+        now=datetime(2026, 6, 3, 10, 30, 0),
+        max_bytes=10,
+    )
+
+    assert log_path == tmp_path / "FlowScribeTest-2026-06-03-2.log"

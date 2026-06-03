@@ -18,6 +18,7 @@ from flowscribe.input.file_filter import SUPPORTED_MEDIA_EXTENSIONS
 from flowscribe.input.proxy import proxy_environment, proxy_handler, yt_dlp_proxy_options
 from flowscribe.input.url_inspector import friendly_ytdlp_error
 from flowscribe.input.url_security import NetworkFamily, validate_public_http_url
+from flowscribe.input.yt_dlp_site_options import yt_dlp_site_options
 from flowscribe.media.tools import resolve_tool_path
 from flowscribe.utils.subprocess import hidden_subprocess_kwargs
 
@@ -213,6 +214,7 @@ class UrlAudioDownloader:
             "noprogress": True,
             **_network_options(self._network_family),
             **yt_dlp_proxy_options(self._proxy),
+            **yt_dlp_site_options(url),
         }
         cookiefile = resolve_cookies_path(self._cookies_path)
         if cookiefile:

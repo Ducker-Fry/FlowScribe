@@ -1,6 +1,7 @@
 from types import ModuleType, SimpleNamespace
 import logging
 import sys
+from datetime import datetime
 
 from flowscribe.gui.gui_logging import (
     GUI_LOG_MODE_ENV,
@@ -87,4 +88,5 @@ def test_configure_gui_logging_installs_writable_streams(monkeypatch, tmp_path) 
 
     assert sys.stdout.write("progress") == len("progress")
     assert sys.stderr.write("error") == len("error")
-    assert (tmp_path / "FlowScribeGUI.log").exists()
+    expected_name = f"FlowScribeGUI-{datetime.now().strftime('%Y-%m-%d')}.log"
+    assert (tmp_path / expected_name).exists()

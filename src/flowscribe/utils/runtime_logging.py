@@ -6,7 +6,7 @@ import io
 import logging
 import os
 import sys
-from logging.handlers import RotatingFileHandler
+from datetime import datetime
 from pathlib import Path
 from typing import TextIO
 
@@ -14,7 +14,6 @@ LOG_DIR_ENV = "FLOWSCRIBE_LOG_DIR"
 LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 MAX_LOG_BYTES = 5 * 1024 * 1024
-BACKUP_COUNT = 3
 
 
 class NullTextIO(io.TextIOBase):
@@ -54,7 +53,7 @@ def configure_runtime_logging(
     except OSError:
         return None
 
-    log_path = log_dir / f"{app_name}.log"
+    log_path = select_log_path(log_dir, app_name)
     handler_key = str(log_path.resolve()).lower()
     root_logger = logging.getLogger()
     root_logger.setLevel(min(root_logger.level or root_level, root_level))
@@ -64,12 +63,7 @@ def configure_runtime_logging(
             return log_path
 
     try:
-        handler = RotatingFileHandler(
-            log_path,
-            maxBytes=MAX_LOG_BYTES,
-            backupCount=BACKUP_COUNT,
-            encoding="utf-8",
-        )
+        handler = logging.FileHandler(log_path, encoding="utf-8")
     except OSError:
         return None
 
@@ -78,6 +72,37 @@ def configure_runtime_logging(
     handler._flowscribe_log_path = handler_key  # type: ignore[attr-defined]
     root_logger.addHandler(handler)
     return log_path
+
+
+def select_log_path(
+    log_dir: Path,
+    app_name: str,
+    *,
+    now: datetime | None = None,
+    max_bytes: int = MAX_LOG_BYTES,
+) -> Path:
+    current_time = datetime.now() if now is None else now
+    date_prefix = current_time.strftime("%Y-%m-%d")
+    extension = ".log"
+    base_name = f"{app_name}-{date_prefix}"
+
+    candidate = log_dir / f"{base_name}{extension}"
+    if not _needs_log_rollover(candidate, max_bytes):
+        return candidate
+
+    index = 1
+    while True:
+        candidate = log_dir / f"{base_name}-{index}{extension}"
+        if not _needs_log_rollover(candidate, max_bytes):
+            return candidate
+        index += 1
+
+
+def _needs_log_rollover(log_path: Path, max_bytes: int) -> bool:
+    try:
+        return log_path.exists() and log_path.stat().st_size >= max_bytes
+    except OSError:
+        return False
 
 
 def flowscribe_log_dir(env: dict[str, str] | None = None) -> Path:

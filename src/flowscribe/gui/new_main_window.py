@@ -6,7 +6,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QFileSystemWatcher, QThread, QUrl
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget, QToolBar
+from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QStackedWidget, QToolBar
 
 from flowscribe.tasks.models import SourceSpec
 from flowscribe.gui.dialogs.queue_item_settings_dialog import QueueItemSettingsDialog
@@ -29,6 +29,7 @@ from flowscribe.tasks.queue_importers import import_urls_from_file, parse_urls_f
 from flowscribe.tasks.queue_models import (
     QueueItem,
     QueueItemSettings,
+    apply_source_edit_options,
     generate_queue_item_id,
 )
 
@@ -75,6 +76,7 @@ class NewMainWindow(QMainWindow):
         self._server_thread: QThread | None = None
         self._server_worker = None
         self._server_port: int | None = None
+        self._library_view_dialog = None
 
         self._setup_ui()
         self._connect_signals()
@@ -139,8 +141,11 @@ class NewMainWindow(QMainWindow):
         # LibraryView signals
         self._library_view.transcript_open_requested.connect(self._on_library_open_transcript)
         self._library_view.output_dir_open_requested.connect(self._on_library_open_output_dir)
+        self._library_view.output_dirs_open_requested.connect(self._on_library_open_output_dirs)
         self._library_view.media_rebind_requested.connect(self._on_library_rebind_media)
         self._library_view.entry_remove_requested.connect(self._on_library_remove_entry)
+        self._library_view.entries_remove_requested.connect(self._on_library_remove_entries)
+        self._library_view.artifact_open_requested.connect(self._on_library_open_artifact)
         self._library_view.missing_cleanup_requested.connect(self._on_library_cleanup_missing)
 
         # QueueView signals
@@ -269,8 +274,38 @@ class NewMainWindow(QMainWindow):
     # LibraryView handlers
     def _on_library_open_transcript(self, entry) -> None:
         """Open transcript from library."""
-        # TODO: Load transcript in workspace
-        self.statusBar().showMessage(f"Opening transcript: {entry.transcript_path}")
+        if not entry.transcript_path.is_file():
+            self.statusBar().showMessage(f"Transcript not found: {entry.transcript_path}")
+            self._library_view.refresh_library()
+            return
+
+        entry = self._ensure_library_outputs(entry)
+        if self._library_view_dialog is None:
+            from flowscribe.gui.dialogs import TranscriptionViewDialog
+
+            self._library_view_dialog = TranscriptionViewDialog(
+                self,
+                transcript_path=None,
+                run_output="",
+                result=None,
+                output_paths=None,
+            )
+
+        self._library_view_dialog.clear_content()
+        output_paths = tuple(output.path for output in entry.outputs)
+        self._library_view_dialog._load_transcript_with_artifacts(
+            entry.transcript_path,
+            output_paths,
+        )
+        if entry.media_binding is not None and entry.media_binding.media_path.is_file():
+            self._library_view_dialog._bind_media(entry.media_binding.media_path)
+
+        self._library_store.mark_opened(entry.entry_id)
+        self._library_view.refresh_library()
+        self._library_view_dialog.show()
+        self._library_view_dialog.raise_()
+        self._library_view_dialog.activateWindow()
+        self.statusBar().showMessage(f"Opened transcript: {entry.display_label}")
 
     def _on_library_open_output_dir(self, entry) -> None:
         """Open output directory."""
@@ -280,16 +315,69 @@ class NewMainWindow(QMainWindow):
         else:
             self.statusBar().showMessage("Output directory not found")
 
+    def _on_library_open_output_dirs(self, entries: list) -> None:
+        opened = 0
+        missing = 0
+        seen: set[Path] = set()
+        for entry in entries:
+            output_dir = Path(entry.output_dir)
+            if output_dir in seen:
+                continue
+            seen.add(output_dir)
+            if output_dir.exists():
+                QDesktopServices.openUrl(QUrl.fromLocalFile(str(output_dir)))
+                opened += 1
+            else:
+                missing += 1
+        self.statusBar().showMessage(f"Opened {opened} output folder(s). Missing: {missing}.")
+
     def _on_library_rebind_media(self, entry) -> None:
         """Rebind media for transcript."""
-        # TODO: Implement media rebinding
-        self.statusBar().showMessage(f"Rebind media: {entry.transcript_path}")
+        media_path_text, _ = QFileDialog.getOpenFileName(
+            self,
+            "Bind media to transcript",
+            str(entry.output_dir if entry.output_dir.exists() else Path.home()),
+            "Media files (*.mp4 *.mp3 *.wav *.m4a *.mkv *.avi *.flac *.ogg *.webm);;All files (*.*)",
+        )
+        if not media_path_text:
+            return
+
+        from dataclasses import replace
+        from flowscribe.library.models import LibraryMediaBinding
+
+        media_path = Path(media_path_text)
+        updated = replace(
+            entry,
+            media_binding=LibraryMediaBinding.create(
+                transcript_path=entry.transcript_path,
+                media_path=media_path,
+                binding_type="manual",
+            ),
+        ).refresh_missing_status()
+        self._library_store.upsert_entry(updated)
+        self._library_view.refresh_library()
+        self.statusBar().showMessage(f"Bound media: {media_path.name}")
 
     def _on_library_remove_entry(self, entry) -> None:
         """Remove entry from library."""
-        self._library_store.remove_entry_by_transcript_path(entry.transcript_path)
+        self._library_store.remove_entry(entry.entry_id)
         self._library_view.refresh_library()
         self.statusBar().showMessage("Entry removed from library")
+
+    def _on_library_remove_entries(self, entries: list) -> None:
+        removed = 0
+        for entry in entries:
+            if self._library_store.remove_entry(entry.entry_id):
+                removed += 1
+        self._library_view.refresh_library()
+        self.statusBar().showMessage(f"Removed {removed} entries from library")
+
+    def _on_library_open_artifact(self, path: Path) -> None:
+        if path.is_file():
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+            self.statusBar().showMessage(f"Opened artifact: {path.name}")
+        else:
+            self.statusBar().showMessage(f"Artifact not found: {path}")
 
     def _on_library_cleanup_missing(self) -> None:
         """Clean up missing library entries."""
@@ -299,6 +387,22 @@ class NewMainWindow(QMainWindow):
         removed = self._library_store.remove_missing_entries()
         self._library_view.refresh_library()
         self.statusBar().showMessage(f"Removed {len(removed)} missing entries")
+
+    def _ensure_library_outputs(self, entry):
+        if entry.outputs:
+            return entry
+        from dataclasses import replace
+        from flowscribe.library import LibraryOutputRecord
+        from flowscribe.gui.utils.library import _discover_transcript_output_paths
+
+        output_paths = _discover_transcript_output_paths(entry.transcript_path)
+        if not output_paths:
+            return entry
+        updated = replace(
+            entry,
+            outputs=tuple(LibraryOutputRecord.from_path(path) for path in output_paths),
+        ).refresh_missing_status()
+        return self._library_store.upsert_entry(updated)
 
     # QueueView handlers
     def _on_enqueue_urls(self, text: str) -> None:
@@ -475,10 +579,13 @@ class NewMainWindow(QMainWindow):
                 updated_settings, updated_source = result
                 # Apply to all selected items
                 for item_id in item_ids:
+                    current_item = self._queue_store.get_item(item_id)
+                    if current_item is None:
+                        continue
                     self._queue_store.update_item(
                         item_id,
                         settings=updated_settings,
-                        source=updated_source,
+                        source=apply_source_edit_options(current_item.source, updated_source),
                     )
                 self._refresh_queue_view()
                 if is_batch:

@@ -9,6 +9,7 @@ param(
     [switch]$CheckFfmpeg,
     [switch]$CheckPyInstaller,
     [switch]$CheckPySide6,
+    [switch]$CheckParaformer,
     [switch]$AutoInstall,
     [switch]$AutoAddToPath
 )
@@ -348,7 +349,7 @@ function Test-PythonPackage {
     )
 
     try {
-        $checkScript = "import $ImportName; print($ImportName.__version__)"
+        $checkScript = "import importlib.metadata as metadata; import $ImportName; print(metadata.version('$PackageName'))"
         $versionOutput = & $PythonCmd -c $checkScript 2>&1
 
         if ($LASTEXITCODE -eq 0) {
@@ -394,13 +395,18 @@ function Install-PythonPackage {
         Write-Info "Installing $PackageName..."
 
         if ($Upgrade) {
-            & $PythonCmd -m pip install --upgrade $PackageName
+            $installOutput = & $PythonCmd -m pip install --upgrade $PackageName 2>&1
         }
         else {
-            & $PythonCmd -m pip install $PackageName
+            $installOutput = & $PythonCmd -m pip install $PackageName 2>&1
         }
 
-        if ($LASTEXITCODE -eq 0) {
+        $installExitCode = $LASTEXITCODE
+        foreach ($line in $installOutput) {
+            Write-Host $line
+        }
+
+        if ($installExitCode -eq 0) {
             Write-Success "$PackageName installed successfully"
             return $true
         }
@@ -689,6 +695,48 @@ if ($CheckPySide6) {
                     $allChecksPassed = $false
                 }
             }
+        }
+    }
+}
+
+if ($CheckParaformer) {
+    Write-Info "Checking Paraformer dependencies..."
+    $paraformerPackages = @(
+        @{ PackageName = "funasr"; ImportName = "funasr" },
+        @{ PackageName = "modelscope"; ImportName = "modelscope" }
+    )
+
+    foreach ($package in $paraformerPackages) {
+        $check = Test-PythonPackage `
+            -PythonCmd $Python `
+            -PackageName $package.PackageName `
+            -ImportName $package.ImportName
+
+        if ($check.Success) {
+            Write-Success "$($package.PackageName) $($check.Version) found"
+            continue
+        }
+
+        Write-Warning "$($package.PackageName) not found: $($check.Message)"
+        if ($AutoInstall) {
+            $install = Install-PythonPackage -PythonCmd $Python -PackageName $package.PackageName
+            if (-not $install) {
+                $allChecksPassed = $false
+            }
+            continue
+        }
+
+        $choice = Get-UserChoice -Prompt "Install $($package.PackageName) now?"
+        if ($choice -eq "Y") {
+            $install = Install-PythonPackage -PythonCmd $Python -PackageName $package.PackageName
+            if (-not $install) {
+                $allChecksPassed = $false
+            }
+        }
+        else {
+            Write-Info "Skipping $($package.PackageName) installation"
+            Write-Info "Install manually with: $Python -m pip install $($package.PackageName)"
+            $allChecksPassed = $false
         }
     }
 }

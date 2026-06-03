@@ -12,6 +12,7 @@ from flowscribe.input.cookies import resolve_cookies_path
 from flowscribe.input.file_filter import SUPPORTED_MEDIA_EXTENSIONS
 from flowscribe.input.proxy import yt_dlp_proxy_options
 from flowscribe.input.url_security import NetworkFamily, validate_public_http_url
+from flowscribe.input.yt_dlp_site_options import yt_dlp_site_options
 
 AUDIO_EXTENSIONS = {".aac", ".aiff", ".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav", ".wma"}
 VIDEO_EXTENSIONS = SUPPORTED_MEDIA_EXTENSIONS - AUDIO_EXTENSIONS
@@ -129,6 +130,7 @@ class UrlInspector:
             "no_warnings": True,
             **_network_options(self._network_family),
             **yt_dlp_proxy_options(self._proxy),
+            **yt_dlp_site_options(url),
         }
         cookiefile = resolve_cookies_path(self._cookies_path)
         if cookiefile:

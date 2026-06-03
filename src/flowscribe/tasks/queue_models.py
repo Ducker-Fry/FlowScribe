@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from hashlib import sha1
 from pathlib import Path
 from typing import Literal
-from urllib.parse import urlparse
 
 from flowscribe.tasks.models import SourceSpec, TranscriptionJob
 
@@ -69,10 +68,7 @@ class QueueItem:
         return Path(self.source.value).name
 
     def to_job(self) -> TranscriptionJob:
-        # Create subdirectory with timestamp for each queue item to avoid conflicts
-        timestamp = self.created_at.strftime("%H%M%S")
-        subdir_name = f"{timestamp}-{_source_stem(self.source)}"
-        effective_output_dir = self.settings.output_dir / subdir_name
+        effective_output_dir = allocate_series_output_dir(self.settings.output_dir)
 
         return TranscriptionJob(
             sources=(self.source,),
@@ -100,36 +96,40 @@ class QueueItem:
         )
 
 
+def allocate_series_output_dir(root_dir: Path) -> Path:
+    """Allocate the next numeric child directory under a series root."""
+    root_dir.mkdir(parents=True, exist_ok=True)
+
+    max_index = 0
+    for child in root_dir.iterdir():
+        if not child.is_dir():
+            continue
+        try:
+            value = int(child.name)
+        except ValueError:
+            continue
+        max_index = max(max_index, value)
+
+    next_index = max_index + 1
+    while True:
+        candidate = root_dir / f"{next_index:03d}"
+        try:
+            candidate.mkdir()
+            return candidate
+        except FileExistsError:
+            next_index += 1
+
+
 def generate_queue_item_id(source: SourceSpec) -> str:
     key = f"{source.kind}:{source.value}".encode("utf-8")
     return sha1(key).hexdigest()[:12]
 
 
-def _source_stem(source: SourceSpec) -> str:
-    """Extract a safe directory name from the source."""
-    if source.kind == "local":
-        return Path(source.value).stem
-
-    # For URLs, try to extract a meaningful name from the path
-    path = urlparse(source.value).path.rstrip("/")
-    if path:
-        stem = Path(path).stem
-        if stem:
-            return _sanitize_dirname(stem)
-
-    # Fallback: use URL hash for uniqueness
-    url_hash = sha1(source.value.encode("utf-8")).hexdigest()[:12]
-    return f"url-{url_hash}"
-
-
-def _sanitize_dirname(name: str) -> str:
-    """Sanitize a string to be safe for use as a directory name."""
-    # Remove or replace forbidden characters
-    forbidden = '<>:"/\\|?*'
-    cleaned = "".join("-" if char in forbidden else char for char in name)
-    # Remove leading/trailing spaces and dots
-    cleaned = cleaned.strip(" .")
-    # Limit length
-    if len(cleaned) > 100:
-        cleaned = cleaned[:100]
-    return cleaned or "output"
+def apply_source_edit_options(source: SourceSpec, edited: SourceSpec) -> SourceSpec:
+    """Apply editable source options without replacing the source identity."""
+    return replace(
+        source,
+        keep_media=edited.keep_media,
+        url_media_kind=edited.url_media_kind,
+        auto_bind_media=edited.auto_bind_media,
+    )

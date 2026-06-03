@@ -142,7 +142,7 @@ function Copy-ModelAssets {
 Push-Location $ProjectRoot
 try {
     Write-Step "Check build dependencies"
-    & $DependencyChecker -Python $Python -DotNet $DotNet -CheckPython -CheckDotNet -CheckFfmpeg -CheckPyInstaller -CheckPySide6
+    & $DependencyChecker -Python $Python -DotNet $DotNet -CheckPython -CheckDotNet -CheckFfmpeg -CheckPyInstaller -CheckPySide6 -CheckParaformer
     if ($LASTEXITCODE -ne 0) {
         throw "Dependency check failed. Please resolve the issues above."
     }
@@ -207,6 +207,12 @@ try {
 
     Write-Step "Build GUI one-folder executable"
 
+    Write-Step "Verify Paraformer packages for PyInstaller collection"
+    & $Python -c "import funasr, modelscope; print('funasr', getattr(funasr, '__version__', 'unknown')); print('modelscope', getattr(modelscope, '__version__', 'unknown'))"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Paraformer dependencies are not importable. Install with: $Python -m pip install funasr modelscope"
+    }
+
     # Check if icon file exists
     $IconPath = Join-Path $ProjectRoot "icons\flowscribe.ico"
     if (-not (Test-Path $IconPath)) {
@@ -236,6 +242,8 @@ try {
         --collect-all funasr `
         --collect-all modelscope `
         --add-data "icons;icons" `
+        --add-data "src\flowscribe\gui\themes;flowscribe\gui\themes" `
+        --add-data "src\flowscribe\gui\assets;flowscribe\gui\assets" `
         @IconArg `
         "src\flowscribe\gui\__main__.py"
 

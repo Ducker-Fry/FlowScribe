@@ -36,6 +36,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+paraformer = [
+  "funasr>=1.2",
+  "modelscope>=1.20",
+]
 dev = [
   "pytest>=8",
   "pytest-qt>=4.4",
@@ -58,6 +62,9 @@ flowscribe-gui = "flowscribe.gui.qt_app:run_gui"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"flowscribe.gui" = ["themes/*.qss", "assets/*.wav"]
 
 [tool.ruff]
 line-length = 100
