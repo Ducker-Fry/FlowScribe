@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+import shutil
 from typing import TYPE_CHECKING
 
 from flowscribe.library import (
@@ -20,7 +21,7 @@ from flowscribe.gui.utils import (
 )
 
 if TYPE_CHECKING:
-    from flowscribe.gui.main_window import MainWindow
+    from flowscribe.gui.new_main_window import NewMainWindow as MainWindow
 
 
 class LibraryControlsMixin:
@@ -36,6 +37,7 @@ class LibraryControlsMixin:
         transcript_path: Path,
         *,
         output_dir: Path | None = None,
+        display_label: str | None = None,
         source_kind: str = "unknown",
         source_media_path: Path | None = None,
         media_path: Path | None = None,
@@ -46,6 +48,7 @@ class LibraryControlsMixin:
         entry = _build_library_entry(
             transcript_path,
             output_dir=output_dir,
+            display_label=display_label,
             source_kind=source_kind,
             source_media_path=source_media_path,
             media_path=media_path,
@@ -69,6 +72,7 @@ class LibraryControlsMixin:
                 self._index_transcript_in_library(
                     transcript_path,
                     output_dir=result.job.output_dir,
+                    display_label=getattr(result.job, "output_name_base", None),
                     source_kind=source_kind,
                     source_media_path=(
                         artifacts.media_path
@@ -76,6 +80,25 @@ class LibraryControlsMixin:
                             result,
                             transcript_path,
                         )
+                    ),
+                    media_path=artifacts.media_path if artifacts.auto_bind_media else None,
+                    output_paths=tuple(artifacts.paths),
+                )
+
+    def _index_queue_result_in_library(self: MainWindow, item, result) -> None:
+        source_kind = _infer_library_source_kind_from_result(result)
+        display_label = item.title or item.display_label
+        for artifacts in result.outputs:
+            transcript_paths = [path for path in artifacts.paths if path.suffix.lower() == ".json"]
+            for transcript_path in transcript_paths:
+                self._index_transcript_in_library(
+                    transcript_path,
+                    output_dir=result.job.output_dir,
+                    display_label=display_label,
+                    source_kind=source_kind,
+                    source_media_path=(
+                        artifacts.media_path
+                        or _infer_library_source_media_path_from_result(result, transcript_path)
                     ),
                     media_path=artifacts.media_path if artifacts.auto_bind_media else None,
                     output_paths=tuple(artifacts.paths),
@@ -200,10 +223,24 @@ class LibraryControlsMixin:
             self.status_label.setText("Select a transcript library entry first.")
             return
         removed = self._library_store.remove_entry(entry.entry_id)
+        disk_removed = _remove_library_output_dir(entry.output_dir)
         self._refresh_transcript_library_list()
         if removed:
             self.status_label.setText(
-                f"Removed transcript from library only: {entry.transcript_path.name}"
+                f"Removed transcript and deleted output directory: {entry.output_dir.name}"
             )
+            if not disk_removed:
+                self.status_label.setText(
+                    f"Removed library entry, but could not fully delete output directory: {entry.output_dir}"
+                )
             return
         self.status_label.setText("Could not remove the selected library entry.")
+
+
+def _remove_library_output_dir(output_dir: Path) -> bool:
+    try:
+        if output_dir.exists():
+            shutil.rmtree(output_dir)
+        return True
+    except OSError:
+        return False

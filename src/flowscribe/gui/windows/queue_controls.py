@@ -230,6 +230,8 @@ class QueueControlsMixin:
             self._queue_tab.set_current_item_status(event.message)
 
     def _on_queue_item_completed(self, payload) -> None:
+        item, result = payload
+        self._index_queue_result_in_library(item, result)
         self._refresh_queue_tab()
 
     def _on_queue_item_failed(self, payload) -> None:

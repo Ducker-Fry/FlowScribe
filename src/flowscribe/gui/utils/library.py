@@ -97,6 +97,7 @@ def _build_library_entry(
     transcript_path: Path,
     *,
     output_dir: Path | None = None,
+    display_label: str | None = None,
     source_kind: str = "unknown",
     source_media_path: Path | None = None,
     media_path: Path | None = None,
@@ -141,7 +142,11 @@ def _build_library_entry(
     return TranscriptLibraryEntry.create(
         transcript_path=normalized_transcript,
         output_dir=resolved_output_dir,
-        display_label=normalized_transcript.stem,
+        display_label=(
+            display_label
+            or (existing.display_label if existing is not None else "")
+            or normalized_transcript.stem
+        ),
         source_kind=effective_source_kind,
         source_media_path=effective_source_media_path,
         created_at=created_at,

@@ -152,21 +152,15 @@ def test_normalize_gui_preferences_payload_accepts_paraformer() -> None:
     assert preferences["preset"] == "zh"
 
 
-def test_main_window_exposes_paraformer_engine(qtbot):
+def test_unified_main_window_uses_single_task_view_settings(qtbot):
     from flowscribe.gui.main_window import MainWindow
 
     window = MainWindow()
     qtbot.addWidget(window)
-
-    index = window.provider_combo.findData("paraformer")
-    assert index >= 0
-
-    window.model_combo.setCurrentText("small")
-    window.provider_combo.setCurrentIndex(index)
-
-    assert window.provider_combo.currentData() == "paraformer"
-    assert window.model_combo.currentText() == "paraformer-zh"
-    assert window._current_gui_preferences()["provider_name"] == "paraformer"
+    assert window._view_stack.count() == 3
+    assert window._single_task_view is not None
+    assert window._queue_view is not None
+    assert window._library_view is not None
 
 
 def test_onboarding_state_payload_defaults_and_reads_help_seen_flag() -> None:

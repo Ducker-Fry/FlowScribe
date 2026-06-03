@@ -4,11 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QFileSystemWatcher, QThread, QUrl
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import QFileSystemWatcher, QThread
 from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QStackedWidget, QToolBar
 
-from flowscribe.tasks.models import SourceSpec
 from flowscribe.gui.dialogs.queue_item_settings_dialog import QueueItemSettingsDialog
 from flowscribe.gui.dialogs.settings_dialog import SettingsDialog
 from flowscribe.gui.icons import (
@@ -18,19 +16,29 @@ from flowscribe.gui.icons import (
     get_queue_icon,
     get_settings_icon,
 )
+from flowscribe.gui.services.library_service import (
+    ensure_library_entry_outputs,
+    remove_library_entry_and_output_dir,
+    upsert_library_entry_from_artifacts,
+)
+from flowscribe.gui.services.queue_service import build_local_queue_items, build_url_queue_items
+from flowscribe.gui.services.runtime_service import (
+    start_bookmarklet_server_runtime,
+    start_queue_runtime,
+)
+from flowscribe.gui.services.window_service import (
+    open_multiple_output_directories,
+    open_output_directory,
+)
 from flowscribe.gui.state_manager import batch_queue_store, transcript_library_store
 from flowscribe.gui.theme_manager import get_current_theme
 from flowscribe.gui.views.library_view import LibraryView
 from flowscribe.gui.views.queue_view import QueueView
 from flowscribe.gui.views.single_task_view import SingleTaskView
-from flowscribe.gui.workers.bookmarklet_server_worker import BookmarkletServerWorker
-from flowscribe.gui.workers.queue_runner import QueueRunner
 from flowscribe.tasks.queue_importers import import_urls_from_file, parse_urls_from_text
 from flowscribe.tasks.queue_models import (
-    QueueItem,
     QueueItemSettings,
     apply_source_edit_options,
-    generate_queue_item_id,
 )
 
 
@@ -71,7 +79,7 @@ class NewMainWindow(QMainWindow):
         self._library_store = transcript_library_store()
         self._queue_store = batch_queue_store()
         self._queue_thread: QThread | None = None
-        self._queue_runner: QueueRunner | None = None
+        self._queue_runner = None
         self._queue_file_watcher: QFileSystemWatcher | None = None
         self._server_thread: QThread | None = None
         self._server_worker = None
@@ -222,48 +230,13 @@ class NewMainWindow(QMainWindow):
 
     def _add_transcript_to_library(self, transcript_path: Path, artifacts=None) -> None:
         """Add transcript to library."""
-        from flowscribe.library import TranscriptLibraryEntry, LibraryOutputRecord
-        from flowscribe.gui.utils.library import _discover_transcript_output_paths
-
         try:
-            # Discover output files
-            output_paths = _discover_transcript_output_paths(transcript_path)
-            outputs = tuple(LibraryOutputRecord.from_path(p) for p in output_paths)
-
-            # Extract media path from artifacts if available
-            media_path = None
-            source_media_path = None
-            media_binding = None
-            if artifacts is not None:
-                if artifacts.media_path is not None:
-                    media_path = Path(artifacts.media_path) if isinstance(artifacts.media_path, str) else artifacts.media_path
-                    source_media_path = media_path
-                    # Create media binding if auto-bind is enabled
-                    if artifacts.auto_bind_media:
-                        from flowscribe.library.models import LibraryMediaBinding
-                        media_binding = LibraryMediaBinding.create(
-                            transcript_path=transcript_path,
-                            media_path=media_path,
-                            binding_type="auto",
-                        )
-                # Determine source kind from artifacts
-                source_kind = artifacts.source_kind or "local"
-            else:
-                source_kind = "local"
-
-            # Create entry
-            entry = TranscriptLibraryEntry.create(
-                transcript_path=transcript_path,
+            upsert_library_entry_from_artifacts(
+                self._library_store,
+                transcript_path,
+                artifacts=artifacts,
                 output_dir=transcript_path.parent,
-                display_label=transcript_path.stem,
-                source_kind=source_kind,
-                outputs=outputs,
-                source_media_path=source_media_path,
-                media_binding=media_binding,
             )
-
-            # Upsert to store
-            self._library_store.upsert_entry(entry)
         except Exception as e:
             self.statusBar().showMessage(f"Failed to add to library: {e}")
 
@@ -309,26 +282,13 @@ class NewMainWindow(QMainWindow):
 
     def _on_library_open_output_dir(self, entry) -> None:
         """Open output directory."""
-        if entry.output_dir and entry.output_dir.exists():
-            QDesktopServices.openUrl(QUrl.fromLocalFile(str(entry.output_dir)))
+        if entry.output_dir and open_output_directory(Path(entry.output_dir)):
             self.statusBar().showMessage(f"Opened: {entry.output_dir}")
         else:
             self.statusBar().showMessage("Output directory not found")
 
     def _on_library_open_output_dirs(self, entries: list) -> None:
-        opened = 0
-        missing = 0
-        seen: set[Path] = set()
-        for entry in entries:
-            output_dir = Path(entry.output_dir)
-            if output_dir in seen:
-                continue
-            seen.add(output_dir)
-            if output_dir.exists():
-                QDesktopServices.openUrl(QUrl.fromLocalFile(str(output_dir)))
-                opened += 1
-            else:
-                missing += 1
+        opened, missing = open_multiple_output_directories(entries)
         self.statusBar().showMessage(f"Opened {opened} output folder(s). Missing: {missing}.")
 
     def _on_library_rebind_media(self, entry) -> None:
@@ -360,17 +320,22 @@ class NewMainWindow(QMainWindow):
 
     def _on_library_remove_entry(self, entry) -> None:
         """Remove entry from library."""
-        self._library_store.remove_entry(entry.entry_id)
+        removed, disk_removed = remove_library_entry_and_output_dir(self._library_store, entry)
+        if removed and not disk_removed:
+            self.statusBar().showMessage(f"Removed library entry but could not delete: {entry.output_dir}")
+            self._library_view.refresh_library()
+            return
         self._library_view.refresh_library()
-        self.statusBar().showMessage("Entry removed from library")
+        self.statusBar().showMessage("Entry removed from library and disk")
 
     def _on_library_remove_entries(self, entries: list) -> None:
         removed = 0
         for entry in entries:
-            if self._library_store.remove_entry(entry.entry_id):
+            removed_entry, disk_removed = remove_library_entry_and_output_dir(self._library_store, entry)
+            if removed_entry and disk_removed:
                 removed += 1
         self._library_view.refresh_library()
-        self.statusBar().showMessage(f"Removed {removed} entries from library")
+        self.statusBar().showMessage(f"Removed {removed} entries from library and disk")
 
     def _on_library_open_artifact(self, path: Path) -> None:
         if path.is_file():
@@ -389,54 +354,24 @@ class NewMainWindow(QMainWindow):
         self.statusBar().showMessage(f"Removed {len(removed)} missing entries")
 
     def _ensure_library_outputs(self, entry):
-        if entry.outputs:
-            return entry
-        from dataclasses import replace
-        from flowscribe.library import LibraryOutputRecord
-        from flowscribe.gui.utils.library import _discover_transcript_output_paths
-
-        output_paths = _discover_transcript_output_paths(entry.transcript_path)
-        if not output_paths:
-            return entry
-        updated = replace(
-            entry,
-            outputs=tuple(LibraryOutputRecord.from_path(path) for path in output_paths),
-        ).refresh_missing_status()
-        return self._library_store.upsert_entry(updated)
+        return ensure_library_entry_outputs(self._library_store, entry)
 
     # QueueView handlers
     def _on_enqueue_urls(self, text: str) -> None:
         """Enqueue URLs from text."""
         try:
-            from flowscribe.tasks.models import DownloadOptions
-
             urls = parse_urls_from_text(text)
             if not urls:
                 self.statusBar().showMessage("No valid URLs found in input")
                 return
 
             settings = self._settings_to_queue_settings()
-            download_opts_dict = self._queue_view.get_download_options()
-            download_opts = DownloadOptions(
-                quality=download_opts_dict["quality"],
-                prefer_format=download_opts_dict["prefer_format"],
+            items = build_url_queue_items(
+                urls,
+                settings=settings,
+                download_options=self._queue_view.get_download_options(),
             )
-            items = []
-            for url in urls:
-                source = SourceSpec(
-                    kind="url",
-                    value=url,
-                    keep_media=download_opts_dict["preserve_media"],
-                    url_media_kind=download_opts_dict["media_kind"],
-                    download_options=download_opts,
-                    auto_bind_media=True,
-                )
-                item = QueueItem(
-                    item_id=generate_queue_item_id(source),
-                    source=source,
-                    settings=settings,
-                )
-                items.append(item)
+            for item in items:
                 self._queue_store.enqueue(item)
             self._refresh_queue_view()
             self.statusBar().showMessage(f"Added {len(items)} URL(s) to queue")
@@ -446,46 +381,22 @@ class NewMainWindow(QMainWindow):
     def _on_enqueue_files(self, paths: list[Path]) -> None:
         """Enqueue local files."""
         settings = self._settings_to_queue_settings()
-        items = []
-        for path in paths:
-            source = SourceSpec(kind="local", value=str(path))
-            item = QueueItem(
-                item_id=generate_queue_item_id(source),
-                source=source,
-                settings=settings,
-            )
-            items.append(item)
+        items = build_local_queue_items(paths, settings=settings)
+        for item in items:
             self._queue_store.enqueue(item)
         self._refresh_queue_view()
         self.statusBar().showMessage(f"Added {len(items)} file(s) to queue")
 
     def _on_import_file(self, file_path: str) -> None:
         """Import URLs from file."""
-        from flowscribe.tasks.models import DownloadOptions
-
         urls = import_urls_from_file(Path(file_path))
         settings = self._settings_to_queue_settings()
-        download_opts_dict = self._queue_view.get_download_options()
-        download_opts = DownloadOptions(
-            quality=download_opts_dict["quality"],
-            prefer_format=download_opts_dict["prefer_format"],
+        items = build_url_queue_items(
+            urls,
+            settings=settings,
+            download_options=self._queue_view.get_download_options(),
         )
-        items = []
-        for url in urls:
-            source = SourceSpec(
-                kind="url",
-                value=url,
-                keep_media=download_opts_dict["preserve_media"],
-                url_media_kind=download_opts_dict["media_kind"],
-                download_options=download_opts,
-                auto_bind_media=True,
-            )
-            item = QueueItem(
-                item_id=generate_queue_item_id(source),
-                source=source,
-                settings=settings,
-            )
-            items.append(item)
+        for item in items:
             self._queue_store.enqueue(item)
         self._refresh_queue_view()
         self.statusBar().showMessage(f"Imported {len(items)} URL(s) from file")
@@ -496,20 +407,16 @@ class NewMainWindow(QMainWindow):
             self.statusBar().showMessage("Queue is already running")
             return
 
-        self._queue_thread = QThread(self)
-        self._queue_runner = QueueRunner(self._queue_store)
-        self._queue_runner.moveToThread(self._queue_thread)
-        self._queue_thread.started.connect(self._queue_runner.run)
-        self._queue_runner.item_started.connect(self._on_queue_item_started)
-        self._queue_runner.item_progress.connect(self._on_queue_item_progress)
-        self._queue_runner.item_completed.connect(self._on_queue_item_completed)
-        self._queue_runner.item_failed.connect(self._on_queue_item_failed)
-        self._queue_runner.item_canceled.connect(self._on_queue_item_canceled)
-        self._queue_runner.queue_finished.connect(self._on_queue_finished)
-        self._queue_runner.queue_finished.connect(self._queue_thread.quit)
-        self._queue_thread.finished.connect(self._queue_runner.deleteLater)
-        self._queue_thread.finished.connect(self._queue_thread.deleteLater)
-        self._queue_thread.start()
+        self._queue_thread, self._queue_runner = start_queue_runtime(
+            self,
+            self._queue_store,
+            self._on_queue_item_started,
+            self._on_queue_item_progress,
+            self._on_queue_item_completed,
+            self._on_queue_item_failed,
+            self._on_queue_item_canceled,
+            self._on_queue_finished,
+        )
 
         self._queue_view.set_queue_running(True)
         self.statusBar().showMessage("Queue processing started")
@@ -599,24 +506,18 @@ class NewMainWindow(QMainWindow):
             self.statusBar().showMessage("Server is already running")
             return
 
-        self._server_thread = QThread(self)
-        self._server_worker = BookmarkletServerWorker(
+        self._server_thread, self._server_worker = start_bookmarklet_server_runtime(
+            self,
             queue_store_path=self._queue_store._path,
             port=port,
             default_output_dir=Path(self._settings["output_dir"]),
             default_output_formats=self._settings["output_formats"],
             default_model_name=self._settings["model_name"],
             default_language=self._settings["language"],
+            started=self._on_server_started,
+            stopped=self._on_server_stopped,
+            error=self._on_server_error,
         )
-        self._server_worker.moveToThread(self._server_thread)
-        self._server_thread.started.connect(self._server_worker.run)
-        self._server_worker.started.connect(self._on_server_started)
-        self._server_worker.stopped.connect(self._on_server_stopped)
-        self._server_worker.error.connect(self._on_server_error)
-        self._server_worker.stopped.connect(self._server_thread.quit)
-        self._server_thread.finished.connect(self._server_worker.deleteLater)
-        self._server_thread.finished.connect(self._server_thread.deleteLater)
-        self._server_thread.start()
 
         self._server_port = port
         self.statusBar().showMessage(f"Starting server on port {port}...")
@@ -665,9 +566,39 @@ class NewMainWindow(QMainWindow):
 
     def _on_queue_item_completed(self, data: tuple) -> None:
         """Handle queue item completed."""
+        item, result = data
+        if result.outputs:
+            for artifacts in result.outputs:
+                for path in artifacts.paths:
+                    if path.suffix.lower() == ".json":
+                        self._add_transcript_to_library_with_label(
+                            path,
+                            item.title or item.display_label,
+                            artifacts,
+                            result.job.output_dir,
+                        )
         self._queue_view.on_item_completed(data)
         self._refresh_queue_view()
         self._library_view.refresh_library()
+
+    def _add_transcript_to_library_with_label(
+        self,
+        transcript_path: Path,
+        display_label: str,
+        artifacts=None,
+        output_dir: Path | None = None,
+    ) -> None:
+        """Add transcript to library with an explicit display label."""
+        try:
+            upsert_library_entry_from_artifacts(
+                self._library_store,
+                transcript_path,
+                display_label=display_label,
+                artifacts=artifacts,
+                output_dir=output_dir or transcript_path.parent,
+            )
+        except Exception as e:
+            self.statusBar().showMessage(f"Failed to add to library: {e}")
 
     def _on_queue_item_failed(self, data: tuple) -> None:
         """Handle queue item failed."""

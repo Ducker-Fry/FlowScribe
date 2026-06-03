@@ -24,7 +24,7 @@ from flowscribe.gui.utils import (
 )
 
 if TYPE_CHECKING:
-    from flowscribe.gui.main_window import MainWindow
+    from flowscribe.gui.new_main_window import NewMainWindow as MainWindow
 
 
 class SettingsControlsMixin:
