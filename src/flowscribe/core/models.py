@@ -90,6 +90,9 @@ class OutputArtifacts:
     source_kind: str | None = None
     source_value: str | None = None
     auto_bind_media: bool = False
+    transcription_strategy: str | None = None
+    subtitle_source_kind: str | None = None
+    subtitle_language: str | None = None
 
     @property
     def txt_path(self) -> Path | None:

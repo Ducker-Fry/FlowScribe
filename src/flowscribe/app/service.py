@@ -12,13 +12,18 @@ from pathlib import Path
 from shutil import move
 
 from flowscribe.tasks.models import (
+    CancelAck,
+    CancelRequest,
+    CapabilityResult,
     ErrorInfo,
     ProgressCallback,
     ProgressEvent,
     SourceSpec,
+    TaskSpec,
     TranscriptionJob,
     TranscriptionResult,
 )
+from flowscribe.capabilities import SubtitleCapability
 from flowscribe.config.settings import AppSettings
 from flowscribe.core.errors import CancellationError, FlowScribeError
 from flowscribe.core.models import (
@@ -62,6 +67,7 @@ class TranscriptionService:
     ) -> TranscriptionResult:
         progress = progress or (lambda event: None)
         should_cancel = should_cancel or (lambda: False)
+        task_specs = job.to_task_specs()
         started_at = datetime.now()
         outputs: list[OutputArtifacts] = []
         errors: list[ErrorInfo] = []
@@ -82,13 +88,15 @@ class TranscriptionService:
                     stage="discover",
                     message=f"Received {len(job.sources)} source(s).",
                     total=len(job.sources),
+                    task_id=task_specs[0].task_id if task_specs else None,
                 )
             )
 
-            for index, source in enumerate(job.sources, start=1):
+            for index, (source, task_spec) in enumerate(zip(job.sources, task_specs, strict=False), start=1):
                 self._ensure_not_canceled(should_cancel)
                 source_outputs, source_errors = self._run_source(
                     job,
+                    task_spec,
                     source,
                     progress,
                     should_cancel,
@@ -104,6 +112,7 @@ class TranscriptionService:
                     stage="canceled",
                     message="Transcription canceled.",
                     total=len(job.sources),
+                    task_id=task_specs[0].task_id if task_specs else None,
                 ),
             )
             return TranscriptionResult(
@@ -121,6 +130,7 @@ class TranscriptionService:
                 stage="complete",
                 message=f"Done. Succeeded: {len(outputs)}. Failed: {len(errors)}.",
                 total=len(job.sources),
+                task_id=task_specs[0].task_id if task_specs else None,
             ),
         )
         if errors:
@@ -144,6 +154,7 @@ class TranscriptionService:
     def _run_source(
         self,
         job: TranscriptionJob,
+        task_spec: TaskSpec,
         source: SourceSpec,
         progress: ProgressCallback,
         should_cancel: Callable[[], bool],
@@ -152,9 +163,9 @@ class TranscriptionService:
     ) -> tuple[tuple[OutputArtifacts, ...], tuple[ErrorInfo, ...]]:
         try:
             if source.kind == "local":
-                return self._run_local_source(job, source, progress, should_cancel, current, total)
+                return self._run_local_source(job, task_spec, source, progress, should_cancel, current, total)
             if source.kind == "url":
-                return (self._run_url_source(job, source, progress, should_cancel, current, total),), ()
+                return (self._run_url_source(job, task_spec, source, progress, should_cancel, current, total),), ()
             if source.kind == "capture":
                 raise FlowScribeError("System audio capture source is planned but not implemented yet.")
             raise FlowScribeError(f"Unsupported source kind: {source.kind}")
@@ -172,6 +183,8 @@ class TranscriptionService:
                     source=source.value,
                     current=current,
                     total=total,
+                    task_id=task_spec.task_id,
+                    capability="transcribe",
                 )
             )
             return (), (error,)
@@ -179,6 +192,7 @@ class TranscriptionService:
     def _run_local_source(
         self,
         job: TranscriptionJob,
+        task_spec: TaskSpec,
         source: SourceSpec,
         progress: ProgressCallback,
         should_cancel: Callable[[], bool],
@@ -201,6 +215,8 @@ class TranscriptionService:
                 source=source.value,
                 current=current,
                 total=total,
+                task_id=task_spec.task_id,
+                capability="transcribe",
             )
         )
         for item_index, item in enumerate(items, start=1):
@@ -214,6 +230,8 @@ class TranscriptionService:
                     source=str(item.path),
                     current=item_index,
                     total=len(items),
+                    task_id=task_spec.task_id,
+                    capability="transcribe",
                 )
             )
             try:
@@ -282,6 +300,8 @@ class TranscriptionService:
                         source=str(item.path),
                         current=item_index,
                         total=len(items),
+                        task_id=task_spec.task_id,
+                        capability="transcribe",
                     )
                 )
                 continue
@@ -295,6 +315,8 @@ class TranscriptionService:
                         message=f"Wrote: {path}",
                         source=str(item.path),
                         path=path,
+                        task_id=task_spec.task_id,
+                        capability="transcribe",
                     )
                 )
         return tuple(outputs), tuple(errors)
@@ -302,6 +324,7 @@ class TranscriptionService:
     def _run_url_source(
         self,
         job: TranscriptionJob,
+        task_spec: TaskSpec,
         source: SourceSpec,
         progress: ProgressCallback,
         should_cancel: Callable[[], bool],
@@ -309,6 +332,45 @@ class TranscriptionService:
         total: int,
     ) -> OutputArtifacts:
         settings = _settings_from_job(job, recursive=False)
+        subtitle_result = self._run_subtitle_capability(task_spec, progress, should_cancel, current=current, total=total)
+        if subtitle_result.supported and subtitle_result.status == "success" and subtitle_result.artifacts:
+            subtitle_artifacts = subtitle_result.artifacts[0]
+            return OutputArtifacts(
+                paths=subtitle_artifacts.paths,
+                media_path=subtitle_artifacts.media_path,
+                media_kind=subtitle_artifacts.media_kind,
+                requested_media_kind=subtitle_artifacts.requested_media_kind,
+                media_fallback=subtitle_artifacts.media_fallback,
+                source_kind=source.kind,
+                source_value=source.value,
+                auto_bind_media=source.auto_bind_media,
+                transcription_strategy=subtitle_artifacts.transcription_strategy,
+                subtitle_source_kind=subtitle_artifacts.subtitle_source_kind,
+                subtitle_language=subtitle_artifacts.subtitle_language,
+            )
+        if subtitle_result.supported and subtitle_result.status == "failed":
+            message = (
+                subtitle_result.error.user_message
+                if subtitle_result.error is not None
+                else "Native subtitle extraction failed."
+            )
+            raise FlowScribeError(message)
+        if subtitle_result.status == "unsupported":
+            self._emit_progress(
+                progress,
+                should_cancel,
+                ProgressEvent(
+                    stage="prepare",
+                    message="No usable native subtitles found. Falling back to audio transcription.",
+                    source=source.value,
+                    current=current,
+                    total=total,
+                    task_id=task_spec.task_id,
+                    capability="subtitle",
+                    raw_metadata={"fallback": "audio-transcription"},
+                ),
+            )
+
         downloader = UrlAudioDownloader(
             download_dir=settings.work_dir / ".url-media",
             max_bytes=job.max_download_mb * 1024 * 1024,
@@ -328,6 +390,8 @@ class TranscriptionService:
                 source=source.value,
                 current=current,
                 total=total,
+                task_id=task_spec.task_id,
+                capability="transcribe",
             )
         )
         self._ensure_not_canceled(should_cancel)
@@ -356,6 +420,8 @@ class TranscriptionService:
                     message=f"Remote audio ready: {download.path}",
                     source=source.value,
                     path=download.path,
+                    task_id=task_spec.task_id,
+                    capability="transcribe",
                 )
             )
             pipeline = _build_pipeline(job, settings)
@@ -432,6 +498,7 @@ class TranscriptionService:
                 source_kind=source.kind,
                 source_value=source.value,
                 auto_bind_media=source.auto_bind_media,
+                transcription_strategy="audio-transcription",
             )
 
             # Update JSON files with media binding info
@@ -447,6 +514,8 @@ class TranscriptionService:
                         message=f"Wrote: {path}",
                         source=source.value,
                         path=path,
+                        task_id=task_spec.task_id,
+                        capability="transcribe",
                     )
                 )
         finally:
@@ -497,6 +566,22 @@ class TranscriptionService:
         if should_cancel():
             raise CancellationError("Transcription canceled.")
 
+    def build_cancel_request(self, task_spec: TaskSpec, *, force: bool = False) -> CancelRequest:
+        return CancelRequest(task_id=task_spec.task_id, force=force)
+
+    def acknowledge_cancel(
+        self,
+        request: CancelRequest,
+        *,
+        checkpoint: str | None = None,
+        failed: bool = False,
+    ) -> CancelAck:
+        return CancelAck(
+            task_id=request.task_id,
+            status="failed" if failed else "cancelled",
+            checkpoint=checkpoint,
+        )
+
     def _emit_progress(
         self,
         progress: ProgressCallback,
@@ -534,6 +619,7 @@ class TranscriptionService:
                 source=str(item.path),
                 total_duration_seconds=duration_seconds,
                 chunk_count=len(chunk_plan.chunks),
+                capability="transcribe",
             ),
         )
 
@@ -583,8 +669,41 @@ class TranscriptionService:
                 failed_chunks=update.state.failed_chunks,
                 segments=update.appended_segments,
                 resumed=update.resumed,
+                capability="transcribe",
             ),
         )
+
+    def _run_subtitle_capability(
+        self,
+        task_spec: TaskSpec,
+        progress: ProgressCallback,
+        should_cancel: Callable[[], bool],
+        *,
+        current: int,
+        total: int,
+    ) -> CapabilityResult:
+        if "subtitle" not in task_spec.requested_capabilities or task_spec.source.kind != "url":
+            return CapabilityResult(
+                task_id=task_spec.task_id,
+                capability="subtitle",
+                supported=False,
+                status="unsupported",
+            )
+        result = SubtitleCapability().run(
+            task_spec,
+            progress_cb=lambda event: self._emit_progress(
+                progress,
+                should_cancel,
+                _with_source_and_totals(
+                    event,
+                    source=task_spec.source.value,
+                    current=current,
+                    total=total,
+                ),
+            ),
+            cancel_token=should_cancel,
+        )
+        return result
 
     def _update_json_media_binding(
         self,
@@ -733,6 +852,10 @@ def _with_source_and_totals(
         failed_chunks=event.failed_chunks,
         segments=event.segments,
         resumed=event.resumed,
+        task_id=event.task_id,
+        capability=event.capability,
+        percent=event.percent,
+        raw_metadata=event.raw_metadata,
     )
 
 

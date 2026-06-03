@@ -1,16 +1,19 @@
-"""Stable application models used by CLI, future GUI, and automation."""
+"""Stable task and protocol models used across FlowScribe layers."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
+import hashlib
+import json
 from pathlib import Path
 from typing import Literal
 
 from flowscribe.core.models import OutputArtifacts, TranscriptSegment
 
 SourceKind = Literal["local", "url", "capture"]
+ExtendedSourceKind = Literal["local", "url", "capture", "transcript"]
 UrlMediaKind = Literal["audio", "video"]
 DownloadQuality = Literal["best", "high", "medium", "low"]
 ProgressStage = Literal[
@@ -24,6 +27,11 @@ ProgressStage = Literal[
     "canceled",
     "resume",
 ]
+CapabilityName = Literal["subtitle", "transcribe", "summarize", "translate"]
+CapabilityStatus = Literal["success", "failed", "unsupported", "cancelled"]
+ErrorType = Literal["media", "model", "runtime", "network", "user"]
+CancelStatus = Literal["pending", "cancelled", "failed"]
+RuntimeDevice = Literal["cpu", "gpu", "auto"]
 
 
 @dataclass(frozen=True)
@@ -46,6 +54,102 @@ class SourceSpec:
     media_output_dir: Path | None = None
     auto_bind_media: bool = False
     download_options: DownloadOptions | None = None
+    protocol_version: str = "v0"
+    locator: str | None = None
+    metadata: Mapping[str, object] = field(default_factory=dict)
+    hints: Mapping[str, object] = field(default_factory=dict)
+    security_context: Mapping[str, object] = field(default_factory=dict)
+    raw_metadata: Mapping[str, object] = field(default_factory=dict)
+
+    @property
+    def extended_kind(self) -> ExtendedSourceKind:
+        return self.kind
+
+    @property
+    def resolved_locator(self) -> str:
+        return self.locator or self.value
+
+
+@dataclass(frozen=True)
+class OutputContract:
+    """Stable output requirements for one task."""
+
+    formats: tuple[str, ...] = ("txt", "md")
+    output_dir: Path = Path("outputs")
+    output_name_base: str | None = None
+    overwrite: bool = False
+
+
+@dataclass(frozen=True)
+class RuntimePreferences:
+    """Task-level runtime constraints that providers translate downstream."""
+
+    max_cpu_threads: int | None = None
+    max_memory_mb: int | None = None
+    device: RuntimeDevice | None = None
+    priority: int = 0
+
+
+@dataclass(frozen=True)
+class TaskSpec:
+    """v0 cross-layer task protocol."""
+
+    task_id: str
+    source: SourceSpec
+    requested_capabilities: tuple[CapabilityName, ...] = ("transcribe",)
+    output_contract: OutputContract = field(default_factory=OutputContract)
+    runtime_preferences: RuntimePreferences = field(default_factory=RuntimePreferences)
+    resume_token: str | None = None
+    checkpoint_id: str | None = None
+    cache_key: str = ""
+    protocol_version: str = "v0"
+    raw_metadata: Mapping[str, object] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ErrorEvent:
+    """Standardized cross-layer error payload."""
+
+    task_id: str
+    capability: str
+    error_type: ErrorType
+    user_message: str
+    internal_message: str
+    retryable: bool
+    code: str | None = None
+
+
+@dataclass(frozen=True)
+class CapabilityResult:
+    """Standardized capability outcome."""
+
+    task_id: str
+    capability: str
+    supported: bool
+    status: CapabilityStatus
+    artifacts: tuple[OutputArtifacts, ...] = ()
+    payload: Mapping[str, object] = field(default_factory=dict)
+    metrics: Mapping[str, object] = field(default_factory=dict)
+    warnings: tuple[str, ...] = ()
+    error: ErrorEvent | None = None
+    raw_metadata: Mapping[str, object] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class CancelRequest:
+    """Standardized cancellation request."""
+
+    task_id: str
+    force: bool = False
+
+
+@dataclass(frozen=True)
+class CancelAck:
+    """Standardized cancellation acknowledgement."""
+
+    task_id: str
+    status: CancelStatus
+    checkpoint: str | None = None
 
 
 @dataclass(frozen=True)
@@ -82,7 +186,56 @@ class TranscriptionJob:
     progressive_chunk_overlap_seconds: float = 3.0
     progressive_max_workers: int = 1
     native_threads: int | None = None
+    requested_capabilities: tuple[CapabilityName, ...] = ("transcribe",)
+    runtime_preferences: RuntimePreferences = field(default_factory=RuntimePreferences)
+    protocol_version: str = "v0"
     created_at: datetime = field(default_factory=datetime.now)
+
+    def to_task_specs(self) -> tuple[TaskSpec, ...]:
+        """Normalize one app-facing job into task-layer specs."""
+
+        specs: list[TaskSpec] = []
+        for index, source in enumerate(self.sources, start=1):
+            task_id = _task_id_for_source(source, created_at=self.created_at, index=index)
+            output_contract = OutputContract(
+                formats=self.output_formats,
+                output_dir=self.output_dir,
+                output_name_base=self.output_name_base,
+                overwrite=self.overwrite,
+            )
+            specs.append(
+                TaskSpec(
+                    task_id=task_id,
+                    source=source,
+                    requested_capabilities=self.requested_capabilities,
+                    output_contract=output_contract,
+                    runtime_preferences=self.runtime_preferences,
+                    resume_token=task_id if self.progressive_resume else None,
+                    checkpoint_id=task_id if self.progressive_resume else None,
+                    cache_key=generate_cache_key(
+                        source=source,
+                        requested_capabilities=self.requested_capabilities,
+                        output_contract=output_contract,
+                        runtime_preferences=self.runtime_preferences,
+                    ),
+                    raw_metadata={
+                        "language": self.language,
+                        "task": self.task,
+                        "beam_size": self.beam_size,
+                        "vad_filter": self.vad_filter,
+                        "initial_prompt": self.initial_prompt,
+                        "preset": self.preset,
+                        "word_timestamps": self.word_timestamps,
+                        "provider_name": self.provider_name,
+                        "timestamps": self.timestamps,
+                        "network_family": self.network_family,
+                        "cookies_path": str(self.cookies_path) if self.cookies_path is not None else None,
+                        "proxy": self.proxy,
+                        "output_name_base": self.output_name_base,
+                    },
+                )
+            )
+        return tuple(specs)
 
 
 @dataclass(frozen=True)
@@ -105,6 +258,10 @@ class ProgressEvent:
     failed_chunks: int | None = None
     segments: tuple[TranscriptSegment, ...] = ()
     resumed: bool = False
+    task_id: str | None = None
+    capability: str | None = None
+    percent: float | None = None
+    raw_metadata: Mapping[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -149,3 +306,34 @@ class TranscriptionResult:
 
 
 ProgressCallback = Callable[[ProgressEvent], None]
+
+
+def generate_cache_key(
+    *,
+    source: SourceSpec,
+    requested_capabilities: tuple[CapabilityName, ...],
+    output_contract: OutputContract,
+    runtime_preferences: RuntimePreferences,
+    protocol_version: str = "v0",
+) -> str:
+    """Create a stable task-layer cache key from immutable task inputs."""
+
+    source_hash = hashlib.md5(source.resolved_locator.encode("utf-8")).hexdigest()[:16]
+    cap_str = "_".join(sorted(requested_capabilities))
+    param_hash = hashlib.md5(
+        json.dumps(
+            {
+                "device": runtime_preferences.device,
+                "max_cpu_threads": runtime_preferences.max_cpu_threads,
+                "formats": output_contract.formats,
+                "overwrite": output_contract.overwrite,
+            },
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()[:8]
+    return f"{protocol_version}_{source_hash}_{cap_str}_{param_hash}"
+
+
+def _task_id_for_source(source: SourceSpec, *, created_at: datetime, index: int) -> str:
+    seed = f"{created_at.isoformat()}::{index}::{source.kind}::{source.resolved_locator}"
+    return hashlib.md5(seed.encode("utf-8")).hexdigest()

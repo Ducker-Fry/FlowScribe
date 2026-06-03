@@ -1,6 +1,6 @@
 from pathlib import Path
 import io
-from contextlib import redirect_stdout
+from contextlib import redirect_stdout, redirect_stderr
 
 from flowscribe.cli.args import parse_args
 from flowscribe.cli.main import (
@@ -139,6 +139,7 @@ def test_parse_url_args_supports_native_provider(tmp_path: Path) -> None:
 
     assert options.provider_name == "native-engine"
     assert job.provider_name == "native-engine"
+    assert job.requested_capabilities == ("subtitle", "transcribe")
 
 
 def test_job_from_transcribe_options_auto_enables_progressive_for_long_single_file(
@@ -244,6 +245,51 @@ def test_cli_progress_line_includes_chunk_metrics() -> None:
     assert "Speed 2.5x" in line
     assert "ETA 00:00:30.000" in line
     assert "resumed" in line
+
+
+def test_cli_progress_line_shows_subtitle_messages() -> None:
+    event = ProgressEvent(
+        stage="write",
+        message="Using native YouTube subtitles.",
+        capability="subtitle",
+    )
+
+    line = _cli_progress_line(event)
+
+    assert line == "Using native YouTube subtitles."
+
+
+def test_run_url_prints_strategy_summary(monkeypatch, tmp_path: Path) -> None:
+    from flowscribe.cli.main import run_url
+    from flowscribe.core.models import OutputArtifacts
+    from flowscribe.tasks.models import TranscriptionResult
+
+    options = parse_args(["url", "https://www.youtube.com/watch?v=abc123", "-o", str(tmp_path)])
+
+    class FakeService:
+        def run(self, job, progress=None):
+            return TranscriptionResult(
+                job=job,
+                outputs=(
+                    OutputArtifacts(
+                        paths=(tmp_path / "demo.txt",),
+                        source_kind="url",
+                        source_value=options.url,
+                        transcription_strategy="automatic-subtitles",
+                        subtitle_language="en",
+                    ),
+                ),
+            )
+
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    monkeypatch.setattr("flowscribe.cli.main.TranscriptionService", lambda: FakeService())
+
+    with redirect_stdout(stdout), redirect_stderr(stderr):
+        exit_code = run_url(options)
+
+    assert exit_code == 0
+    assert "Strategy: used automatic YouTube captions (en)." in stdout.getvalue()
 
 
 def test_models_command_mentions_native_engine(monkeypatch, tmp_path: Path) -> None:

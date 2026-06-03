@@ -122,6 +122,7 @@ def run_url(options) -> int:
         for error in result.errors:
             print(f"Error: {error.message}", file=sys.stderr)
         return 2
+    _print_url_strategy_summary(result)
     elapsed = result.elapsed_seconds
     elapsed_str = f" Time: {_format_duration(elapsed)}." if elapsed is not None else ""
     print(f"Done. Succeeded: {result.succeeded}. Failed: {result.failed}.{elapsed_str}")
@@ -406,6 +407,7 @@ def _job_from_url_options(options) -> TranscriptionJob:
         progressive_chunk_seconds=options.progressive_chunk_seconds,
         progressive_chunk_overlap_seconds=options.progressive_chunk_overlap_seconds,
         progressive_max_workers=options.progressive_max_workers,
+        requested_capabilities=("subtitle", "transcribe"),
     )
 
 
@@ -432,6 +434,8 @@ def _print_cli_progress(event: ProgressEvent) -> None:
 
 
 def _cli_progress_line(event: ProgressEvent) -> str:
+    if event.capability == "subtitle" and event.message:
+        return event.message
     if event.processed_duration_seconds is not None:
         parts = [event.message]
         if event.total_duration_seconds is not None:
@@ -449,6 +453,23 @@ def _cli_progress_line(event: ProgressEvent) -> str:
             parts.append("resumed")
         return " | ".join(parts)
     return event.message
+
+
+def _print_url_strategy_summary(result) -> None:
+    if not result.outputs:
+        return
+    for output in result.outputs:
+        if output.source_kind != "url":
+            continue
+        strategy = output.transcription_strategy
+        if strategy == "native-subtitles":
+            language = output.subtitle_language or "unknown"
+            print(f"Strategy: used native YouTube subtitles ({language}).")
+        elif strategy == "automatic-subtitles":
+            language = output.subtitle_language or "unknown"
+            print(f"Strategy: used automatic YouTube captions ({language}).")
+        elif strategy == "audio-transcription":
+            print("Strategy: fell back to audio transcription.")
 
 
 def _resolve_cli_progressive_mode_for_transcribe(options) -> tuple[bool, str | None]:
