@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-import shutil
 import time
-import inspect
 import logging
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from shutil import move
 
 from flowscribe.tasks.models import (
     CancelAck,
@@ -23,8 +20,6 @@ from flowscribe.tasks.models import (
     TranscriptionJob,
     TranscriptionResult,
 )
-from flowscribe.capabilities import SubtitleCapability
-from flowscribe.config.settings import AppSettings
 from flowscribe.core.errors import CancellationError, FlowScribeError
 from flowscribe.core.models import (
     MediaDurationInfo,
@@ -33,27 +28,26 @@ from flowscribe.core.models import (
     ProgressiveTranscriptionUpdate,
     TranscriptionChunkPlan,
 )
-from flowscribe.pipeline.transcription import LocalTranscriptionPipeline
 from flowscribe.pipeline.progressive import tuned_chunk_overlap_seconds
+from flowscribe.pipeline.runtime_factory import (
+    build_transcription_pipeline,
+    process_with_optional_progress,
+    settings_from_job,
+)
+from flowscribe.pipeline.url_transcription import UrlTranscriptionPipeline
 from flowscribe.input.local_source import LocalFileSource
 from flowscribe.input.url_downloader import UrlAudioDownloader
-from flowscribe.media.audio_extractor import FfmpegAudioExtractor
-from flowscribe.nlp.script_converter import simplify_chinese_transcript
-from flowscribe.output.artifact_writer import TranscriptArtifactWriter
-from flowscribe.output.json_writer import JsonTranscriptWriter
-from flowscribe.output.md_writer import MarkdownTranscriptWriter
-from flowscribe.output.paths import OutputPathBuilder
-from flowscribe.output.srt_writer import SrtTranscriptWriter
-from flowscribe.output.txt_writer import TxtTranscriptWriter
-from flowscribe.output.vtt_writer import VttTranscriptWriter
 from flowscribe.providers.transcribe.registry import (
-    ProviderTranscriptionSettings,
     is_native_engine_provider_name,
-    resolve_transcription_provider,
     supports_python_progressive_provider_name,
 )
 
 LOGGER = logging.getLogger(__name__)
+
+# Compatibility aliases for existing tests and external integrations.
+_build_pipeline = build_transcription_pipeline
+_process_with_optional_progress = process_with_optional_progress
+_settings_from_job = settings_from_job
 
 
 class TranscriptionService:
@@ -331,235 +325,60 @@ class TranscriptionService:
         current: int,
         total: int,
     ) -> OutputArtifacts:
-        settings = _settings_from_job(job, recursive=False)
-        subtitle_result = self._run_subtitle_capability(task_spec, progress, should_cancel, current=current, total=total)
-        if subtitle_result.supported and subtitle_result.status == "success" and subtitle_result.artifacts:
-            subtitle_artifacts = subtitle_result.artifacts[0]
-            return OutputArtifacts(
-                paths=subtitle_artifacts.paths,
-                media_path=subtitle_artifacts.media_path,
-                media_kind=subtitle_artifacts.media_kind,
-                requested_media_kind=subtitle_artifacts.requested_media_kind,
-                media_fallback=subtitle_artifacts.media_fallback,
-                source_kind=source.kind,
-                source_value=source.value,
-                auto_bind_media=source.auto_bind_media,
-                transcription_strategy=subtitle_artifacts.transcription_strategy,
-                subtitle_source_kind=subtitle_artifacts.subtitle_source_kind,
-                subtitle_language=subtitle_artifacts.subtitle_language,
+        return UrlTranscriptionPipeline(
+            emit_progress=self._emit_progress,
+            emit_progressive_plan=self._emit_progressive_plan,
+            emit_progressive_update=self._emit_progressive_update,
+            ensure_not_canceled=self._ensure_not_canceled,
+            source_progress_wrapper=_with_source_and_totals_for_pipeline,
+            update_json_media_binding=self._update_json_media_binding,
+            downloader_cls=UrlAudioDownloader,
+            pipeline_builder=_build_pipeline,
+            subtitle_runner=self._run_subtitle_capability,
+        ).run(
+            job=job,
+            task_spec=task_spec,
+            source=source,
+            progress=progress,
+            should_cancel=should_cancel,
+            current=current,
+            total=total,
+        )
+
+    def _run_subtitle_capability(
+        self,
+        task_spec: TaskSpec,
+        progress: ProgressCallback,
+        should_cancel: Callable[[], bool],
+        *,
+        current: int,
+        total: int,
+    ) -> CapabilityResult:
+        """Compatibility hook retained for tests and external monkeypatching."""
+
+        from flowscribe.capabilities import SubtitleCapability
+
+        if "subtitle" not in task_spec.requested_capabilities or task_spec.source.kind != "url":
+            return CapabilityResult(
+                task_id=task_spec.task_id,
+                capability="subtitle",
+                supported=False,
+                status="unsupported",
             )
-        if subtitle_result.supported and subtitle_result.status == "failed":
-            message = (
-                subtitle_result.error.user_message
-                if subtitle_result.error is not None
-                else "Native subtitle extraction failed."
-            )
-            raise FlowScribeError(message)
-        if subtitle_result.status == "unsupported":
-            self._emit_progress(
+        return SubtitleCapability().run(
+            task_spec,
+            progress_cb=lambda event: self._emit_progress(
                 progress,
                 should_cancel,
-                ProgressEvent(
-                    stage="prepare",
-                    message="No usable native subtitles found. Falling back to audio transcription.",
-                    source=source.value,
+                _with_source_and_totals(
+                    event,
+                    source=task_spec.source.value,
                     current=current,
                     total=total,
-                    task_id=task_spec.task_id,
-                    capability="subtitle",
-                    raw_metadata={"fallback": "audio-transcription"},
                 ),
-            )
-
-        downloader = UrlAudioDownloader(
-            download_dir=settings.work_dir / ".url-media",
-            max_bytes=job.max_download_mb * 1024 * 1024,
-            max_duration_seconds=job.max_duration_seconds,
-            timeout_seconds=job.download_timeout_seconds,
-            network_family=job.network_family,
-            cookies_path=job.cookies_path,
-            proxy=job.proxy,
+            ),
+            cancel_token=should_cancel,
         )
-
-        self._emit_progress(
-            progress,
-            should_cancel,
-            ProgressEvent(
-                stage="download",
-                message="Downloading/extracting remote audio...",
-                source=source.value,
-                current=current,
-                total=total,
-                task_id=task_spec.task_id,
-                capability="transcribe",
-            )
-        )
-        self._ensure_not_canceled(should_cancel)
-
-        from flowscribe.input.url_downloader import DownloadOptions as UrlDownloadOptions
-
-        url_download_opts = None
-        if source.download_options:
-            url_download_opts = UrlDownloadOptions(
-                media_kind=source.url_media_kind if source.keep_media else "audio",
-                quality=source.download_options.quality,
-                prefer_format=source.download_options.prefer_format,
-            )
-
-        download = downloader.download_audio(
-            source.value,
-            saved_media_kind=source.url_media_kind if source.keep_media else "audio",
-            download_options=url_download_opts,
-        )
-        try:
-            self._emit_progress(
-                progress,
-                should_cancel,
-                ProgressEvent(
-                    stage="prepare",
-                    message=f"Remote audio ready: {download.path}",
-                    source=source.value,
-                    path=download.path,
-                    task_id=task_spec.task_id,
-                    capability="transcribe",
-                )
-            )
-            pipeline = _build_pipeline(job, settings)
-            self._ensure_not_canceled(should_cancel)
-            item = MediaItem(path=download.path)
-            if (
-                job.progressive_enabled
-                and supports_python_progressive_provider_name(job.provider_name)
-                and hasattr(pipeline, "process_progressive")
-            ):
-                run_started_at = time.perf_counter()
-                artifacts, _ = pipeline.process_progressive(
-                    item,
-                    chunk_duration_seconds=job.progressive_chunk_seconds,
-                    chunk_overlap_seconds=tuned_chunk_overlap_seconds(
-                        requested_overlap_seconds=job.progressive_chunk_overlap_seconds,
-                        language=job.language,
-                        preset=job.preset,
-                    ),
-                    resume=job.progressive_resume,
-                    keep_progressive_cache=True,
-                    max_workers=job.progressive_max_workers,
-                    plan_callback=lambda duration_info, chunk_plan: self._emit_progressive_plan(
-                        progress,
-                        should_cancel,
-                        item=item,
-                        duration_info=duration_info,
-                        chunk_plan=chunk_plan,
-                    ),
-                    update_callback=lambda update: self._emit_progressive_update(
-                        progress,
-                        should_cancel,
-                        item=item,
-                        update=update,
-                        run_started_at=run_started_at,
-                    ),
-                    should_cancel=should_cancel,
-                )
-            else:
-                artifacts = _process_with_optional_progress(
-                    pipeline,
-                    item,
-                    should_cancel=should_cancel,
-                    progress=(
-                        lambda event: self._emit_progress(
-                            progress,
-                            should_cancel,
-                            _with_source_and_totals(
-                                event,
-                                source=str(download.path),
-                                current=current,
-                                total=total,
-                            ),
-                        )
-                    )
-                    if is_native_engine_provider_name(job.provider_name)
-                    else None,
-                )
-            preserved_media_path = self._preserve_url_media(
-                download,
-                source=source,
-                job=job,
-            )
-            artifacts = OutputArtifacts(
-                paths=artifacts.paths,
-                media_path=preserved_media_path,
-                media_kind=download.saved_media_kind if preserved_media_path is not None else None,
-                requested_media_kind=source.url_media_kind if source.keep_media else None,
-                media_fallback=(
-                    preserved_media_path is not None
-                    and source.keep_media
-                    and download.saved_media_kind != source.url_media_kind
-                ),
-                source_kind=source.kind,
-                source_value=source.value,
-                auto_bind_media=source.auto_bind_media,
-                transcription_strategy="audio-transcription",
-            )
-
-            # Update JSON files with media binding info
-            if preserved_media_path is not None and source.auto_bind_media:
-                self._update_json_media_binding(artifacts, preserved_media_path, download.saved_media_kind)
-
-            for path in artifacts.paths:
-                self._emit_progress(
-                    progress,
-                    should_cancel,
-                    ProgressEvent(
-                        stage="write",
-                        message=f"Wrote: {path}",
-                        source=source.value,
-                        path=path,
-                        task_id=task_spec.task_id,
-                        capability="transcribe",
-                    )
-                )
-        finally:
-            shutil.rmtree(download.cleanup_dir, ignore_errors=True)
-        return artifacts
-
-    def _preserve_url_media(
-        self,
-        download,
-        *,
-        source: SourceSpec,
-        job: TranscriptionJob,
-    ) -> Path | None:
-        if not source.keep_media:
-            return None
-
-        candidate = download.saved_media_path or download.path
-        if not candidate.exists():
-            return None
-
-        target_root = (
-            source.media_output_dir
-            if source.media_output_dir is not None
-            else job.output_dir / "url-media"
-        )
-        target_root = target_root.expanduser().resolve()
-        target_dir = target_root / download.cleanup_dir.name
-        target_dir.mkdir(parents=True, exist_ok=True)
-        target_path = self._available_target_path(target_dir / candidate.name)
-        move(str(candidate), str(target_path))
-        return target_path
-
-    @staticmethod
-    def _available_target_path(path: Path) -> Path:
-        if not path.exists():
-            return path
-        stem = path.stem
-        suffix = path.suffix
-        counter = 2
-        while True:
-            candidate = path.with_name(f"{stem}-{counter}{suffix}")
-            if not candidate.exists():
-                return candidate
-            counter += 1
 
     @staticmethod
     def _ensure_not_canceled(should_cancel: Callable[[], bool]) -> None:
@@ -673,38 +492,6 @@ class TranscriptionService:
             ),
         )
 
-    def _run_subtitle_capability(
-        self,
-        task_spec: TaskSpec,
-        progress: ProgressCallback,
-        should_cancel: Callable[[], bool],
-        *,
-        current: int,
-        total: int,
-    ) -> CapabilityResult:
-        if "subtitle" not in task_spec.requested_capabilities or task_spec.source.kind != "url":
-            return CapabilityResult(
-                task_id=task_spec.task_id,
-                capability="subtitle",
-                supported=False,
-                status="unsupported",
-            )
-        result = SubtitleCapability().run(
-            task_spec,
-            progress_cb=lambda event: self._emit_progress(
-                progress,
-                should_cancel,
-                _with_source_and_totals(
-                    event,
-                    source=task_spec.source.value,
-                    current=current,
-                    total=total,
-                ),
-            ),
-            cancel_token=should_cancel,
-        )
-        return result
-
     def _update_json_media_binding(
         self,
         artifacts: OutputArtifacts,
@@ -734,25 +521,6 @@ class TranscriptionService:
                     warnings.warn(f"Failed to update media binding in {path}: {e}", UserWarning)
 
 
-def _settings_from_job(job: TranscriptionJob, *, recursive: bool) -> AppSettings:
-    return AppSettings.from_options(
-        output_dir=job.output_dir,
-        work_dir=job.work_dir,
-        model_name=job.model_name,
-        language=job.language,
-        preset=job.preset,
-        task=job.task,
-        beam_size=job.beam_size,
-        vad_filter=job.vad_filter,
-        no_vad_filter=job.no_vad_filter,
-        initial_prompt=job.initial_prompt,
-        word_timestamps=job.word_timestamps,
-        recursive=recursive,
-        overwrite=job.overwrite,
-        keep_audio=job.keep_audio,
-    )
-
-
 def _error_from_exception(exc: FlowScribeError, *, source: str) -> ErrorInfo:
     return ErrorInfo(
         code=exc.__class__.__name__,
@@ -760,72 +528,6 @@ def _error_from_exception(exc: FlowScribeError, *, source: str) -> ErrorInfo:
         source=source,
         recoverable=True,
     )
-
-
-def _build_pipeline(job: TranscriptionJob, settings: AppSettings) -> LocalTranscriptionPipeline:
-    path_builder = OutputPathBuilder(
-        overwrite=settings.overwrite,
-        base_name=job.output_name_base,
-    )
-    provider = resolve_transcription_provider(job.provider_name)
-    provider_settings = ProviderTranscriptionSettings(
-        model_name=settings.model_name,
-        language=settings.language,
-        task=settings.task,
-        beam_size=settings.beam_size,
-        vad_filter=settings.vad_filter,
-        initial_prompt=settings.initial_prompt,
-        preset=settings.preset,
-        word_timestamps=settings.word_timestamps,
-        progressive_enabled=job.progressive_enabled,
-        progressive_chunk_seconds=job.progressive_chunk_seconds,
-        progressive_chunk_overlap_seconds=job.progressive_chunk_overlap_seconds,
-        progressive_max_workers=job.progressive_max_workers,
-        native_threads=job.native_threads,
-    )
-    return LocalTranscriptionPipeline(
-        media_preparer=FfmpegAudioExtractor(sample_rate=settings.sample_rate),
-        transcriber=provider.build_transcriber(provider_settings),
-        artifact_writer=TranscriptArtifactWriter(
-            formats=job.output_formats,
-            txt_writer=TxtTranscriptWriter(path_builder),
-            md_writer=MarkdownTranscriptWriter(
-                path_builder,
-                include_timestamps=job.timestamps,
-            ),
-            json_writer=JsonTranscriptWriter(path_builder),
-            srt_writer=SrtTranscriptWriter(path_builder),
-            vtt_writer=VttTranscriptWriter(path_builder),
-        ),
-        work_dir=settings.work_dir,
-        output_dir=settings.output_dir,
-        keep_audio=settings.keep_audio,
-        transcript_normalizer=(
-            simplify_chinese_transcript
-            if settings.language == "zh" or settings.preset == "zh"
-            else None
-        ),
-    )
-
-
-def _process_with_optional_progress(
-    pipeline,
-    item: MediaItem,
-    *,
-    should_cancel: Callable[[], bool],
-    progress: Callable[[ProgressEvent], None] | None,
-) -> OutputArtifacts:
-    if progress is None or not _callable_accepts_keyword(pipeline.process, "progress"):
-        return pipeline.process(item, should_cancel=should_cancel)
-    return pipeline.process(item, should_cancel=should_cancel, progress=progress)
-
-
-def _callable_accepts_keyword(func, name: str) -> bool:
-    try:
-        signature = inspect.signature(func)
-    except (TypeError, ValueError):
-        return False
-    return name in signature.parameters
 
 
 def _with_source_and_totals(
@@ -856,6 +558,20 @@ def _with_source_and_totals(
         capability=event.capability,
         percent=event.percent,
         raw_metadata=event.raw_metadata,
+    )
+
+
+def _with_source_and_totals_for_pipeline(
+    event: ProgressEvent,
+    source: str,
+    current: int,
+    total: int,
+) -> ProgressEvent:
+    return _with_source_and_totals(
+        event,
+        source=source,
+        current=current,
+        total=total,
     )
 
 
