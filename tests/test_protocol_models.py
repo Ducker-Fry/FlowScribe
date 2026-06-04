@@ -49,6 +49,29 @@ def test_transcription_job_to_task_specs_builds_cache_and_runtime_preferences(tm
     assert spec.cache_key.startswith("v0_")
 
 
+def test_transcription_job_uses_stable_task_id_when_inputs_match(tmp_path: Path) -> None:
+    source = SourceSpec(kind="local", value=str(tmp_path / "media.mp4"))
+    first = TranscriptionJob(sources=(source,), output_dir=tmp_path / "out")
+    second = TranscriptionJob(sources=(source,), output_dir=tmp_path / "out")
+
+    assert first.to_task_specs()[0].task_id == second.to_task_specs()[0].task_id
+
+
+def test_transcription_job_allows_explicit_task_and_resume_ids(tmp_path: Path) -> None:
+    job = TranscriptionJob(
+        sources=(SourceSpec(kind="local", value=str(tmp_path / "media.mp4")),),
+        task_id="task-123",
+        resume_token="resume-123",
+        checkpoint_id="checkpoint-123",
+    )
+
+    spec = job.to_task_specs()[0]
+
+    assert spec.task_id == "task-123"
+    assert spec.resume_token == "resume-123"
+    assert spec.checkpoint_id == "checkpoint-123"
+
+
 def test_protocol_payloads_are_json_friendly() -> None:
     error = ErrorEvent(
         task_id="task-1",

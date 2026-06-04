@@ -1,6 +1,5 @@
 """Stable public application-layer API for FlowScribe."""
 
-from flowscribe.app.service import TranscriptionService
 from flowscribe.tasks.models import (
     CancelAck,
     CancelRequest,
@@ -23,3 +22,11 @@ __all__ = [
     "TranscriptionResult",
     "TranscriptionService",
 ]
+
+
+def __getattr__(name: str):
+    if name == "TranscriptionService":
+        from flowscribe.app.service import TranscriptionService
+
+        return TranscriptionService
+    raise AttributeError(name)

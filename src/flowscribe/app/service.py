@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import time
 import logging
 from collections.abc import Callable
-from datetime import datetime
+from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 
 from flowscribe.tasks.models import (
@@ -52,6 +54,9 @@ _settings_from_job = settings_from_job
 
 class TranscriptionService:
     """Run transcription jobs through a stable app-facing interface."""
+
+    def __init__(self) -> None:
+        self._event_sequence = 0
 
     def run(
         self,
@@ -111,6 +116,7 @@ class TranscriptionService:
             )
             return TranscriptionResult(
                 job=job,
+                task_specs=task_specs,
                 outputs=tuple(outputs),
                 errors=tuple(errors),
                 canceled=True,
@@ -139,6 +145,7 @@ class TranscriptionService:
             LOGGER.info("Transcription job completed successfully with %s output(s).", len(outputs))
         return TranscriptionResult(
             job=job,
+            task_specs=task_specs,
             outputs=tuple(outputs),
             errors=tuple(errors),
             started_at=started_at,
@@ -282,6 +289,11 @@ class TranscriptionService:
                         if is_native_engine_provider_name(job.provider_name)
                         else None,
                     )
+                self._update_json_artifacts(
+                    artifacts=artifacts,
+                    task_spec=task_spec,
+                    source=source,
+                )
             except FlowScribeError as exc:
                 LOGGER.exception("Local media item failed: %s", item.path)
                 errors.append(_error_from_exception(exc, source=str(item.path)))
@@ -408,9 +420,34 @@ class TranscriptionService:
         event: ProgressEvent,
     ) -> None:
         self._ensure_not_canceled(should_cancel)
-        progress(event)
+        progress(self._envelope_event(event))
         if event.stage != "canceled":
             self._ensure_not_canceled(should_cancel)
+
+    def _envelope_event(self, event: ProgressEvent) -> ProgressEvent:
+        self._event_sequence += 1
+        return replace(
+            event,
+            event_type=event.event_type or self._event_type_for_event(event),
+            timestamp=event.timestamp or datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+            sequence=event.sequence if event.sequence is not None else self._event_sequence,
+        )
+
+    @staticmethod
+    def _event_type_for_event(event: ProgressEvent) -> str:
+        if event.stage == "discover" and event.source is None:
+            return "task.accepted"
+        if event.stage == "discover":
+            return "task.started"
+        if event.stage == "write":
+            return "artifact.written"
+        if event.stage == "complete":
+            return "task.completed"
+        if event.stage == "error":
+            return "task.failed"
+        if event.stage == "canceled":
+            return "task.canceled"
+        return "progress"
 
     def _emit_progressive_plan(
         self,
@@ -499,26 +536,65 @@ class TranscriptionService:
         media_kind: str,
     ) -> None:
         """Update JSON transcript files with media binding information."""
-        import json
-
         for path in artifacts.paths:
             if path.suffix.lower() == ".json":
                 try:
-                    with open(path, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-
+                    data = self._load_json_payload(path)
                     data["media_binding"] = {
                         "path": str(media_path),
                         "kind": media_kind,
                     }
-
-                    with open(path, "w", encoding="utf-8") as f:
-                        json.dump(data, f, ensure_ascii=False, indent=2)
-                        f.write("\n")
+                    self._write_json_payload(path, data)
                 except (OSError, json.JSONDecodeError) as e:
                     # Log error but don't fail the transcription
                     import warnings
                     warnings.warn(f"Failed to update media binding in {path}: {e}", UserWarning)
+
+    def _update_json_artifacts(
+        self,
+        *,
+        artifacts: OutputArtifacts,
+        task_spec: TaskSpec,
+        source: SourceSpec,
+    ) -> None:
+        for path in artifacts.paths:
+            if path.suffix.lower() != ".json":
+                continue
+            try:
+                data = self._load_json_payload(path)
+                data["task_id"] = task_spec.task_id
+                data["resume"] = {
+                    "resume_token": task_spec.resume_token,
+                    "checkpoint_id": task_spec.checkpoint_id,
+                    "cache_key": task_spec.cache_key,
+                }
+                data["artifacts"] = [
+                    {
+                        "format": artifact_path.suffix.lstrip(".").lower(),
+                        "path": str(artifact_path),
+                    }
+                    for artifact_path in artifacts.paths
+                ]
+                metadata = data.get("metadata")
+                if not isinstance(metadata, dict):
+                    metadata = {}
+                    data["metadata"] = metadata
+                metadata.setdefault("source_kind", source.kind)
+                metadata.setdefault("source_locator", source.resolved_locator)
+                self._write_json_payload(path, data)
+            except (OSError, json.JSONDecodeError):
+                LOGGER.warning("Failed to update JSON artifact metadata: %s", path, exc_info=True)
+
+    @staticmethod
+    def _load_json_payload(path: Path) -> dict:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    @staticmethod
+    def _write_json_payload(path: Path, data: dict) -> None:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            f.write("\n")
 
 
 def _error_from_exception(exc: FlowScribeError, *, source: str) -> ErrorInfo:

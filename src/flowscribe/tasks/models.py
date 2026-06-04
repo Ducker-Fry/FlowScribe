@@ -157,6 +157,7 @@ class TranscriptionJob:
     """Stable request object for a transcription run."""
 
     sources: tuple[SourceSpec, ...]
+    task_id: str | None = None
     output_dir: Path = Path("outputs")
     output_name_base: str | None = None
     work_dir: Path | None = None
@@ -188,6 +189,8 @@ class TranscriptionJob:
     native_threads: int | None = None
     requested_capabilities: tuple[CapabilityName, ...] = ("transcribe",)
     runtime_preferences: RuntimePreferences = field(default_factory=RuntimePreferences)
+    resume_token: str | None = None
+    checkpoint_id: str | None = None
     protocol_version: str = "v0"
     created_at: datetime = field(default_factory=datetime.now)
 
@@ -196,13 +199,36 @@ class TranscriptionJob:
 
         specs: list[TaskSpec] = []
         for index, source in enumerate(self.sources, start=1):
-            task_id = _task_id_for_source(source, created_at=self.created_at, index=index)
+            raw_metadata = {
+                "language": self.language,
+                "task": self.task,
+                "beam_size": self.beam_size,
+                "vad_filter": self.vad_filter,
+                "initial_prompt": self.initial_prompt,
+                "preset": self.preset,
+                "word_timestamps": self.word_timestamps,
+                "provider_name": self.provider_name,
+                "model_name": self.model_name,
+                "timestamps": self.timestamps,
+                "network_family": self.network_family,
+                "cookies_path": str(self.cookies_path) if self.cookies_path is not None else None,
+                "proxy": self.proxy,
+                "output_name_base": self.output_name_base,
+            }
             output_contract = OutputContract(
                 formats=self.output_formats,
                 output_dir=self.output_dir,
                 output_name_base=self.output_name_base,
                 overwrite=self.overwrite,
             )
+            task_id = self._task_id_for_source(
+                source=source,
+                index=index,
+                output_contract=output_contract,
+                raw_metadata=raw_metadata,
+            )
+            resume_token = self._resume_token_for_task(task_id)
+            checkpoint_id = self._checkpoint_id_for_task(task_id)
             specs.append(
                 TaskSpec(
                     task_id=task_id,
@@ -210,32 +236,54 @@ class TranscriptionJob:
                     requested_capabilities=self.requested_capabilities,
                     output_contract=output_contract,
                     runtime_preferences=self.runtime_preferences,
-                    resume_token=task_id if self.progressive_resume else None,
-                    checkpoint_id=task_id if self.progressive_resume else None,
+                    resume_token=resume_token,
+                    checkpoint_id=checkpoint_id,
                     cache_key=generate_cache_key(
                         source=source,
                         requested_capabilities=self.requested_capabilities,
                         output_contract=output_contract,
                         runtime_preferences=self.runtime_preferences,
                     ),
-                    raw_metadata={
-                        "language": self.language,
-                        "task": self.task,
-                        "beam_size": self.beam_size,
-                        "vad_filter": self.vad_filter,
-                        "initial_prompt": self.initial_prompt,
-                        "preset": self.preset,
-                        "word_timestamps": self.word_timestamps,
-                        "provider_name": self.provider_name,
-                        "timestamps": self.timestamps,
-                        "network_family": self.network_family,
-                        "cookies_path": str(self.cookies_path) if self.cookies_path is not None else None,
-                        "proxy": self.proxy,
-                        "output_name_base": self.output_name_base,
-                    },
+                    raw_metadata=raw_metadata,
                 )
             )
         return tuple(specs)
+
+    def _task_id_for_source(
+        self,
+        *,
+        source: SourceSpec,
+        index: int,
+        output_contract: OutputContract,
+        raw_metadata: Mapping[str, object],
+    ) -> str:
+        if self.task_id is not None:
+            if len(self.sources) == 1:
+                return self.task_id
+            return f"{self.task_id}-{index}"
+        return _stable_task_id_for_source(
+            source=source,
+            index=index,
+            requested_capabilities=self.requested_capabilities,
+            output_contract=output_contract,
+            runtime_preferences=self.runtime_preferences,
+            raw_metadata=raw_metadata,
+            protocol_version=self.protocol_version,
+        )
+
+    def _resume_token_for_task(self, task_id: str) -> str | None:
+        if self.resume_token is not None:
+            if len(self.sources) == 1:
+                return self.resume_token
+            return f"{self.resume_token}-{task_id}"
+        return task_id if self.progressive_resume else None
+
+    def _checkpoint_id_for_task(self, task_id: str) -> str | None:
+        if self.checkpoint_id is not None:
+            if len(self.sources) == 1:
+                return self.checkpoint_id
+            return f"{self.checkpoint_id}-{task_id}"
+        return task_id if self.progressive_resume else None
 
 
 @dataclass(frozen=True)
@@ -244,6 +292,9 @@ class ProgressEvent:
 
     stage: ProgressStage
     message: str
+    event_type: str | None = None
+    timestamp: str | None = None
+    sequence: int | None = None
     source: str | None = None
     current: int | None = None
     total: int | None = None
@@ -279,6 +330,7 @@ class TranscriptionResult:
     """Stable response object returned by application services."""
 
     job: TranscriptionJob
+    task_specs: tuple[TaskSpec, ...] = ()
     outputs: tuple[OutputArtifacts, ...] = ()
     errors: tuple[ErrorInfo, ...] = ()
     canceled: bool = False
@@ -334,6 +386,30 @@ def generate_cache_key(
     return f"{protocol_version}_{source_hash}_{cap_str}_{param_hash}"
 
 
-def _task_id_for_source(source: SourceSpec, *, created_at: datetime, index: int) -> str:
-    seed = f"{created_at.isoformat()}::{index}::{source.kind}::{source.resolved_locator}"
-    return hashlib.md5(seed.encode("utf-8")).hexdigest()
+def _stable_task_id_for_source(
+    *,
+    source: SourceSpec,
+    index: int,
+    requested_capabilities: tuple[CapabilityName, ...],
+    output_contract: OutputContract,
+    runtime_preferences: RuntimePreferences,
+    raw_metadata: Mapping[str, object],
+    protocol_version: str = "v0",
+) -> str:
+    seed = {
+        "index": index,
+        "kind": source.kind,
+        "locator": source.resolved_locator,
+        "requested_capabilities": requested_capabilities,
+        "output_formats": output_contract.formats,
+        "provider_name": raw_metadata.get("provider_name"),
+        "model_name": raw_metadata.get("model_name"),
+        "language": raw_metadata.get("language"),
+        "task": raw_metadata.get("task"),
+        "device": runtime_preferences.device,
+        "protocol_version": protocol_version,
+    }
+    digest = hashlib.md5(
+        json.dumps(seed, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    return digest

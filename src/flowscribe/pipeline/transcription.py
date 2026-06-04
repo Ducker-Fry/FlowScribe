@@ -42,6 +42,7 @@ class LocalTranscriptionPipeline:
         prepared_audio_cache_dir: Path | None = None,
         transcript_normalizer: Callable[[Transcript], Transcript] | None = None,
         enable_deduplication: bool = True,
+        transcript_enricher: Callable[[Transcript, MediaItem], Transcript] | None = None,
     ) -> None:
         self._media_preparer = media_preparer
         self._transcriber = transcriber
@@ -51,6 +52,7 @@ class LocalTranscriptionPipeline:
         self._keep_audio = keep_audio
         self._transcript_normalizer = transcript_normalizer
         self._enable_deduplication = enable_deduplication
+        self._transcript_enricher = transcript_enricher
         self._deduplicator = TranscriptDeduplicator() if enable_deduplication else None
         self._audio_cache = (
             PreparedAudioCache(prepared_audio_cache_dir)
@@ -100,6 +102,8 @@ class LocalTranscriptionPipeline:
                 transcript = self._transcript_normalizer(transcript)
             if self._deduplicator is not None:
                 transcript = self._deduplicator.deduplicate(transcript)
+            if self._transcript_enricher is not None:
+                transcript = self._transcript_enricher(transcript, item)
             return transcript
         finally:
             if not self._keep_audio:
@@ -147,7 +151,19 @@ class LocalTranscriptionPipeline:
                 transcript = ProgressiveTranscriptConsistencyChecker().validate(transcript)
             if self._deduplicator is not None:
                 transcript = self._deduplicator.deduplicate(transcript)
+            if self._transcript_enricher is not None:
+                transcript = self._transcript_enricher(transcript, item)
             if self._transcript_normalizer is not None or self._deduplicator is not None:
+                state = ProgressiveTranscriptionState(
+                    source=state.source,
+                    duration_info=state.duration_info,
+                    chunk_plan=state.chunk_plan,
+                    chunk_results=state.chunk_results,
+                    transcript=transcript,
+                    processed_duration_seconds=state.processed_duration_seconds,
+                    cache_dir=state.cache_dir,
+                )
+            elif self._transcript_enricher is not None:
                 state = ProgressiveTranscriptionState(
                     source=state.source,
                     duration_info=state.duration_info,

@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from flowscribe.server.agent_api import AgentTaskStore
 from flowscribe.tasks.models import SourceSpec
 from flowscribe.input.url_security import validate_public_http_url
 from flowscribe.tasks.queue_models import (
@@ -43,6 +44,7 @@ class AddUrlHandler:
     ) -> None:
         self.queue_store_path = queue_store_path
         self.store = BatchQueueStore(queue_store_path)
+        self.task_store = AgentTaskStore()
         self.default_output_dir = default_output_dir or (Path.home() / "Documents" / "FlowScribe")
         self.default_output_formats = default_output_formats
         self.default_model_name = default_model_name

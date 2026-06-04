@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Callable
+from dataclasses import replace
 
 from flowscribe.config.settings import AppSettings
 from flowscribe.core.models import MediaItem, OutputArtifacts
@@ -85,6 +86,12 @@ def build_transcription_pipeline(job: TranscriptionJob, settings: AppSettings) -
             simplify_chinese_transcript
             if settings.language == "zh" or settings.preset == "zh"
             else None
+        ),
+        transcript_enricher=lambda transcript, item: replace(
+            transcript,
+            task_id=job.task_id,
+            resume_token=job.resume_token,
+            checkpoint_id=job.checkpoint_id,
         ),
     )
 

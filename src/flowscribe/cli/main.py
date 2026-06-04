@@ -6,6 +6,7 @@ import json
 import logging
 import sys
 from dataclasses import asdict
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -14,7 +15,15 @@ from flowscribe.app.service import TranscriptionService
 from flowscribe.cli.args import parse_args
 from flowscribe.cli.doctor import run_doctor
 from flowscribe import __version__
-from flowscribe.core.errors import FlowScribeError
+from flowscribe.core.errors import (
+    CancellationError,
+    DownloadError,
+    FlowScribeError,
+    InputError,
+    MediaPreparationError,
+    OutputError,
+    TranscriptionError,
+)
 from flowscribe.input.file_filter import SUPPORTED_MEDIA_EXTENSIONS
 from flowscribe.input.url_inspector import UrlInspector
 from flowscribe.media.inspector import LocalMediaInspector
@@ -27,6 +36,14 @@ from flowscribe.utils.runtime_logging import configure_runtime_logging
 LOGGER = logging.getLogger(__name__)
 
 CLI_PROGRESSIVE_AUTO_THRESHOLD_SECONDS = 20 * 60
+EXIT_OK = 0
+EXIT_PARTIAL_SUCCESS = 10
+EXIT_INPUT_ERROR = 20
+EXIT_SOURCE_ERROR = 30
+EXIT_ENVIRONMENT_ERROR = 40
+EXIT_RUNTIME_ERROR = 50
+EXIT_RESUMABLE_INTERRUPT = 60
+EXIT_CANCELED = 70
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -102,31 +119,35 @@ def main(argv: list[str] | None = None) -> int:
 
 def run_transcribe(options) -> int:
     job = _job_from_transcribe_options(options)
-    result = TranscriptionService().run(job, progress=_print_cli_progress)
+    result = TranscriptionService().run(job, progress=_build_cli_progress_handler(options))
 
-    elapsed = result.elapsed_seconds
-    elapsed_str = f" Time: {_format_duration(elapsed)}." if elapsed is not None else ""
-    print(f"Done. Succeeded: {result.succeeded}. Failed: {result.failed}.{elapsed_str}")
-    if result.errors:
-        print("Failures:")
-        for error in result.errors:
-            print(f"- {error.source}: {error.message}")
-        return 1
-    return 0
+    if options.json_output:
+        print(json.dumps(_result_payload(result), ensure_ascii=False, indent=2))
+    elif not options.non_interactive:
+        elapsed = result.elapsed_seconds
+        elapsed_str = f" Time: {_format_duration(elapsed)}." if elapsed is not None else ""
+        print(f"Done. Succeeded: {result.succeeded}. Failed: {result.failed}.{elapsed_str}")
+        if result.errors:
+            print("Failures:")
+            for error in result.errors:
+                print(f"- {error.source}: {error.message}")
+    return _exit_code_for_result(result)
 
 
 def run_url(options) -> int:
     job = _job_from_url_options(options)
-    result = TranscriptionService().run(job, progress=_print_cli_progress)
-    if result.errors:
-        for error in result.errors:
-            print(f"Error: {error.message}", file=sys.stderr)
-        return 2
-    _print_url_strategy_summary(result)
-    elapsed = result.elapsed_seconds
-    elapsed_str = f" Time: {_format_duration(elapsed)}." if elapsed is not None else ""
-    print(f"Done. Succeeded: {result.succeeded}. Failed: {result.failed}.{elapsed_str}")
-    return 0
+    result = TranscriptionService().run(job, progress=_build_cli_progress_handler(options))
+    if options.json_output:
+        print(json.dumps(_result_payload(result), ensure_ascii=False, indent=2))
+    elif not options.non_interactive:
+        if result.errors:
+            for error in result.errors:
+                print(f"Error: {error.message}", file=sys.stderr)
+        _print_url_strategy_summary(result)
+        elapsed = result.elapsed_seconds
+        elapsed_str = f" Time: {_format_duration(elapsed)}." if elapsed is not None else ""
+        print(f"Done. Succeeded: {result.succeeded}. Failed: {result.failed}.{elapsed_str}")
+    return _exit_code_for_result(result)
 
 
 def run_serve(options) -> int:
@@ -325,7 +346,7 @@ def _search_payload(options, hits) -> dict:
 
 def _job_from_transcribe_options(options) -> TranscriptionJob:
     progressive_enabled, progressive_note = _resolve_cli_progressive_mode_for_transcribe(options)
-    if progressive_note:
+    if progressive_note and not options.non_interactive and not options.json_output:
         print(progressive_note)
     provider_name, model_name = _resolve_cli_provider_and_model(options)
     return TranscriptionJob(
@@ -333,6 +354,7 @@ def _job_from_transcribe_options(options) -> TranscriptionJob:
             SourceSpec(kind="local", value=str(input_path), recursive=options.recursive)
             for input_path in options.inputs
         ),
+        task_id=options.task_id,
         output_dir=options.output_dir,
         work_dir=options.work_dir,
         provider_name=provider_name,
@@ -354,6 +376,8 @@ def _job_from_transcribe_options(options) -> TranscriptionJob:
         progressive_chunk_seconds=options.progressive_chunk_seconds,
         progressive_chunk_overlap_seconds=options.progressive_chunk_overlap_seconds,
         progressive_max_workers=options.progressive_max_workers,
+        resume_token=options.resume_token,
+        checkpoint_id=options.checkpoint_id,
     )
 
 
@@ -361,7 +385,7 @@ def _job_from_url_options(options) -> TranscriptionJob:
     from flowscribe.tasks.models import DownloadOptions
 
     progressive_enabled, progressive_note = _resolve_cli_progressive_mode_for_url(options)
-    if progressive_note:
+    if progressive_note and not options.non_interactive and not options.json_output:
         print(progressive_note)
 
     download_opts = DownloadOptions(
@@ -380,6 +404,7 @@ def _job_from_url_options(options) -> TranscriptionJob:
 
     return TranscriptionJob(
         sources=(source,),
+        task_id=options.task_id,
         output_dir=options.output_dir,
         work_dir=options.work_dir,
         provider_name=provider_name,
@@ -408,6 +433,8 @@ def _job_from_url_options(options) -> TranscriptionJob:
         progressive_chunk_overlap_seconds=options.progressive_chunk_overlap_seconds,
         progressive_max_workers=options.progressive_max_workers,
         requested_capabilities=("subtitle", "transcribe"),
+        resume_token=options.resume_token,
+        checkpoint_id=options.checkpoint_id,
     )
 
 
@@ -433,6 +460,17 @@ def _print_cli_progress(event: ProgressEvent) -> None:
         print(line)
 
 
+def _build_cli_progress_handler(options):
+    def handle(event: ProgressEvent) -> None:
+        if options.event_stream == "jsonl":
+            print(json.dumps(_event_payload(event), ensure_ascii=False), flush=True)
+            return
+        if not options.non_interactive and not options.json_output:
+            _print_cli_progress(event)
+
+    return handle
+
+
 def _cli_progress_line(event: ProgressEvent) -> str:
     if event.capability == "subtitle" and event.message:
         return event.message
@@ -453,6 +491,104 @@ def _cli_progress_line(event: ProgressEvent) -> str:
             parts.append("resumed")
         return " | ".join(parts)
     return event.message
+
+
+def _event_payload(event: ProgressEvent) -> dict:
+    return {
+        "event_type": event.event_type or "progress",
+        "timestamp": event.timestamp or datetime.utcnow().isoformat(timespec="milliseconds") + "Z",
+        "sequence": event.sequence,
+        "task_id": event.task_id,
+        "stage": event.stage,
+        "message": event.message,
+        "source": event.source,
+        "current": event.current,
+        "total": event.total,
+        "path": str(event.path) if event.path is not None else None,
+        "processed_duration_seconds": event.processed_duration_seconds,
+        "total_duration_seconds": event.total_duration_seconds,
+        "eta_seconds": event.eta_seconds,
+        "realtime_factor": event.realtime_factor,
+        "chunk_index": event.chunk_index,
+        "chunk_count": event.chunk_count,
+        "completed_chunks": event.completed_chunks,
+        "failed_chunks": event.failed_chunks,
+        "resumed": event.resumed,
+        "capability": event.capability,
+        "percent": event.percent,
+        "raw_metadata": dict(event.raw_metadata),
+    }
+
+
+def _result_payload(result) -> dict:
+    return {
+        "ok": result.ok,
+        "canceled": result.canceled,
+        "succeeded": result.succeeded,
+        "failed": result.failed,
+        "elapsed_seconds": result.elapsed_seconds,
+        "tasks": [
+            {
+                "task_id": spec.task_id,
+                "resume_token": spec.resume_token,
+                "checkpoint_id": spec.checkpoint_id,
+                "cache_key": spec.cache_key,
+                "source": {
+                    "kind": spec.source.kind,
+                    "value": spec.source.value,
+                    "locator": spec.source.resolved_locator,
+                },
+            }
+            for spec in result.task_specs
+        ],
+        "outputs": [
+            {
+                "paths": [str(path) for path in output.paths],
+                "json_path": str(output.json_path) if output.json_path is not None else None,
+                "media_path": str(output.media_path) if output.media_path is not None else None,
+                "media_kind": output.media_kind,
+                "requested_media_kind": output.requested_media_kind,
+                "source_kind": output.source_kind,
+                "source_value": output.source_value,
+                "transcription_strategy": output.transcription_strategy,
+                "subtitle_language": output.subtitle_language,
+            }
+            for output in result.outputs
+        ],
+        "errors": [
+            {
+                "code": error.code,
+                "message": error.message,
+                "source": error.source,
+                "recoverable": error.recoverable,
+            }
+            for error in result.errors
+        ],
+    }
+
+
+def _exit_code_for_result(result) -> int:
+    if result.canceled:
+        return EXIT_CANCELED
+    if result.errors and result.outputs:
+        return EXIT_PARTIAL_SUCCESS
+    if result.errors:
+        return _exit_code_for_error(result.errors[0].code)
+    return EXIT_OK
+
+
+def _exit_code_for_error(code: str | None) -> int:
+    mapping = {
+        InputError.__name__: EXIT_INPUT_ERROR,
+        DownloadError.__name__: EXIT_SOURCE_ERROR,
+        MediaPreparationError.__name__: EXIT_SOURCE_ERROR,
+        OutputError.__name__: EXIT_ENVIRONMENT_ERROR,
+        TranscriptionError.__name__: EXIT_RUNTIME_ERROR,
+        CancellationError.__name__: EXIT_CANCELED,
+    }
+    if code is None:
+        return EXIT_RUNTIME_ERROR
+    return mapping.get(code, EXIT_RUNTIME_ERROR)
 
 
 def _print_url_strategy_summary(result) -> None:

@@ -407,6 +407,7 @@ dist/FlowScribeGUI/
 - [代理配置](docs/proxy.md) - 代理服务器配置
 
 ### 开发文档
+- [Agent API Guide](docs/agent-api.md) - 面向 AI agent / 自动化 / RAG 的 CLI 和 HTTP 集成说明
 - [开发状态](docs/dev-state.md) - 当前开发状态和v1.0.0路线图
 - [Whisper.cpp 引擎规划](docs/whispercpp-engine-plan.md) - 常驻推理引擎设计、目录结构和开发任务
 - [打包文档](docs/packaging.md) - 便携版构建说明

@@ -115,3 +115,74 @@ def test_server_not_found(server_thread: BookmarkletServer) -> None:
     response = conn.getresponse()
 
     assert response.status == 404
+
+
+def test_server_submit_agent_task_endpoint(monkeypatch, server_thread: BookmarkletServer) -> None:
+    from flowscribe.tasks.models import TranscriptionResult
+
+    def fake_run(self, job, progress=None, should_cancel=None):
+        return TranscriptionResult(job=job, task_specs=job.to_task_specs())
+
+    monkeypatch.setattr("flowscribe.server.agent_api.TranscriptionService.run", fake_run)
+
+    conn = HTTPConnection("127.0.0.1", 18765, timeout=5)
+    payload = json.dumps(
+        {
+            "task_id": "task-1",
+            "source": {"kind": "local", "value": "C:/media/sample.mp4"},
+            "output": {"formats": ["json"], "output_dir": "outputs"},
+        }
+    )
+    conn.request(
+        "POST",
+        "/v1/tasks",
+        body=payload,
+        headers={"Content-Type": "application/json"},
+    )
+    response = conn.getresponse()
+
+    assert response.status == 202
+    data = json.loads(response.read().decode())
+    assert data["task_id"] == "task-1"
+
+
+def test_server_task_events_endpoint(monkeypatch, server_thread: BookmarkletServer) -> None:
+    from flowscribe.tasks.models import ProgressEvent, TranscriptionResult
+
+    def fake_run(self, job, progress=None, should_cancel=None):
+        progress(
+            ProgressEvent(
+                stage="discover",
+                message="Received 1 source(s).",
+                task_id="task-events",
+                event_type="task.accepted",
+                timestamp="2026-06-04T00:00:00.000Z",
+                sequence=1,
+            )
+        )
+        return TranscriptionResult(job=job, task_specs=job.to_task_specs())
+
+    monkeypatch.setattr("flowscribe.server.agent_api.TranscriptionService.run", fake_run)
+
+    conn = HTTPConnection("127.0.0.1", 18765, timeout=5)
+    payload = json.dumps(
+        {
+            "task_id": "task-events",
+            "source": {"kind": "local", "value": "C:/media/sample.mp4"},
+            "output": {"formats": ["json"], "output_dir": "outputs"},
+        }
+    )
+    conn.request("POST", "/v1/tasks", body=payload, headers={"Content-Type": "application/json"})
+    response = conn.getresponse()
+    assert response.status == 202
+    response.read()
+    sleep(0.1)
+
+    conn = HTTPConnection("127.0.0.1", 18765, timeout=5)
+    conn.request("GET", "/v1/tasks/task-events/events")
+    response = conn.getresponse()
+
+    assert response.status == 200
+    assert response.getheader("Content-Type") == "text/event-stream; charset=utf-8"
+    body = response.read().decode()
+    assert "task.accepted" in body

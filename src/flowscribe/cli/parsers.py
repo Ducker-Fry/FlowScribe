@@ -181,6 +181,39 @@ def add_transcription_options(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Keep prepared WAV files in the work directory for debugging or reuse.",
     )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        dest="json_output",
+        help="Write structured task results as JSON for agent and automation use.",
+    )
+    parser.add_argument(
+        "--events",
+        choices=["jsonl"],
+        default=None,
+        dest="event_stream",
+        help="Write structured progress events to stdout as JSONL.",
+    )
+    parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="Disable human-oriented status output and use automation-safe output only.",
+    )
+    parser.add_argument(
+        "--task-id",
+        default=None,
+        help="Explicit stable task id for agent workflows.",
+    )
+    parser.add_argument(
+        "--resume-token",
+        default=None,
+        help="Explicit resume token for an existing progressive task.",
+    )
+    parser.add_argument(
+        "--checkpoint-id",
+        default=None,
+        help="Explicit checkpoint id for an existing progressive task.",
+    )
     add_progressive_options(parser)
 
 
@@ -311,6 +344,39 @@ def parse_transcribe_args(argv: list[str] | None = None, *, prog: str = "flowscr
         action="store_true",
         help="Keep prepared WAV files in the work directory for debugging or reuse.",
     )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        dest="json_output",
+        help="Write structured task results as JSON for agent and automation use.",
+    )
+    parser.add_argument(
+        "--events",
+        choices=["jsonl"],
+        default=None,
+        dest="event_stream",
+        help="Write structured progress events to stdout as JSONL.",
+    )
+    parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="Disable human-oriented status output and use automation-safe output only.",
+    )
+    parser.add_argument(
+        "--task-id",
+        default=None,
+        help="Explicit stable task id for agent workflows.",
+    )
+    parser.add_argument(
+        "--resume-token",
+        default=None,
+        help="Explicit resume token for an existing progressive task.",
+    )
+    parser.add_argument(
+        "--checkpoint-id",
+        default=None,
+        help="Explicit checkpoint id for an existing progressive task.",
+    )
     add_progressive_options(parser)
     namespace = parser.parse_args(argv)
     return CliOptions(
@@ -338,6 +404,12 @@ def parse_transcribe_args(argv: list[str] | None = None, *, prog: str = "flowscr
         progressive_chunk_overlap_seconds=namespace.progressive_chunk_overlap_seconds,
         progressive_resume=namespace.progressive_resume,
         progressive_max_workers=namespace.progressive_max_workers,
+        json_output=namespace.json_output,
+        event_stream=namespace.event_stream,
+        non_interactive=namespace.non_interactive,
+        task_id=namespace.task_id,
+        resume_token=namespace.resume_token,
+        checkpoint_id=namespace.checkpoint_id,
     )
 
 
@@ -433,6 +505,12 @@ def parse_url_args(argv: list[str] | None = None) -> UrlOptions:
         progressive_max_workers=namespace.progressive_max_workers,
         download_quality=namespace.download_quality,
         download_format=namespace.download_format,
+        json_output=namespace.json_output,
+        event_stream=namespace.event_stream,
+        non_interactive=namespace.non_interactive,
+        task_id=namespace.task_id,
+        resume_token=namespace.resume_token,
+        checkpoint_id=namespace.checkpoint_id,
     )
 
 

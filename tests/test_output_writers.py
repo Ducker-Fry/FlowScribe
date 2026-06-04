@@ -87,6 +87,7 @@ def test_transcript_artifact_writer_writes_selected_formats(tmp_path: Path) -> N
     payload = json.loads((tmp_path / "lesson.json").read_text(encoding="utf-8"))
     assert payload["schema_version"] == "1.1"
     assert payload["generator"]["name"] == "FlowScribe"
+    assert payload["document_id"]
     assert payload["source"] == str(tmp_path / "lesson.mp4")
     assert payload["source_info"]["name"] == "lesson.mp4"
     assert payload["provider"] == "local-whisper"
@@ -96,6 +97,14 @@ def test_transcript_artifact_writer_writes_selected_formats(tmp_path: Path) -> N
     assert payload["raw_word_count"] == 1
     assert payload["segments"][0]["id"] == "seg-0001"
     assert payload["segments"][0]["index"] == 1
+    assert payload["chunks"][0]["index"] == 1
+    assert payload["chunks"][0]["segment_ids"] == ["seg-0001"]
+    assert payload["artifacts"][-1]["format"] == "json"
+    assert payload["resume"] == {
+        "resume_token": None,
+        "checkpoint_id": None,
+        "cache_key": None,
+    }
     assert payload["segments"][0]["start"] == 0.0
     assert payload["segments"][0]["end"] == 1.5
     assert payload["segments"][0]["duration_seconds"] == 1.5

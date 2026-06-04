@@ -35,6 +35,12 @@ class CliOptions:
     progressive_chunk_overlap_seconds: float
     progressive_resume: bool
     progressive_max_workers: int
+    json_output: bool = False
+    event_stream: str | None = None
+    non_interactive: bool = False
+    task_id: str | None = None
+    resume_token: str | None = None
+    checkpoint_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -103,6 +109,12 @@ class UrlOptions:
     progressive_max_workers: int
     download_quality: str = "best"
     download_format: str | None = None
+    json_output: bool = False
+    event_stream: str | None = None
+    non_interactive: bool = False
+    task_id: str | None = None
+    resume_token: str | None = None
+    checkpoint_id: str | None = None
 
 
 @dataclass(frozen=True)

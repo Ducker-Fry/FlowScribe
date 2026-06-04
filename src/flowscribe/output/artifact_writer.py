@@ -38,23 +38,36 @@ class TranscriptArtifactWriter:
         media_kind: str | None = None,
     ) -> OutputArtifacts:
         paths = []
+        include_json = False
         for output_format in self._formats:
             if output_format == "txt":
                 paths.append(self._txt_writer.write(transcript, output_dir))
             elif output_format == "md":
                 paths.append(self._md_writer.write(transcript, output_dir))
             elif output_format == "json":
-                # Create JSON writer with media binding info
-                json_writer = JsonTranscriptWriter(
-                    path_builder=self._json_writer._path_builder,
-                    media_path=media_path,
-                    media_kind=media_kind,
-                )
-                paths.append(json_writer.write(transcript, output_dir))
+                include_json = True
             elif output_format == "srt":
                 paths.append(self._srt_writer.write(transcript, output_dir))
             elif output_format == "vtt":
                 paths.append(self._vtt_writer.write(transcript, output_dir))
             else:
                 raise ValueError(f"Unsupported output format: {output_format}")
-        return OutputArtifacts(paths=tuple(paths))
+        if include_json:
+            json_writer = JsonTranscriptWriter(
+                path_builder=self._json_writer._path_builder,
+                media_path=media_path,
+                media_kind=media_kind,
+            )
+            paths.append(
+                json_writer.write(
+                    transcript,
+                    output_dir,
+                    artifact_paths=tuple(paths),
+                )
+            )
+        return OutputArtifacts(
+            paths=tuple(paths),
+            media_path=media_path,
+            media_kind=media_kind,
+            auto_bind_media=media_path is not None,
+        )

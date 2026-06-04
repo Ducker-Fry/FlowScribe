@@ -71,6 +71,11 @@ class Transcript:
     model_name: str | None = None
     options: TranscriptionOptions | None = None
     metadata: dict[str, object] = field(default_factory=dict)
+    task_id: str | None = None
+    document_id: str | None = None
+    resume_token: str | None = None
+    checkpoint_id: str | None = None
+    cache_key: str | None = None
     created_at: datetime = field(default_factory=datetime.now)
 
     @property

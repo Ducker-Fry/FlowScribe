@@ -308,3 +308,101 @@ def test_models_command_mentions_native_engine(monkeypatch, tmp_path: Path) -> N
     assert "native-engine requires a local whisper.cpp ggml .bin model path" in output
     assert "paraformer-zh" in output
     assert "ggml-base.en.bin" in output
+
+
+def test_parse_transcribe_args_supports_agent_flags(tmp_path: Path) -> None:
+    media = tmp_path / "sample.mp4"
+    media.write_bytes(b"media")
+
+    options = parse_args(
+        [
+            "transcribe",
+            str(media),
+            "--json",
+            "--events",
+            "jsonl",
+            "--non-interactive",
+            "--task-id",
+            "task-1",
+            "--resume-token",
+            "resume-1",
+            "--checkpoint-id",
+            "checkpoint-1",
+        ]
+    )
+
+    assert options.json_output is True
+    assert options.event_stream == "jsonl"
+    assert options.non_interactive is True
+    assert options.task_id == "task-1"
+    assert options.resume_token == "resume-1"
+    assert options.checkpoint_id == "checkpoint-1"
+
+
+def test_run_transcribe_json_output(monkeypatch, tmp_path: Path) -> None:
+    from flowscribe.cli.main import run_transcribe
+    from flowscribe.core.models import OutputArtifacts
+    from flowscribe.tasks.models import TaskSpec, TranscriptionResult
+
+    media = tmp_path / "sample.mp4"
+    media.write_bytes(b"media")
+    json_path = tmp_path / "sample.json"
+    json_path.write_text("{}", encoding="utf-8")
+    options = parse_args(["transcribe", str(media), "--json", "--non-interactive", "--task-id", "task-1"])
+    job = _job_from_transcribe_options(options)
+    task_specs = job.to_task_specs()
+
+    class FakeService:
+        def run(self, job, progress=None):
+            return TranscriptionResult(
+                job=job,
+                task_specs=task_specs,
+                outputs=(OutputArtifacts(paths=(json_path,)),),
+            )
+
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    monkeypatch.setattr("flowscribe.cli.main.TranscriptionService", lambda: FakeService())
+
+    with redirect_stdout(stdout), redirect_stderr(stderr):
+        exit_code = run_transcribe(options)
+
+    assert exit_code == 0
+    payload = __import__("json").loads(stdout.getvalue())
+    assert payload["tasks"][0]["task_id"] == "task-1"
+    assert payload["outputs"][0]["json_path"] == str(json_path)
+
+
+def test_run_transcribe_jsonl_events(monkeypatch, tmp_path: Path) -> None:
+    from flowscribe.cli.main import run_transcribe
+    from flowscribe.tasks.models import TranscriptionResult
+
+    media = tmp_path / "sample.mp4"
+    media.write_bytes(b"media")
+    options = parse_args(["transcribe", str(media), "--events", "jsonl", "--non-interactive"])
+
+    class FakeService:
+        def run(self, job, progress=None):
+            progress(
+                ProgressEvent(
+                    stage="discover",
+                    message="Received 1 source(s).",
+                    task_id="task-1",
+                    event_type="task.accepted",
+                    timestamp="2026-06-04T00:00:00.000Z",
+                    sequence=1,
+                )
+            )
+            return TranscriptionResult(job=job, task_specs=job.to_task_specs())
+
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    monkeypatch.setattr("flowscribe.cli.main.TranscriptionService", lambda: FakeService())
+
+    with redirect_stdout(stdout), redirect_stderr(stderr):
+        exit_code = run_transcribe(options)
+
+    assert exit_code == 0
+    line = stdout.getvalue().strip()
+    assert '"event_type": "task.accepted"' in line
+    assert '"task_id": "task-1"' in line
