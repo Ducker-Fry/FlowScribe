@@ -13,6 +13,7 @@ from pathlib import Path
 
 from flowscribe.engine.pipe_client import FlowScribeEngineClient, pywintypes, win32file
 from flowscribe.media.tools import resolve_tool_path
+from flowscribe.model_catalog import resolve_faster_whisper_repo
 from flowscribe.providers.transcribe.native_engine import resolve_engine_exe
 
 
@@ -241,25 +242,3 @@ def check_native_engine_hello_smoke() -> DoctorCheck:
         except subprocess.TimeoutExpired:
             proc.kill()
             proc.wait(timeout=5)
-
-
-def resolve_faster_whisper_repo(model_name: str) -> str | None:
-    known = {
-        "tiny",
-        "tiny.en",
-        "base",
-        "base.en",
-        "small",
-        "small.en",
-        "medium",
-        "medium.en",
-        "large-v1",
-        "large-v2",
-        "large-v3",
-        "large-v3-turbo",
-    }
-    if model_name in known:
-        return f"Systran/faster-whisper-{model_name}"
-    if "/" in model_name:
-        return model_name
-    return None

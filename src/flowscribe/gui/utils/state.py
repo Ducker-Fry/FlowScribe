@@ -53,6 +53,7 @@ DEFAULT_GUI_PREFERENCES = {
     "proxy": "",
     "theme": "light",
     "native_threads": None,
+    "show_model_download_prompt": True,
 }
 DEFAULT_VIEW_PREFERENCES = {
     "visible_tabs": {
@@ -135,6 +136,7 @@ def _normalize_gui_preferences_payload(payload: object) -> dict[str, object]:
         "proxy": proxy if isinstance(proxy, str) else "",
         "theme": theme if theme in GUI_THEME_OPTIONS else "light",
         "native_threads": native_threads,
+        "show_model_download_prompt": bool(source.get("show_model_download_prompt", True)),
     }
 
 

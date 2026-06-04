@@ -43,6 +43,7 @@ class SettingsDialog(QDialog):
     """Dialog for editing global application settings."""
 
     settings_changed = Signal(dict)
+    model_manager_requested = Signal()
 
     def __init__(self, parent: QWidget | None, settings: dict):
         super().__init__(parent)
@@ -168,9 +169,12 @@ class SettingsDialog(QDialog):
         self.model_combo.addItems(GUI_MODEL_OPTIONS)
         model_browse_button = QPushButton("Browse")
         model_browse_button.clicked.connect(self._choose_model_file)
+        model_center_button = QPushButton("Model Center")
+        model_center_button.clicked.connect(self.model_manager_requested.emit)
         model_row = QHBoxLayout()
         model_row.addWidget(self.model_combo, 1)
         model_row.addWidget(model_browse_button)
+        model_row.addWidget(model_center_button)
         self.model_browse_button = model_browse_button
 
         self.provider_combo = QComboBox()

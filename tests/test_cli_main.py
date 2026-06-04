@@ -1,5 +1,6 @@
 from pathlib import Path
 import io
+import json
 from contextlib import redirect_stdout, redirect_stderr
 
 from flowscribe.cli.args import parse_args
@@ -444,3 +445,56 @@ def test_run_serve_reports_port_conflict_for_windows_socket_error(monkeypatch, t
 
     assert exit_code == 1
     assert "Port 8765 is already in use" in stderr.getvalue()
+
+
+def test_run_install_write_config_json(monkeypatch, tmp_path: Path) -> None:
+    models_dir = tmp_path / "models"
+    docs_dir = tmp_path / "docs"
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    monkeypatch.setenv("FLOWSCRIBE_CONFIG_DIR", str(tmp_path / "config"))
+
+    with redirect_stdout(stdout), redirect_stderr(stderr):
+        exit_code = main(
+            [
+                "install",
+                "--json",
+                "write-config",
+                "--scope",
+                "user",
+                "--models-dir",
+                str(models_dir),
+                "--docs-dir",
+                str(docs_dir),
+                "--component",
+                "gui",
+                "--component",
+                "docs",
+            ]
+        )
+
+    assert exit_code == 0
+    payload = json.loads(stdout.getvalue())
+    assert payload["ok"] is True
+    assert payload["install_scope"] == "user"
+    assert payload["installed_components"] == ["gui", "docs"]
+    config_path = Path(payload["config_path"])
+    assert config_path.exists()
+    config_payload = json.loads(config_path.read_text(encoding="utf-8"))
+    assert config_payload["allow_implicit_model_download"] is False
+    assert config_payload["models_dir"] == str(models_dir.resolve())
+    assert config_payload["docs_dir"] == str(docs_dir.resolve())
+
+
+def test_run_model_list_available_json(monkeypatch) -> None:
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    with redirect_stdout(stdout), redirect_stderr(stderr):
+        exit_code = main(["model", "--json", "list-available"])
+
+    assert exit_code == 0
+    payload = json.loads(stdout.getvalue())
+    assert any(entry["model_id"] == "small" for entry in payload)
+    assert any(entry["model_id"] == "paraformer-zh" for entry in payload)

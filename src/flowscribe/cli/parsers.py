@@ -8,7 +8,9 @@ from pathlib import Path
 from .options import (
     CliOptions,
     DoctorOptions,
+    InstallCommandOptions,
     InspectOptions,
+    ModelCommandOptions,
     SearchOptions,
     ServeOptions,
     SimpleCommandOptions,
@@ -760,3 +762,113 @@ def parse_simple_command_args(command: str, argv: list[str]) -> SimpleCommandOpt
     )
     parser.parse_args(argv)
     return SimpleCommandOptions(command=command)
+
+
+def parse_model_args(argv: list[str] | None = None) -> ModelCommandOptions:
+    parser = argparse.ArgumentParser(
+        prog="flowscribe model",
+        description="Manage installed local transcription models.",
+    )
+    parser.add_argument(
+        "--models-dir",
+        type=Path,
+        default=None,
+        help="Override the models directory used for download and listing.",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        dest="json_output",
+        help="Write structured model management output as JSON.",
+    )
+    subparsers = parser.add_subparsers(dest="subcommand", required=True)
+
+    subparsers.add_parser("list-available", help="List downloadable and importable model options.")
+    subparsers.add_parser("list-installed", help="List installed and imported model entries.")
+
+    download_parser = subparsers.add_parser("download", help="Download a model into the managed models directory.")
+    download_parser.add_argument("model_id", help="Model id, such as small or paraformer-zh.")
+
+    remove_parser = subparsers.add_parser("remove", help="Remove an installed model entry.")
+    remove_parser.add_argument("model_id", help="Model id to remove.")
+
+    import_parser = subparsers.add_parser(
+        "import-native",
+        help="Register a local whisper.cpp ggml .bin file for native-engine use.",
+    )
+    import_parser.add_argument("path", type=Path, help="Path to a local whisper.cpp ggml .bin file.")
+
+    namespace = parser.parse_args(argv)
+    return ModelCommandOptions(
+        command="model",
+        subcommand=namespace.subcommand,
+        model_id=getattr(namespace, "model_id", None),
+        path=getattr(namespace, "path", None),
+        models_dir=namespace.models_dir,
+        json_output=namespace.json_output,
+    )
+
+
+def parse_install_args(argv: list[str] | None = None) -> InstallCommandOptions:
+    parser = argparse.ArgumentParser(
+        prog="flowscribe install",
+        description="Installer-facing commands for writing packaged-install configuration.",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        dest="json_output",
+        help="Write structured installer command output as JSON.",
+    )
+    subparsers = parser.add_subparsers(dest="subcommand", required=True)
+
+    write_config = subparsers.add_parser(
+        "write-config",
+        help="Write install-config.json for a packaged installation.",
+    )
+    write_config.add_argument(
+        "--scope",
+        dest="install_scope",
+        choices=["user", "machine"],
+        required=True,
+        help="Installation scope recorded in install-config.json.",
+    )
+    write_config.add_argument(
+        "--models-dir",
+        type=Path,
+        required=True,
+        help="Managed models directory.",
+    )
+    write_config.add_argument(
+        "--docs-dir",
+        type=Path,
+        required=True,
+        help="Managed docs directory.",
+    )
+    write_config.add_argument(
+        "--component",
+        dest="component_names",
+        action="append",
+        default=[],
+        choices=["gui", "cli", "docs"],
+        help="Installed component name. Repeat for multiple components.",
+    )
+    write_config.add_argument(
+        "--allow-implicit-model-download",
+        action="store_true",
+        help="Allow runtime model auto-download for this install. Defaults to disabled.",
+    )
+
+    namespace = parser.parse_args(argv)
+    return InstallCommandOptions(
+        command="install",
+        subcommand=namespace.subcommand,
+        install_scope=getattr(namespace, "install_scope", None),
+        models_dir=getattr(namespace, "models_dir", None),
+        docs_dir=getattr(namespace, "docs_dir", None),
+        component_names=tuple(getattr(namespace, "component_names", ()) or ()),
+        allow_implicit_model_download=bool(
+            getattr(namespace, "allow_implicit_model_download", False)
+        ),
+        json_output=namespace.json_output,
+    )

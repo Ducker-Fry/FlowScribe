@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
-from PySide6.QtCore import QFileSystemWatcher, QThread
-from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QStackedWidget, QToolBar
+from PySide6.QtCore import QFileSystemWatcher, QThread, QUrl
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QMessageBox, QStackedWidget, QToolBar
 
+from flowscribe.config.resources import allow_implicit_model_download
 from flowscribe.gui.dialogs.queue_item_settings_dialog import QueueItemSettingsDialog
 from flowscribe.gui.dialogs.settings_dialog import SettingsDialog
 from flowscribe.gui.icons import (
@@ -16,6 +19,7 @@ from flowscribe.gui.icons import (
     get_queue_icon,
     get_settings_icon,
 )
+from flowscribe.model_manager import local_docs_index_path
 from flowscribe.gui.services.library_service import (
     ensure_library_entry_outputs,
     remove_library_entry_and_output_dir,
@@ -35,6 +39,7 @@ from flowscribe.gui.theme_manager import get_current_theme
 from flowscribe.gui.views.library_view import LibraryView
 from flowscribe.gui.views.queue_view import QueueView
 from flowscribe.gui.views.single_task_view import SingleTaskView
+from flowscribe.model_manager import local_model_guide_path, managed_models_present
 from flowscribe.tasks.queue_importers import import_urls_from_file, parse_urls_from_text
 from flowscribe.tasks.queue_models import (
     QueueItemSettings,
@@ -85,11 +90,13 @@ class NewMainWindow(QMainWindow):
         self._server_worker = None
         self._server_port: int | None = None
         self._library_view_dialog = None
+        self._missing_models_prompt_shown = False
 
         self._setup_ui()
         self._connect_signals()
         self._setup_queue_file_watcher()
         self._refresh_queue_view()
+        self._maybe_prompt_for_models()
 
     def _setup_ui(self) -> None:
         """Initialize UI components."""
@@ -110,6 +117,8 @@ class NewMainWindow(QMainWindow):
 
         settings_action = toolbar.addAction(get_settings_icon(theme), "Settings")
         settings_action.triggered.connect(self._show_settings_dialog)
+        help_action = toolbar.addAction(get_settings_icon(theme), "Help")
+        help_action.triggered.connect(self._show_help)
 
         toolbar.addSeparator()
 
@@ -175,12 +184,20 @@ class NewMainWindow(QMainWindow):
         """Show settings dialog."""
         dialog = SettingsDialog(self, self._settings)
         dialog.settings_changed.connect(self._on_settings_changed)
+        dialog.model_manager_requested.connect(self._show_model_manager_dialog)
         if dialog.exec():
             self._settings = dialog.get_settings()
             self._single_task_view.update_settings(self._settings)
             self._queue_view.update_settings(self._settings)
             self._refresh_icons()
             self.statusBar().showMessage("Settings updated")
+
+    def _show_model_manager_dialog(self) -> None:
+        from flowscribe.gui.dialogs import ModelManagerDialog
+
+        dialog = ModelManagerDialog(self)
+        dialog.exec()
+        self.statusBar().showMessage("Model Center closed")
 
     def _on_settings_changed(self, settings: dict) -> None:
         """Handle settings changes from Apply button."""
@@ -205,12 +222,13 @@ class NewMainWindow(QMainWindow):
         toolbar = self.findChild(QToolBar, "Main")
         if toolbar:
             actions = toolbar.actions()
-            if len(actions) >= 4:
+            if len(actions) >= 6:
                 actions[0].setIcon(get_settings_icon(theme))  # Settings
-                # Skip separator at index 1
-                actions[2].setIcon(get_application_icon(theme))  # Single Task
-                actions[3].setIcon(get_library_icon(theme))  # Library
-                actions[4].setIcon(get_queue_icon(theme))  # Queue
+                actions[1].setIcon(get_settings_icon(theme))  # Help
+                # Skip separator at index 2
+                actions[3].setIcon(get_application_icon(theme))  # Single Task
+                actions[4].setIcon(get_library_icon(theme))  # Library
+                actions[5].setIcon(get_queue_icon(theme))  # Queue
 
     # SingleTaskView handlers
     def _on_transcription_started(self) -> None:
@@ -243,6 +261,52 @@ class NewMainWindow(QMainWindow):
     def _on_transcription_error(self, error: str) -> None:
         """Handle transcription error."""
         self.statusBar().showMessage(f"Transcription error: {error}")
+        if "Model Center" in error or "is not installed" in error:
+            self._show_model_manager_dialog()
+
+    def _show_help(self) -> None:
+        docs_path = local_docs_index_path()
+        if docs_path is None:
+            self.statusBar().showMessage("Local help is not installed.")
+            return
+        if QDesktopServices.openUrl(QUrl.fromLocalFile(str(docs_path))):
+            self.statusBar().showMessage("Opened local help.")
+        else:
+            self.statusBar().showMessage(f"Could not open help: {docs_path}")
+
+    def _maybe_prompt_for_models(self) -> None:
+        if self._missing_models_prompt_shown:
+            return
+        if not bool(getattr(sys, "frozen", False)):
+            return
+        if allow_implicit_model_download():
+            return
+        if managed_models_present():
+            return
+
+        self._missing_models_prompt_shown = True
+        self.statusBar().showMessage("No transcription model is installed yet. Open Model Center to download one.")
+        message = QMessageBox(self)
+        message.setWindowTitle("Download A Model Before First Use")
+        message.setText(
+            "FlowScribe does not auto-download transcription models on first use in the installed app.\n\n"
+            "Download `small` now to avoid a long, silent wait later."
+        )
+        message.setInformativeText(
+            "Choose Model Center to download now, or Help to open the local model guide."
+        )
+        model_center_button = message.addButton("Open Model Center", QMessageBox.ButtonRole.AcceptRole)
+        help_button = message.addButton("Open Model Guide", QMessageBox.ButtonRole.HelpRole)
+        message.addButton("Later", QMessageBox.ButtonRole.RejectRole)
+        message.exec()
+
+        clicked = message.clickedButton()
+        if clicked is model_center_button:
+            self._show_model_manager_dialog()
+        elif clicked is help_button:
+            guide_path = local_model_guide_path()
+            if guide_path is not None:
+                QDesktopServices.openUrl(QUrl.fromLocalFile(str(guide_path)))
 
     # LibraryView handlers
     def _on_library_open_transcript(self, entry) -> None:

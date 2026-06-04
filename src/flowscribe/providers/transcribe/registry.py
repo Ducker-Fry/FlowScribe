@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Literal, Protocol
 
 from flowscribe.core.ports import Transcriber
+from flowscribe.model_manager import ensure_runtime_model_available
 from flowscribe.providers.transcribe.local_whisper import LocalWhisperTranscriber
 from flowscribe.providers.transcribe.native_engine import NativeEngineTranscriber
 from flowscribe.providers.transcribe.paraformer import (
@@ -101,6 +102,7 @@ class LocalWhisperProvider:
         return self._CAPABILITIES
 
     def build_transcriber(self, settings: ProviderTranscriptionSettings) -> Transcriber:
+        ensure_runtime_model_available("local-whisper", settings.model_name)
         return LocalWhisperTranscriber(
             model_name=settings.model_name,
             language=settings.language,
@@ -185,6 +187,7 @@ class ParaformerProvider:
         return self._CAPABILITIES
 
     def build_transcriber(self, settings: ProviderTranscriptionSettings) -> Transcriber:
+        ensure_runtime_model_available("paraformer", settings.model_name or PARAFORMER_MODEL_NAME)
         return ParaformerTranscriber(
             model_name=settings.model_name or PARAFORMER_MODEL_NAME,
             language=settings.language,

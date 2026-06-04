@@ -29,3 +29,31 @@ The helper is published to:
 ```text
 build\wasapi-helper\
 ```
+
+## Local Docs Site
+
+Build the local HTML help bundle used by the Windows installer and packaged help entry:
+
+```powershell
+python .\scripts\build_docs_site.py
+```
+
+The output is written to:
+
+```text
+build\docs-site\
+```
+
+## Windows Installers
+
+Compile the Windows online and offline installers with Inno Setup:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_installers.ps1
+```
+
+This expects:
+
+- `dist\FlowScribe\`
+- `dist\FlowScribeGUI\`
+- Inno Setup `iscc` on PATH

@@ -133,6 +133,7 @@ def test_normalize_gui_preferences_payload_filters_invalid_values() -> None:
         "proxy": "",
         "theme": "light",
         "native_threads": None,
+        "show_model_download_prompt": True,
     }
 
 
@@ -321,6 +322,7 @@ def test_gui_state_payload_uses_nested_preferences_and_local_sources(tmp_path: P
             "proxy": "http://127.0.0.1:7890",
             "theme": "light",
             "native_threads": 8,
+            "show_model_download_prompt": True,
         },
         "local_sources": {
             "local_paths": [str(media)],
@@ -453,6 +455,7 @@ def test_normalize_gui_state_payload_supports_nested_and_legacy_formats(tmp_path
     assert preferences["url_media_output_dir"] == "saved-url-media"
     assert preferences["url_auto_bind_media"] is False
     assert preferences["native_threads"] == 4
+    assert preferences["show_model_download_prompt"] is True
     assert recent_work["recent_transcripts"] == [str(transcript)]
     assert recent_work["recent_output_dirs"] == [str(outputs)]
     assert export_profiles[0].name == "Review"
@@ -496,6 +499,7 @@ def test_normalize_gui_state_payload_supports_nested_and_legacy_formats(tmp_path
     assert legacy_preferences["url_media_kind"] == "audio"
     assert legacy_preferences["url_media_output_dir"] == ""
     assert legacy_preferences["url_auto_bind_media"] is True
+    assert legacy_preferences["show_model_download_prompt"] is True
     assert legacy_recent_work == {
         "recent_transcripts": [],
         "recent_output_dirs": [],

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from collections.abc import Callable
 
+from flowscribe.config.resources import resolve_resource_paths
 from flowscribe.core.errors import TranscriptionError, CancellationError
 from flowscribe.core.models import (
     PreparedAudio,
@@ -13,6 +14,7 @@ from flowscribe.core.models import (
     TranscriptWord,
     TranscriptionOptions,
 )
+from flowscribe.model_manager import runtime_model_reference
 from flowscribe.nlp.segmenter import align_chinese_words
 
 LOCAL_WHISPER_PROVIDER_NAME = "local-whisper"
@@ -22,6 +24,10 @@ def _configure_huggingface_runtime() -> None:
     """Reduce first-run Windows cache warnings without hiding real download failures."""
     os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
     os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
+    resources = resolve_resource_paths()
+    os.environ.setdefault("HF_HOME", str(resources.model_cache_dir / "huggingface"))
+    os.environ.setdefault("HUGGINGFACE_HUB_CACHE", str(resources.model_cache_dir / "huggingface" / "hub"))
+    os.environ.setdefault("TRANSFORMERS_CACHE", str(resources.model_cache_dir / "huggingface" / "transformers"))
 
 
 class LocalWhisperTranscriber:
@@ -165,8 +171,10 @@ class LocalWhisperTranscriber:
                 except Exception:
                     pass
 
+            runtime_model_name = runtime_model_reference("local-whisper", self._model_name)
+
             self._model = WhisperModel(
-                self._model_name,
+                runtime_model_name,
                 device=device,
                 compute_type=compute_type,
                 cpu_threads=0,  # Use all available CPU threads

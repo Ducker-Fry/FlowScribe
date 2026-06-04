@@ -30,6 +30,7 @@ classifiers = [
 ]
 dependencies = [
   "faster-whisper>=1.0",
+  "huggingface_hub>=0.24",
   "jieba>=0.42",
   "opencc-python-reimplemented>=0.1.7",
   "yt-dlp>=2025.1",

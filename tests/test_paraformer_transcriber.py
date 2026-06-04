@@ -177,6 +177,8 @@ def _prepared_audio(tmp_path: Path, *, duration_seconds: float | None = None) ->
 
 def _redirect_model_dirs(monkeypatch, tmp_path: Path) -> None:
     model_root = tmp_path / "models"
+    monkeypatch.setenv("FLOWSCRIBE_DISABLE_IMPLICIT_MODEL_DOWNLOAD", "0")
+    monkeypatch.delenv("FLOWSCRIBE_CONFIG_DIR", raising=False)
     monkeypatch.setattr(paraformer, "MODELS_ROOT", model_root)
     monkeypatch.setattr(paraformer, "PARAFORMER_MODEL_DIR", model_root / "paraformer-zh")
     monkeypatch.setattr(paraformer, "PARAFORMER_VAD_MODEL_DIR", model_root / "fsmn-vad")

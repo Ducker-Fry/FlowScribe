@@ -3,7 +3,9 @@ from pathlib import Path
 from flowscribe.cli.args import (
     CliOptions,
     DoctorOptions,
+    InstallCommandOptions,
     InspectOptions,
+    ModelCommandOptions,
     SearchOptions,
     SimpleCommandOptions,
     parse_args,
@@ -177,6 +179,45 @@ def test_parse_inspect_args() -> None:
     assert options.json_output is True
     assert options.timeout_seconds == 12
     assert options.network_family == "ipv4"
+
+
+def test_parse_model_args() -> None:
+    options = parse_args(["model", "--json", "download", "small"])
+
+    assert isinstance(options, ModelCommandOptions)
+    assert options.command == "model"
+    assert options.subcommand == "download"
+    assert options.model_id == "small"
+    assert options.json_output is True
+
+
+def test_parse_install_write_config_args() -> None:
+    options = parse_args(
+        [
+            "install",
+            "--json",
+            "write-config",
+            "--scope",
+            "user",
+            "--models-dir",
+            "managed-models",
+            "--docs-dir",
+            "managed-docs",
+            "--component",
+            "gui",
+            "--component",
+            "docs",
+        ]
+    )
+
+    assert isinstance(options, InstallCommandOptions)
+    assert options.command == "install"
+    assert options.subcommand == "write-config"
+    assert options.install_scope == "user"
+    assert options.models_dir == Path("managed-models")
+    assert options.docs_dir == Path("managed-docs")
+    assert options.component_names == ("gui", "docs")
+    assert options.json_output is True
 
 
 def test_parse_time_value_accepts_common_timestamp_forms() -> None:

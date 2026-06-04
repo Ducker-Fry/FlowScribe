@@ -29,6 +29,15 @@ from flowscribe.input.url_inspector import UrlInspector
 from flowscribe.media.inspector import LocalMediaInspector
 from flowscribe.output.time_format import format_timestamp
 from flowscribe.search.transcript_search import search_transcript_file
+from flowscribe.model_manager import (
+    download_model,
+    import_native_model,
+    list_available_models,
+    list_installed_models,
+    managed_models_present,
+    remove_model,
+    write_install_config,
+)
 from flowscribe.providers.transcribe.native_engine import resolve_engine_exe
 from flowscribe.providers.transcribe.paraformer import PARAFORMER_MODEL_NAME
 from flowscribe.utils.runtime_logging import configure_runtime_logging
@@ -67,6 +76,10 @@ def main(argv: list[str] | None = None) -> int:
         return run_url(options)
     if options.command == "serve":
         return run_serve(options)
+    if options.command == "model":
+        return run_model_command(options)
+    if options.command == "install":
+        return run_install_command(options)
     if options.command == "version":
         print(f"FlowScribe {__version__}")
         print(f"Python {sys.version.split()[0]}")
@@ -116,6 +129,180 @@ def main(argv: list[str] | None = None) -> int:
         return run_gui()
 
     return run_transcribe(options)
+
+
+def run_install_command(options) -> int:
+    if options.subcommand != "write-config":
+        print(f"Unsupported install subcommand: {options.subcommand}", file=sys.stderr)
+        return 2
+
+    try:
+        config_path = write_install_config(
+            install_scope=options.install_scope or "user",
+            models_dir=options.models_dir,
+            docs_dir=options.docs_dir,
+            component_names=options.component_names,
+            allow_implicit_model_download_value=options.allow_implicit_model_download,
+        )
+    except FlowScribeError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+
+    payload = {
+        "ok": True,
+        "config_path": str(config_path),
+        "install_scope": options.install_scope or "user",
+        "models_dir": str(options.models_dir) if options.models_dir is not None else None,
+        "docs_dir": str(options.docs_dir) if options.docs_dir is not None else None,
+        "installed_components": list(options.component_names),
+        "allow_implicit_model_download": options.allow_implicit_model_download,
+        "managed_models_present": managed_models_present(),
+    }
+    if options.json_output:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(f"Wrote install config: {config_path}")
+    return 0
+
+
+def run_model_command(options) -> int:
+    if options.subcommand == "list-available":
+        entries = list_available_models()
+        if options.json_output:
+            print(
+                json.dumps(
+                    [
+                        {
+                            "model_id": entry.model_id,
+                            "provider_name": entry.provider_name,
+                            "display_name": entry.display_name,
+                            "description": entry.description,
+                            "recommended": entry.recommended,
+                            "approx_size_mb": entry.approx_size_mb,
+                        }
+                        for entry in entries
+                    ],
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+        else:
+            print("Available models:")
+            for entry in entries:
+                badge = " [recommended]" if entry.recommended else ""
+                size = f" ({entry.approx_size_mb} MB)" if entry.approx_size_mb is not None else ""
+                print(f"- {entry.model_id}{badge}{size}: {entry.description}")
+        return 0
+
+    if options.subcommand == "list-installed":
+        entries = list_installed_models()
+        if options.json_output:
+            print(
+                json.dumps(
+                    [
+                        {
+                            "model_id": entry.model_id,
+                            "provider_name": entry.provider_name,
+                            "display_name": entry.display_name,
+                            "status": entry.status,
+                            "path": str(entry.path) if entry.path is not None else None,
+                            "imported": entry.imported,
+                            "recommended": entry.recommended,
+                            "description": entry.description,
+                            "approx_size_mb": entry.approx_size_mb,
+                        }
+                        for entry in entries
+                    ],
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+        else:
+            if not entries:
+                print("No models are currently installed.")
+            else:
+                print("Installed models:")
+                for entry in entries:
+                    suffix = " (imported)" if entry.imported else ""
+                    print(f"- {entry.model_id}{suffix}: {entry.path or 'managed path unavailable'}")
+        return 0
+
+    if options.subcommand == "download":
+        messages: list[str] = []
+        try:
+            entry = download_model(
+                options.model_id,
+                models_dir=options.models_dir,
+                progress=messages.append,
+            )
+        except FlowScribeError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 2
+        if options.json_output:
+            print(
+                json.dumps(
+                    {
+                        "ok": True,
+                        "messages": messages,
+                        "model": {
+                            "model_id": entry.model_id,
+                            "provider_name": entry.provider_name,
+                            "display_name": entry.display_name,
+                            "status": entry.status,
+                            "path": str(entry.path) if entry.path is not None else None,
+                        },
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+        else:
+            for message in messages:
+                print(message)
+            print(f"Installed model: {entry.model_id}")
+        return 0
+
+    if options.subcommand == "remove":
+        removed = remove_model(options.model_id)
+        if options.json_output:
+            print(json.dumps({"ok": removed, "model_id": options.model_id}, ensure_ascii=False, indent=2))
+        else:
+            if removed:
+                print(f"Removed model: {options.model_id}")
+            else:
+                print(f"Model not found: {options.model_id}", file=sys.stderr)
+        return 0 if removed else 1
+
+    if options.subcommand == "import-native":
+        try:
+            entry = import_native_model(options.path)
+        except FlowScribeError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 2
+        if options.json_output:
+            print(
+                json.dumps(
+                    {
+                        "ok": True,
+                        "model": {
+                            "model_id": entry.model_id,
+                            "provider_name": entry.provider_name,
+                            "display_name": entry.display_name,
+                            "status": entry.status,
+                            "path": str(entry.path) if entry.path is not None else None,
+                            "imported": entry.imported,
+                        },
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+        else:
+            print(f"Imported native model: {entry.path}")
+        return 0
+
+    print(f"Unsupported model subcommand: {options.subcommand}", file=sys.stderr)
+    return 2
 
 
 def run_transcribe(options) -> int:

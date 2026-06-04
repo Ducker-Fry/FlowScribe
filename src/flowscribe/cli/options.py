@@ -133,3 +133,25 @@ class ServeOptions:
 @dataclass(frozen=True)
 class SimpleCommandOptions:
     command: str
+
+
+@dataclass(frozen=True)
+class ModelCommandOptions:
+    command: str
+    subcommand: str
+    model_id: str | None = None
+    path: Path | None = None
+    models_dir: Path | None = None
+    json_output: bool = False
+
+
+@dataclass(frozen=True)
+class InstallCommandOptions:
+    command: str
+    subcommand: str
+    install_scope: str | None = None
+    models_dir: Path | None = None
+    docs_dir: Path | None = None
+    component_names: tuple[str, ...] = ()
+    allow_implicit_model_download: bool = False
+    json_output: bool = False

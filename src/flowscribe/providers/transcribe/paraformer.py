@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import os
 import subprocess
-import sys
 import logging
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from flowscribe.config.resources import resolve_resource_paths
 from flowscribe.core.errors import CancellationError, TranscriptionError
 from flowscribe.core.models import (
     MediaItem,
@@ -20,6 +21,7 @@ from flowscribe.core.models import (
     TranscriptionOptions,
 )
 from flowscribe.media.tools import resolve_tool_path
+from flowscribe.model_manager import runtime_model_reference
 from flowscribe.utils.subprocess import hidden_subprocess_kwargs
 
 PARAFORMER_PROVIDER_NAME = "paraformer"
@@ -29,15 +31,13 @@ PARAFORMER_FUNASR_MODEL_ID = (
 )
 PARAFORMER_FUNASR_VAD_MODEL_ID = "iic/speech_fsmn_vad_zh-cn-16k-common-pytorch"
 PARAFORMER_FUNASR_PUNC_MODEL_ID = "iic/punc_ct-transformer_cn-en-common-vocab471067-large"
-PROJECT_ROOT = Path(__file__).resolve().parents[4]
 
 
 def _default_models_root() -> Path:
-    """Resolve bundled/source model root without pointing frozen builds at _internal."""
+    """Compatibility helper for tests and legacy callers."""
     if bool(getattr(sys, "frozen", False)):
-        executable_dir = Path(sys.executable).resolve().parent
-        return executable_dir / "models"
-    return PROJECT_ROOT / "models"
+        return Path(sys.executable).resolve().parent / "models"
+    return resolve_resource_paths().models_dir
 
 
 def _default_external_model_cache_root() -> Path:
@@ -48,7 +48,7 @@ def _default_external_model_cache_root() -> Path:
     return Path.home() / ".flowscribe" / "model-cache"
 
 
-MODELS_ROOT = Path(os.environ.get("FLOWSCRIBE_MODELS_DIR") or _default_models_root())
+MODELS_ROOT = resolve_resource_paths().models_dir
 PARAFORMER_MODEL_DIR = MODELS_ROOT / PARAFORMER_MODEL_NAME
 PARAFORMER_VAD_MODEL_DIR = MODELS_ROOT / "fsmn-vad"
 PARAFORMER_PUNC_MODEL_DIR = MODELS_ROOT / "ct-punc"
@@ -134,6 +134,7 @@ class ParaformerTranscriber:
         if self._model is None:
             self._configure_external_model_cache()
             from funasr import AutoModel
+            runtime_model_reference("paraformer", self._model_name)
 
             model_path = self._ensure_model_snapshot(
                 self._resolve_model_id(self._model_name),
@@ -378,7 +379,7 @@ class ParaformerTranscriber:
 
     @staticmethod
     def _configure_external_model_cache() -> None:
-        cache_root = DEFAULT_EXTERNAL_MODEL_CACHE_ROOT
+        cache_root = resolve_resource_paths().model_cache_dir
         cache_root.mkdir(parents=True, exist_ok=True)
         defaults = {
             "HF_HOME": cache_root / "huggingface",
