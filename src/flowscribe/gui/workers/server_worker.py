@@ -10,6 +10,14 @@ from PySide6.QtCore import QObject, Signal
 logger = logging.getLogger(__name__)
 
 
+def _is_address_in_use_error(exc: OSError) -> bool:
+    if exc.errno in {98, 10048}:
+        return True
+    if getattr(exc, "winerror", None) == 10048:
+        return True
+    return "address already in use" in str(exc).lower()
+
+
 class ServerWorker(QObject):
     """Worker for running Bookmarklet server in background thread."""
 
@@ -58,7 +66,7 @@ class ServerWorker(QObject):
             self._server.start()  # Blocking call
 
         except OSError as e:
-            if "address already in use" in str(e).lower():
+            if _is_address_in_use_error(e):
                 self.error.emit(f"Port {self.port} is already in use")
             else:
                 self.error.emit(str(e))

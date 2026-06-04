@@ -33,6 +33,7 @@ def run_doctor(
     provider_name: str,
     model_name: str,
     hello_smoke: bool = False,
+    skip_model_access: bool = False,
     print_result: bool = True,
 ) -> int:
     checks = [check_python_version(), check_command("ffmpeg"), check_command("ffprobe"), check_output_dir(output_dir)]
@@ -47,7 +48,17 @@ def run_doctor(
         if hello_smoke:
             checks.append(check_native_engine_hello_smoke())
     else:
-        checks.extend([check_faster_whisper_import(), check_model_download(model_name)])
+        checks.append(check_faster_whisper_import())
+        if skip_model_access:
+            checks.append(
+                DoctorCheck(
+                    "Model access",
+                    True,
+                    "skipped by --skip-model-access; remote model reachability was not checked",
+                )
+            )
+        else:
+            checks.append(check_model_download(model_name))
 
     if print_result:
         print("FlowScribe doctor")

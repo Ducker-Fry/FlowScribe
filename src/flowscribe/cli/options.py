@@ -50,6 +50,7 @@ class DoctorOptions:
     provider_name: str | None
     model_name: str
     hello_smoke: bool = False
+    skip_model_access: bool = False
 
 
 @dataclass(frozen=True)

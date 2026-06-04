@@ -13,8 +13,8 @@ https://github.com/Ducker-Fry/FlowScribe/releases
 Download the Windows zip package:
 
 ```text
-FlowScribe-v0.2.6-windows-x64.zip
-FlowScribeGUI-v0.2.6-windows-x64.zip
+FlowScribe-vX.Y.Z-windows-x64.zip
+FlowScribeGUI-vX.Y.Z-windows-x64.zip
 ```
 
 ## Install

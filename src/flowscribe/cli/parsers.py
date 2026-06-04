@@ -547,6 +547,11 @@ def parse_doctor_args(argv: list[str] | None = None) -> DoctorOptions:
         action="store_true",
         help="For native-engine, launch the engine and verify a hello round-trip.",
     )
+    parser.add_argument(
+        "--skip-model-access",
+        action="store_true",
+        help="Skip remote model reachability checks and validate only local runtime dependencies.",
+    )
     namespace = parser.parse_args(argv)
     return DoctorOptions(
         command="doctor",
@@ -554,6 +559,7 @@ def parse_doctor_args(argv: list[str] | None = None) -> DoctorOptions:
         provider_name=namespace.provider,
         model_name=namespace.model_name,
         hello_smoke=namespace.hello_smoke,
+        skip_model_access=namespace.skip_model_access,
     )
 
 

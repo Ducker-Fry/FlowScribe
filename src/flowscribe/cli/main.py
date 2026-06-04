@@ -57,6 +57,7 @@ def main(argv: list[str] | None = None) -> int:
             provider_name=options.provider_name,
             model_name=options.model_name,
             hello_smoke=options.hello_smoke,
+            skip_model_access=options.skip_model_access,
         )
     if options.command == "search":
         return run_search(options)
@@ -214,7 +215,7 @@ def run_serve(options) -> int:
         print("\n✓ Server stopped")
         return 0
     except OSError as e:
-        if "address already in use" in str(e).lower():
+        if _is_address_in_use_error(e):
             print(f"\n❌ Error: Port {options.port} is already in use", file=sys.stderr)
             print(f"   Try a different port: flowscribe serve --port {options.port + 1}", file=sys.stderr)
         else:
@@ -706,6 +707,14 @@ def _format_duration(seconds: float | None) -> str:
     hours = minutes // 60
     mins = minutes % 60
     return f"{hours}h {mins}m {secs}s"
+
+
+def _is_address_in_use_error(exc: OSError) -> bool:
+    if exc.errno in {98, 10048}:
+        return True
+    if getattr(exc, "winerror", None) == 10048:
+        return True
+    return "address already in use" in str(exc).lower()
 
 if __name__ == "__main__":
     raise SystemExit(main())

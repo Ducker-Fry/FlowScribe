@@ -5,6 +5,7 @@ from contextlib import redirect_stdout, redirect_stderr
 from flowscribe.cli.args import parse_args
 from flowscribe.cli.main import (
     _cli_progress_line,
+    _is_address_in_use_error,
     _job_from_transcribe_options,
     _job_from_url_options,
     main,
@@ -406,3 +407,40 @@ def test_run_transcribe_jsonl_events(monkeypatch, tmp_path: Path) -> None:
     line = stdout.getvalue().strip()
     assert '"event_type": "task.accepted"' in line
     assert '"task_id": "task-1"' in line
+
+
+def test_is_address_in_use_error_matches_windows_errno() -> None:
+    exc = OSError(10048, "Only one usage of each socket address")
+    exc.winerror = 10048
+
+    assert _is_address_in_use_error(exc) is True
+
+
+def test_run_serve_reports_port_conflict_for_windows_socket_error(monkeypatch, tmp_path: Path) -> None:
+    from flowscribe.cli.main import run_serve
+
+    options = parse_args(["serve", "--port", "8765", "-o", str(tmp_path / "outputs")])
+
+    class FakeServer:
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = kwargs
+
+        def start(self) -> None:
+            exc = OSError(10048, "Only one usage of each socket address")
+            exc.winerror = 10048
+            raise exc
+
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    monkeypatch.setattr("flowscribe.cli.main.BookmarkletServer", FakeServer, raising=False)
+    monkeypatch.setattr(
+        "flowscribe.server.BookmarkletServer",
+        FakeServer,
+        raising=False,
+    )
+
+    with redirect_stdout(stdout), redirect_stderr(stderr):
+        exit_code = run_serve(options)
+
+    assert exit_code == 1
+    assert "Port 8765 is already in use" in stderr.getvalue()

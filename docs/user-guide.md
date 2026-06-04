@@ -2,7 +2,7 @@
 
 FlowScribe 是一个本地优先的音视频转录工具，支持本地文件、URL音频提取、结构化转录输出、关键词时间戳定位。提供命令行工具（CLI）和桌面图形界面（GUI）。
 
-**当前版本**: v0.2.9  
+**当前版本**: v0.3.3  
 **下一版本**: v1.0.0（准备中）
 
 ---
@@ -633,10 +633,10 @@ FlowScribe 面向：
 - [Cookies使用](cookies.md)
 - [Inspect命令](inspect.md)
 - [发布说明](../CHANGELOG.md)
-- [GitHub仓库](https://github.com/your-repo/FlowScribe)
+- [GitHub仓库](https://github.com/Ducker-Fry/FlowScribe)
 
 ---
 
-**版本**: v0.2.9  
+**版本**: v0.3.3  
 **更新日期**: 2026-05-23  
 **下一版本**: v1.0.0（性能优化、UI美化、中文转录优化）

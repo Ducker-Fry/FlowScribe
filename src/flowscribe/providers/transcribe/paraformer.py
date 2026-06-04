@@ -40,11 +40,21 @@ def _default_models_root() -> Path:
     return PROJECT_ROOT / "models"
 
 
+def _default_external_model_cache_root() -> Path:
+    """Use a per-user cache directory instead of a machine-specific drive path."""
+    local_appdata = os.environ.get("LOCALAPPDATA")
+    if local_appdata:
+        return Path(local_appdata) / "FlowScribe" / "model-cache"
+    return Path.home() / ".flowscribe" / "model-cache"
+
+
 MODELS_ROOT = Path(os.environ.get("FLOWSCRIBE_MODELS_DIR") or _default_models_root())
 PARAFORMER_MODEL_DIR = MODELS_ROOT / PARAFORMER_MODEL_NAME
 PARAFORMER_VAD_MODEL_DIR = MODELS_ROOT / "fsmn-vad"
 PARAFORMER_PUNC_MODEL_DIR = MODELS_ROOT / "ct-punc"
-DEFAULT_EXTERNAL_MODEL_CACHE_ROOT = Path("E:/Download Resource/FlowScribe/model-cache")
+DEFAULT_EXTERNAL_MODEL_CACHE_ROOT = Path(
+    os.environ.get("FLOWSCRIBE_MODEL_CACHE_DIR") or _default_external_model_cache_root()
+)
 LOGGER = logging.getLogger(__name__)
 
 

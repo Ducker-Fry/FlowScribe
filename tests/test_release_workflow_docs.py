@@ -10,6 +10,7 @@ def test_release_workflow_uses_create_or_update_release_flow() -> None:
     assert "Upload or overwrite release assets" in workflow
     assert "--clobber" in workflow
     assert "Verify release tag checkout" in workflow
+    assert "doctor -o release-smoke-test --model small --skip-model-access" in workflow
 
 
 def test_release_docs_match_create_or_update_behavior() -> None:
@@ -21,3 +22,5 @@ def test_release_docs_match_create_or_update_behavior() -> None:
     assert "create-or-update" in packaging_docs
     assert "updates the existing" in packaging_docs
     assert "release metadata" in packaging_docs
+    assert "--skip-model-access" in release_docs
+    assert "--skip-model-access" in packaging_docs

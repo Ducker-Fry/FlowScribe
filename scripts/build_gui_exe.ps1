@@ -139,10 +139,17 @@ function Copy-ModelAssets {
     Write-Host "Copied model assets to $releaseModelsDir"
 }
 
+function Test-OptionalParaformerPackaging {
+    param([string]$PythonCmd)
+
+    & $PythonCmd -c "import funasr, modelscope; print('funasr', getattr(funasr, '__version__', 'unknown')); print('modelscope', getattr(modelscope, '__version__', 'unknown'))"
+    return ($LASTEXITCODE -eq 0)
+}
+
 Push-Location $ProjectRoot
 try {
     Write-Step "Check build dependencies"
-    & $DependencyChecker -Python $Python -DotNet $DotNet -CheckPython -CheckDotNet -CheckFfmpeg -CheckPyInstaller -CheckPySide6 -CheckParaformer
+    & $DependencyChecker -Python $Python -DotNet $DotNet -CheckPython -CheckDotNet -CheckFfmpeg -CheckPyInstaller -CheckPySide6
     if ($LASTEXITCODE -ne 0) {
         throw "Dependency check failed. Please resolve the issues above."
     }
@@ -207,10 +214,12 @@ try {
 
     Write-Step "Build GUI one-folder executable"
 
-    Write-Step "Verify Paraformer packages for PyInstaller collection"
-    & $Python -c "import funasr, modelscope; print('funasr', getattr(funasr, '__version__', 'unknown')); print('modelscope', getattr(modelscope, '__version__', 'unknown'))"
-    if ($LASTEXITCODE -ne 0) {
-        throw "Paraformer dependencies are not importable. Install with: $Python -m pip install funasr modelscope"
+    Write-Step "Check optional Paraformer packaging support"
+    $includeParaformer = Test-OptionalParaformerPackaging -PythonCmd $Python
+    if ($includeParaformer) {
+        Write-Host "  Paraformer dependencies are available; bundling optional FunASR support." -ForegroundColor Green
+    } else {
+        Write-Host "  Paraformer dependencies are not importable; building GUI without bundled FunASR support." -ForegroundColor Yellow
     }
 
     # Check if icon file exists
@@ -224,28 +233,43 @@ try {
         $IconArg = @("--icon", $IconPath)
     }
 
-    & $Python -s -m PyInstaller `
-        --name $AppName `
-        --onedir `
-        --windowed `
-        --clean `
-        --noconfirm `
-        --runtime-hook $RuntimeHook `
-        --hidden-import PySide6.QtCore `
-        --hidden-import PySide6.QtGui `
-        --hidden-import PySide6.QtMultimedia `
-        --hidden-import PySide6.QtMultimediaWidgets `
-        --hidden-import PySide6.QtWidgets `
-        --hidden-import PySide6.QtSvg `
-        --hidden-import funasr `
-        --hidden-import modelscope `
-        --collect-all funasr `
-        --collect-all modelscope `
-        --add-data "icons;icons" `
-        --add-data "src\flowscribe\gui\themes;flowscribe\gui\themes" `
-        --add-data "src\flowscribe\gui\assets;flowscribe\gui\assets" `
-        @IconArg `
-        "src\flowscribe\gui\__main__.py"
+    $PyInstallerArgs = @(
+        "-s",
+        "-m",
+        "PyInstaller",
+        "--name", $AppName,
+        "--onedir",
+        "--windowed",
+        "--clean",
+        "--noconfirm",
+        "--runtime-hook", $RuntimeHook,
+        "--hidden-import", "PySide6.QtCore",
+        "--hidden-import", "PySide6.QtGui",
+        "--hidden-import", "PySide6.QtMultimedia",
+        "--hidden-import", "PySide6.QtMultimediaWidgets",
+        "--hidden-import", "PySide6.QtWidgets",
+        "--hidden-import", "PySide6.QtSvg",
+        "--add-data", "icons;icons",
+        "--add-data", "src\flowscribe\gui\themes;flowscribe\gui\themes",
+        "--add-data", "src\flowscribe\gui\assets;flowscribe\gui\assets"
+    )
+
+    if ($includeParaformer) {
+        $PyInstallerArgs += @(
+            "--hidden-import", "funasr",
+            "--hidden-import", "modelscope",
+            "--collect-all", "funasr",
+            "--collect-all", "modelscope"
+        )
+    }
+
+    if ($IconArg.Count -gt 0) {
+        $PyInstallerArgs += $IconArg
+    }
+
+    $PyInstallerArgs += "src\flowscribe\gui\__main__.py"
+
+    & $Python @PyInstallerArgs
 
     $exePath = Join-Path $PackageDir "$AppName.exe"
     if (-not (Test-Path $exePath)) {

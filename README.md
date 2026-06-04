@@ -8,7 +8,7 @@
 
 FlowScribe 是一个本地优先的音视频转录工具，支持本地媒体文件和公开URL音频转录。提供命令行工具（CLI）用于批处理工作流，以及 PySide6 桌面图形界面（GUI）用于交互式转录查看、搜索和媒体同步播放。
 
-**当前版本**: v0.3.0  
+**当前版本**: v0.3.3  
 **下一版本**: v0.3.x / v0.9 规划中（性能优化、中文转录加速、原生 `whisper.cpp` 常驻推理引擎）
 
 ---
@@ -548,7 +548,7 @@ FlowScribe 采用 MIT 许可证。详见 [LICENSE](LICENSE)。
 
 查看 [Releases](https://github.com/Ducker-Fry/FlowScribe/releases) 页面获取完整更新日志。
 
-**v0.3.0** (当前版本)
+**v0.3.3** (当前版本)
 - GUI架构重构（QStackedWidget）
 - 批处理队列增强
 - 书签服务器集成
@@ -568,5 +568,5 @@ FlowScribe 采用 MIT 许可证。详见 [LICENSE](LICENSE)。
 
 **项目主页**: https://github.com/Ducker-Fry/FlowScribe  
 **问题反馈**: https://github.com/Ducker-Fry/FlowScribe/issues  
-**版本**: v0.3.0  
+**版本**: v0.3.3  
 **更新日期**: 2026-05-23

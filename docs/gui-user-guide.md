@@ -1,6 +1,6 @@
 # FlowScribe GUI 用户手册
 
-> **版本**: v0.3.0+  
+> **版本**: v0.3.3  
 > **更新日期**: 2026-05-23  
 > **适用平台**: Windows 10/11
 
@@ -30,7 +30,7 @@
 
 FlowScribe GUI 提供免安装的便携版本，无需安装即可使用。
 
-1. 访问 [GitHub Releases](https://github.com/your-repo/FlowScribe/releases) 页面
+1. 访问 [GitHub Releases](https://github.com/Ducker-Fry/FlowScribe/releases) 页面
 2. 下载最新版本的 `FlowScribeGUI-vX.X.X-windows-x64.zip`
 3. 解压到任意目录（建议路径不包含中文和空格）
 
@@ -1543,7 +1543,7 @@ FlowScribe 的配置和数据文件保存在：
 
 如果本手册无法解决您的问题，可以通过以下方式获取帮助：
 
-- **GitHub Issues**: [https://github.com/Ducker-Fry/FlowScribe/issues](https://github.com/your-repo/FlowScribe/issues)
+- **GitHub Issues**: [https://github.com/Ducker-Fry/FlowScribe/issues](https://github.com/Ducker-Fry/FlowScribe/issues)
 - **文档**: [https://flowscribe./readthedocs.io](https://flowscribe.readthedocs.io)
 - **社区论坛**: [https://discuss.flowscribe.org](https://discuss.flowscribe.org)
 
@@ -1583,6 +1583,6 @@ FlowScribe 的配置和数据文件保存在：
 
 **文档结束**
 
-> **版本**: v0.3.0+  
+> **版本**: v0.3.3  
 > **最后更新**: 2026-05-23  
-> **反馈**: [GitHub Issues](https://github.com/your-repo/FlowScribe/issues)
+> **反馈**: [GitHub Issues](https://github.com/Ducker-Fry/FlowScribe/issues)

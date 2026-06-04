@@ -74,13 +74,15 @@ The GUI script will:
 2. Build or verify the WASAPI capture helper staging output.
 3. Clean previous GUI build artifacts unless `-SkipClean` is used.
 4. Build a one-folder GUI executable with PyInstaller.
-5. Copy `WasapiCaptureHelper.exe` and NAudio dependency files into the GUI release folder.
-6. Smoke-test the packaged helper with `WasapiCaptureHelper.exe version`.
-7. Copy `ffmpeg.exe` and `ffprobe.exe` into the GUI release folder for URL media
+5. Bundle optional FunASR Paraformer support only when `funasr` and `modelscope`
+   are importable in the build environment.
+6. Copy `WasapiCaptureHelper.exe` and NAudio dependency files into the GUI release folder.
+7. Smoke-test the packaged helper with `WasapiCaptureHelper.exe version`.
+8. Copy `ffmpeg.exe` and `ffprobe.exe` into the GUI release folder for URL media
    extraction support (same lookup path as the CLI package).
-8. Apply a runtime hook that defaults packaged GUI builds to `FLOWSCRIBE_GUI_LOG_MODE=user`.
-9. Launch the GUI with `--windowed`, so end-user runs do not open a console window.
-10. Preserve the packaged GUI's quiet logging mode while keeping user-facing
+9. Apply a runtime hook that defaults packaged GUI builds to `FLOWSCRIBE_GUI_LOG_MODE=user`.
+10. Launch the GUI with `--windowed`, so end-user runs do not open a console window.
+11. Preserve the packaged GUI's quiet logging mode while keeping user-facing
     helper/capture status text inside the application.
 
 Optional parameters:
@@ -115,6 +117,15 @@ Run environment diagnostics:
 ```powershell
 .\dist\FlowScribe\FlowScribe.exe doctor
 ```
+
+For release smoke tests where network reachability should not block validation:
+
+```powershell
+.\dist\FlowScribe\FlowScribe.exe doctor --skip-model-access
+```
+
+This variant is recommended for packaged smoke tests because it validates the
+bundled runtime without failing on temporary Hugging Face connectivity issues.
 
 Test with a small local audio or video file:
 
@@ -162,8 +173,8 @@ In the packaged GUI, check these desktop workflows:
 For a GitHub Release, upload:
 
 ```text
-FlowScribe-v0.2.6-windows-x64.zip
-FlowScribeGUI-v0.2.6-windows-x64.zip
+FlowScribe-vX.Y.Z-windows-x64.zip
+FlowScribeGUI-vX.Y.Z-windows-x64.zip
 ```
 
 The CLI ZIP should contain the entire `dist/FlowScribe/` folder, including:

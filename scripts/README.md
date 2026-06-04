@@ -12,6 +12,10 @@ The GUI build also builds and copies the WASAPI capture helper into
 `dist\FlowScribeGUI` so packaged system-audio capture can find
 `WasapiCaptureHelper.exe` next to `FlowScribeGUI.exe`.
 
+If optional Paraformer dependencies (`funasr`, `modelscope`) are importable,
+the GUI package also bundles FunASR support. If they are missing, the GUI build
+still succeeds and packages the rest of the desktop app.
+
 ## WASAPI Helper
 
 Build only the Windows system-audio capture helper:

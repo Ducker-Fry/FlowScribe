@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 
 from flowscribe.core.errors import TranscriptionError, CancellationError
@@ -15,6 +16,12 @@ from flowscribe.core.models import (
 from flowscribe.nlp.segmenter import align_chinese_words
 
 LOCAL_WHISPER_PROVIDER_NAME = "local-whisper"
+
+
+def _configure_huggingface_runtime() -> None:
+    """Reduce first-run Windows cache warnings without hiding real download failures."""
+    os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+    os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 
 
 class LocalWhisperTranscriber:
@@ -135,6 +142,7 @@ class LocalWhisperTranscriber:
 
     def _load_model(self):
         if self._model is None:
+            _configure_huggingface_runtime()
             from faster_whisper import WhisperModel
 
             # Determine device and compute type

@@ -135,6 +135,23 @@ def test_default_models_root_uses_executable_dir_for_frozen_build(monkeypatch) -
     assert paraformer._default_models_root() == Path(r"E:\Software\FlowScribeGUI\models")
 
 
+def test_default_external_model_cache_root_prefers_local_appdata(monkeypatch) -> None:
+    monkeypatch.setenv("LOCALAPPDATA", r"C:\Users\TestUser\AppData\Local")
+
+    assert paraformer._default_external_model_cache_root() == Path(
+        r"C:\Users\TestUser\AppData\Local\FlowScribe\model-cache"
+    )
+
+
+def test_default_external_model_cache_root_falls_back_to_home(monkeypatch) -> None:
+    monkeypatch.delenv("LOCALAPPDATA", raising=False)
+    monkeypatch.setattr(paraformer.Path, "home", staticmethod(lambda: Path(r"C:\Users\TestUser")))
+
+    assert paraformer._default_external_model_cache_root() == Path(
+        r"C:\Users\TestUser\.flowscribe\model-cache"
+    )
+
+
 def test_paraformer_transcriber_reports_missing_dependency(monkeypatch, tmp_path: Path) -> None:
     audio = _prepared_audio(tmp_path)
 
