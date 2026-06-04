@@ -167,3 +167,10 @@ def test_default_settings(handler: AddUrlHandler) -> None:
     assert settings.word_timestamps is False
     assert settings.output_dir == handler.default_output_dir
 
+
+def test_agent_task_store_uses_persistent_path(temp_queue_store: Path) -> None:
+    handler = AddUrlHandler(temp_queue_store)
+
+    expected = temp_queue_store.with_name("agent-tasks.json")
+
+    assert handler.task_store._path == expected.resolve()

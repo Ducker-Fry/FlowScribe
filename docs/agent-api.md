@@ -425,11 +425,12 @@ Recommended contract:
 Current v1 limits:
 
 - single-task API only
-- in-memory HTTP task registry
-- local process lifetime bounds task history
+- JSON-backed local task registry
+- task history persists across server restarts on the same machine
+- tasks interrupted by server restart are recovered as failed
 - batch submission is not yet a first-class API
 - advanced semantic chunking is not yet configurable
 
-If you need durable multi-process orchestration, use FlowScribe as a local
-worker behind your own queue and persist the returned task/result metadata in
+If you need multi-machine or multi-process orchestration, use FlowScribe as a
+local worker behind your own queue and persist higher-level workflow state in
 your orchestration layer.

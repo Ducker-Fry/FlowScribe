@@ -115,10 +115,10 @@ class BookmarkletRequestHandler(BaseHTTPRequestHandler):
             job = task_job_from_payload(payload)
             result = self.add_url_handler.task_store.submit(job)
             self._send_json_response(202, result)
-        except ValueError as exc:
-            self._send_json_response(400, {"error": str(exc)})
         except json.JSONDecodeError:
             self._send_json_response(400, {"error": "Invalid JSON"})
+        except ValueError as exc:
+            self._send_json_response(400, {"error": str(exc)})
         except Exception as exc:
             logger.exception("Failed to submit task")
             self._send_json_response(500, {"error": str(exc)})

@@ -1,98 +1,109 @@
-# Server 配置选项
+# Server Configuration
 
-## 基本使用
+`flowscribe serve` starts a local HTTP server for two kinds of clients:
 
-**使用默认设置**：
+- human/browser tools such as the bookmarklet queue
+- agent / automation clients using `/v1/tasks`
+
+## Basic Usage
+
+Start the server with defaults:
+
 ```powershell
-python -m flowscribe serve
+flowscribe serve
 ```
 
-默认配置：
-- 输出目录：`~/Documents/FlowScribe`
-- 输出格式：`json`
-- 模型：`small`
-- 语言：自动检测
+Default behavior:
 
-## 自定义配置
+- host: `127.0.0.1`
+- port: `8765`
+- output directory: `~/Documents/FlowScribe`
+- output formats: `json`
+- model: `small`
+- language: auto-detect
+- queue store: `batch-queue.json`
+- agent task store: `agent-tasks.json` in the same directory as the queue store
 
-### 1. 自定义输出目录
+## Common Configuration
+
+### Output directory
 
 ```powershell
-python -m flowscribe serve -o E:\Transcripts
+flowscribe serve -o E:\Transcripts
 ```
 
-或：
+### Output formats
+
+Single format:
+
 ```powershell
-python -m flowscribe serve --output-dir E:\Transcripts
+flowscribe serve --format json
 ```
 
-### 2. 自定义输出格式
+Multiple formats:
 
-**单个格式**：
 ```powershell
-python -m flowscribe serve --format txt
+flowscribe serve --format txt,md,json,srt
 ```
 
-**多个格式**（逗号分隔）：
+### Model
+
 ```powershell
-python -m flowscribe serve --format txt,md,json
+flowscribe serve -m medium
 ```
 
-### 3. 自定义模型
+### Language
+
+Chinese:
 
 ```powershell
-python -m flowscribe serve -m medium
+flowscribe serve -l zh
 ```
 
-可选模型：`tiny`, `small`, `medium`, `large-v3`
+English:
 
-### 4. 指定语言
-
-**中文**：
 ```powershell
-python -m flowscribe serve -l zh
+flowscribe serve -l en
 ```
 
-**英文**：
+Auto-detect:
+
 ```powershell
-python -m flowscribe serve -l en
+flowscribe serve
 ```
 
-**自动检测**（默认）：
-```powershell
-python -m flowscribe serve
-```
-
-### 5. 组合配置
+### Combined example
 
 ```powershell
-python -m flowscribe serve \
-  -o E:\Transcripts \
-  --format txt,md,json,srt \
-  -m medium \
-  -l zh \
+flowscribe serve `
+  -o E:\Transcripts `
+  --format txt,md,json,srt `
+  -m medium `
+  -l zh `
   --port 9000
 ```
 
-## 完整示例
+## Startup Output
 
-**场景：中文视频转录，输出到自定义目录**
+On startup, FlowScribe prints:
 
-```powershell
-python -m flowscribe serve \
-  --output-dir E:\Videos\Transcripts \
-  --format txt,srt \
-  --model small \
-  --language zh
-```
+- listening address
+- queue store path
+- agent task store path
+- default output settings
+- bookmarklet endpoints
+- agent task endpoints
+- task persistence behavior
 
-启动后显示：
-```
+Example:
+
+```text
 ======================================================================
-FlowScribe Bookmarklet Server
+FlowScribe Server
 ======================================================================
 Listening on: http://127.0.0.1:8765
 Queue store:  C:\Users\...\AppData\Local\FlowScribe\batch-queue.json
+Task store:   C:\Users\...\AppData\Local\FlowScribe\agent-tasks.json
 
 Default Settings:
   Output dir:  E:\Videos\Transcripts
@@ -100,72 +111,124 @@ Default Settings:
   Model:       small
   Language:    zh
 
-Bookmarklet Installation:
-  1. Visit http://127.0.0.1:8765/bookmarklet.js
-  2. Copy the JavaScript code
-  3. Create a bookmark in your browser with the code as URL
-
-API Endpoints:
-  POST http://127.0.0.1:8765/add-url     - Add single URL
-  POST http://127.0.0.1:8765/add-urls    - Add multiple URLs
+Bookmarklet Endpoints:
+  POST http://127.0.0.1:8765/add-url     - Add single URL to queue
+  POST http://127.0.0.1:8765/add-urls    - Add multiple URLs to queue
   GET  http://127.0.0.1:8765/status      - Get queue status
+
+Agent Task API:
+  POST http://127.0.0.1:8765/v1/tasks                - Submit single task
+  GET  http://127.0.0.1:8765/v1/tasks/{task_id}      - Get task status
+  GET  http://127.0.0.1:8765/v1/tasks/{task_id}/events - Stream task events
+  GET  http://127.0.0.1:8765/v1/tasks/{task_id}/result - Get final result
+
+Task Persistence:
+  Agent task history is stored in agent-tasks.json next to the queue store.
+  Completed, failed, and canceled tasks remain queryable after server restart.
+  Accepted or running tasks interrupted by restart are recovered as failed.
 
 Status reports will be shown every 30 seconds
 Press Ctrl+C to stop
 ======================================================================
 ```
 
-## 配置优先级
+## Endpoints
 
-1. **命令行参数**（最高优先级）
-2. **默认值**
+### Bookmarklet / queue endpoints
 
-## 常用配置组合
+- `POST /add-url`
+- `POST /add-urls`
+- `GET /status`
+- `GET /bookmarklet.js`
 
-### 快速测试（最快速度）
-```powershell
-python -m flowscribe serve -m tiny --format txt
-```
+These are intended for:
 
-### 高质量中文转录
-```powershell
-python -m flowscribe serve \
-  -o E:\Transcripts \
-  --format txt,md,srt \
-  -m medium \
-  -l zh
-```
+- browser bookmarklets
+- manual queue workflows
+- lightweight URL collection
 
-### 英文视频带字幕
-```powershell
-python -m flowscribe serve \
-  -o E:\English\Transcripts \
-  --format txt,srt,vtt \
-  -m small \
-  -l en
-```
+### Agent task endpoints
 
-### 多语言自动检测
-```powershell
-python -m flowscribe serve \
-  -o E:\Mixed\Transcripts \
-  --format txt,md,json \
-  -m small
-```
+- `POST /v1/tasks`
+- `GET /v1/tasks/{task_id}`
+- `GET /v1/tasks/{task_id}/events`
+- `GET /v1/tasks/{task_id}/result`
 
-## 验证配置
+These are intended for:
 
-启动服务器后，查看 "Default Settings" 部分确认配置正确。
+- AI agents
+- local orchestrators
+- workflow engines
+- RAG ingestion pipelines
 
-或者通过 API 查询：
+For request/response shapes, see [Agent API Guide](agent-api.md).
+
+## Task Persistence And Recovery
+
+FlowScribe persists `/v1/tasks` state to a local JSON file:
+
+- queue file: `batch-queue.json`
+- agent task file: `agent-tasks.json`
+
+By default, both live under the same application data directory. If you pass a
+custom `--queue-store`, FlowScribe places `agent-tasks.json` next to that file.
+
+Persistence behavior:
+
+- completed tasks remain queryable after restart
+- failed tasks remain queryable after restart
+- canceled tasks remain queryable after restart
+- accepted or running tasks that were interrupted by restart are recovered as
+  `failed`
+
+This makes `/v1/tasks` suitable for local workstation workflows and restart-safe
+inspection, while still keeping the implementation lightweight.
+
+## Validation Tips
+
+Check the queue endpoint:
+
 ```powershell
 Invoke-WebRequest http://127.0.0.1:8765/status | Select-Object -ExpandProperty Content
 ```
 
-## 注意事项
+Submit a simple local task:
 
-1. **输出目录**会自动创建（如果不存在）
-2. **格式**必须是支持的格式：`txt`, `md`, `json`, `srt`, `vtt`
-3. **模型**首次使用会自动下载
-4. **语言代码**使用 ISO 639-1 标准（如 `zh`, `en`, `ja`, `ko`）
-5. 配置只影响**通过 Bookmarklet 添加的新 URL**，不影响已在队列中的项目
+```powershell
+$body = @{
+  task_id = "demo-001"
+  source = @{
+    kind = "local"
+    value = "D:\media\lecture.mp4"
+  }
+  output = @{
+    output_dir = "outputs"
+    formats = @("json")
+  }
+} | ConvertTo-Json -Depth 5
+
+Invoke-WebRequest `
+  -Uri http://127.0.0.1:8765/v1/tasks `
+  -Method POST `
+  -Body $body `
+  -ContentType "application/json"
+```
+
+## Configuration Precedence
+
+Priority order:
+
+1. command-line flags
+2. built-in defaults
+
+These defaults apply to tasks submitted through the local server when the
+request does not override them.
+
+## Notes
+
+1. The output directory is created automatically if needed.
+2. Supported output formats remain `txt`, `md`, `json`, `srt`, and `vtt`.
+3. The model may be downloaded on first use, depending on provider/runtime.
+4. Language codes use ISO 639-1 style values such as `zh`, `en`, `ja`, `ko`.
+5. The queue/bookmarklet APIs and `/v1/tasks` serve different workflows and can
+   coexist on the same local server.

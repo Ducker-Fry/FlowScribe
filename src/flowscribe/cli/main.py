@@ -153,19 +153,21 @@ def run_url(options) -> int:
 def run_serve(options) -> int:
     """Start HTTP server for Bookmarklet integration."""
     from flowscribe.server import BookmarkletServer
+    from flowscribe.server.agent_api import agent_task_store_path_for
 
-    # Configure logging with better formatting
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(message)s",
         datefmt="%H:%M:%S",
     )
+    task_store_path = agent_task_store_path_for(options.queue_store_path)
 
     print("=" * 70)
-    print("FlowScribe Bookmarklet Server")
+    print("FlowScribe Server")
     print("=" * 70)
     print(f"Listening on: http://{options.host}:{options.port}")
     print(f"Queue store:  {options.queue_store_path}")
+    print(f"Task store:   {task_store_path}")
     print("")
     print("Default Settings:")
     print(f"  Output dir:  {options.output_dir}")
@@ -173,15 +175,22 @@ def run_serve(options) -> int:
     print(f"  Model:       {options.model_name}")
     print(f"  Language:    {options.language or 'auto-detect'}")
     print("")
-    print("Bookmarklet Installation:")
-    print(f"  1. Visit http://{options.host}:{options.port}/bookmarklet.js")
-    print("  2. Copy the JavaScript code")
-    print("  3. Create a bookmark in your browser with the code as URL")
-    print("")
-    print("API Endpoints:")
-    print(f"  POST http://{options.host}:{options.port}/add-url     - Add single URL")
-    print(f"  POST http://{options.host}:{options.port}/add-urls    - Add multiple URLs")
+    print("Bookmarklet Endpoints:")
+    print(f"  POST http://{options.host}:{options.port}/add-url     - Add single URL to queue")
+    print(f"  POST http://{options.host}:{options.port}/add-urls    - Add multiple URLs to queue")
     print(f"  GET  http://{options.host}:{options.port}/status      - Get queue status")
+    print(f"  GET  http://{options.host}:{options.port}/bookmarklet.js - Get bookmarklet script")
+    print("")
+    print("Agent Task API:")
+    print(f"  POST http://{options.host}:{options.port}/v1/tasks                  - Submit single task")
+    print(f"  GET  http://{options.host}:{options.port}/v1/tasks/{{task_id}}      - Get task status")
+    print(f"  GET  http://{options.host}:{options.port}/v1/tasks/{{task_id}}/events - Stream task events")
+    print(f"  GET  http://{options.host}:{options.port}/v1/tasks/{{task_id}}/result - Get final result")
+    print("")
+    print("Task Persistence:")
+    print("  Agent task history is stored in agent-tasks.json next to the queue store.")
+    print("  Completed, failed, and canceled tasks remain queryable after server restart.")
+    print("  Accepted or running tasks interrupted by restart are recovered as failed.")
     print("")
     print("Status reports will be shown every 30 seconds")
     print("Press Ctrl+C to stop")
