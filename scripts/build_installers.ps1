@@ -3,6 +3,12 @@ param(
     [string]$Iscc = "iscc",
     [switch]$OfflineOnly,
     [switch]$OnlineOnly,
+    [string]$OnlineVersion = "",
+    [string]$OnlineBaseUrl = "",
+    [string]$OnlineCliUrl = "",
+    [string]$OnlineGuiUrl = "",
+    [switch]$UseLocalTestFeed,
+    [string]$LocalTestFeedBaseUrl = "",
     [string]$SignTool = "",
     [string]$CertificateSha1 = "",
     [string]$TimestampUrl = "http://timestamp.digicert.com"
@@ -40,6 +46,60 @@ function Invoke-SignIfConfigured {
     if ($LASTEXITCODE -ne 0) {
         throw "SignTool failed for $Path"
     }
+}
+
+function Get-ProjectVersion {
+    $pyprojectPath = Join-Path $ProjectRoot "pyproject.toml"
+    $content = Get-Content $pyprojectPath -Raw
+    $match = [regex]::Match($content, '(?m)^version\s*=\s*"([^"]+)"')
+    if (-not $match.Success) {
+        throw "Could not determine version from $pyprojectPath"
+    }
+    return $match.Groups[1].Value
+}
+
+function Resolve-IsccPath {
+    param([string]$Requested)
+
+    if ($Requested) {
+        return $Requested
+    }
+
+    $command = Get-Command iscc -ErrorAction SilentlyContinue
+    if ($command) {
+        return $command.Source
+    }
+
+    $commonCandidates = @(
+        "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+        "C:\Program Files\Inno Setup 6\ISCC.exe"
+    )
+    foreach ($candidate in $commonCandidates) {
+        if (Test-Path $candidate) {
+            return $candidate
+        }
+    }
+
+    throw 'ISCC.exe was not found. Pass -Iscc with the full path, for example "C:\Program Files (x86)\Inno Setup 6\ISCC.exe".'
+}
+
+function New-ReleaseZip {
+    param(
+        [string]$SourceDir,
+        [string]$ZipPath
+    )
+
+    if (Test-Path $ZipPath) {
+        Remove-Item -LiteralPath $ZipPath -Force
+    }
+
+    Compress-Archive -LiteralPath $SourceDir -DestinationPath $ZipPath -CompressionLevel Optimal
+}
+
+function Get-FileSha256Hex {
+    param([string]$Path)
+
+    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 
 function Test-PackagedCliInstallCommand {
@@ -115,8 +175,61 @@ function Ensure-ReleasePayloads {
     }
 }
 
+function Get-OnlineAssetMetadata {
+    $versionCore = if ($OnlineVersion) {
+        if ($OnlineVersion.StartsWith("v")) { $OnlineVersion.Substring(1) } else { $OnlineVersion }
+    } else {
+        Get-ProjectVersion
+    }
+    $versionTag = if ($OnlineVersion) {
+        if ($OnlineVersion.StartsWith("v")) { $OnlineVersion } else { "v$OnlineVersion" }
+    } else {
+        "v$versionCore"
+    }
+
+    $cliZipName = "FlowScribe-$versionCore-windows-x64.zip"
+    $guiZipName = "FlowScribeGUI-$versionCore-windows-x64.zip"
+    $cliZipPath = Join-Path $DistRoot $cliZipName
+    $guiZipPath = Join-Path $DistRoot $guiZipName
+
+    Write-Step "Create release ZIP payloads"
+    New-ReleaseZip -SourceDir (Join-Path $DistRoot "FlowScribe") -ZipPath $cliZipPath
+    New-ReleaseZip -SourceDir (Join-Path $DistRoot "FlowScribeGUI") -ZipPath $guiZipPath
+
+    $resolvedBaseUrl = $OnlineBaseUrl.TrimEnd('/')
+    if ($UseLocalTestFeed) {
+        if (-not $LocalTestFeedBaseUrl) {
+            throw "Local test feed was requested but -LocalTestFeedBaseUrl was not provided."
+        }
+        $resolvedBaseUrl = $LocalTestFeedBaseUrl.TrimEnd('/')
+    } elseif (-not $OnlineCliUrl -and -not $OnlineGuiUrl) {
+        if (-not $resolvedBaseUrl) {
+            $resolvedBaseUrl = "https://github.com/Ducker-Fry/FlowScribe/releases/download/$versionTag"
+        }
+    }
+
+    $cliUrl = if ($OnlineCliUrl) { $OnlineCliUrl } else { "$resolvedBaseUrl/$cliZipName" }
+    $guiUrl = if ($OnlineGuiUrl) { $OnlineGuiUrl } else { "$resolvedBaseUrl/$guiZipName" }
+
+    [pscustomobject]@{
+        VersionTag = $versionTag
+        VersionCore = $versionCore
+        CliZipName = $cliZipName
+        GuiZipName = $guiZipName
+        CliZipPath = $cliZipPath
+        GuiZipPath = $guiZipPath
+        CliSha256 = Get-FileSha256Hex -Path $cliZipPath
+        GuiSha256 = Get-FileSha256Hex -Path $guiZipPath
+        CliUrl = $cliUrl
+        GuiUrl = $guiUrl
+        BaseUrl = $resolvedBaseUrl
+    }
+}
+
 Write-Step "Ensure release payloads are current"
 Ensure-ReleasePayloads
+
+$Iscc = Resolve-IsccPath -Requested $Iscc
 
 Write-Step "Build local docs site"
 & $Python $DocsBuilder | Out-Host
@@ -124,6 +237,7 @@ Write-Step "Build local docs site"
 Write-Step "Verify release folders exist"
 $cliDir = Join-Path $DistRoot "FlowScribe"
 $guiDir = Join-Path $DistRoot "FlowScribeGUI"
+$onlineAssets = Get-OnlineAssetMetadata
 
 Write-Step "Compile Windows installer scripts"
 if (Test-Path $InstallerOutputRoot) {
@@ -131,7 +245,15 @@ if (Test-Path $InstallerOutputRoot) {
         Remove-Item -Force
 }
 if (-not $OfflineOnly) {
-    & $Iscc (Join-Path $InstallerRoot "FlowScribe-online.iss")
+    & $Iscc `
+        "/DOnlineVersion=$($onlineAssets.VersionTag)" `
+        "/DOnlineCliZipName=$($onlineAssets.CliZipName)" `
+        "/DOnlineGuiZipName=$($onlineAssets.GuiZipName)" `
+        "/DOnlineCliUrl=$($onlineAssets.CliUrl)" `
+        "/DOnlineGuiUrl=$($onlineAssets.GuiUrl)" `
+        "/DOnlineCliSha256=$($onlineAssets.CliSha256)" `
+        "/DOnlineGuiSha256=$($onlineAssets.GuiSha256)" `
+        (Join-Path $InstallerRoot "FlowScribe-online.iss")
 }
 if (-not $OnlineOnly) {
     & $Iscc (Join-Path $InstallerRoot "FlowScribe-offline.iss")

@@ -1,8 +1,32 @@
+; Offline build — stub defines so FlowScribe-common.iss compiles.
+; The [Code] section references these via {#...} and online code paths
+; guard themselves via IsOnlineBuild(), but the preprocessor still needs
+; the symbols to exist.
+#define BuildFlavor "offline"
+#ifndef OnlineCliZipName
+#define OnlineCliZipName ""
+#endif
+#ifndef OnlineGuiZipName
+#define OnlineGuiZipName ""
+#endif
+#ifndef OnlineCliUrl
+#define OnlineCliUrl ""
+#endif
+#ifndef OnlineGuiUrl
+#define OnlineGuiUrl ""
+#endif
+#ifndef OnlineCliSha256
+#define OnlineCliSha256 ""
+#endif
+#ifndef OnlineGuiSha256
+#define OnlineGuiSha256 ""
+#endif
+
 #include "FlowScribe-common.iss"
 
 [Setup]
 AppId={{1A40D5B8-3C07-4BE0-B92A-A807F4B9F001}
-DefaultDirName={localappdata}\Programs\FlowScribe
+DefaultDirName={code:GetSetupDefaultDir}
 OutputBaseFilename=FlowScribeSetup-offline-x64
 
 [Files]

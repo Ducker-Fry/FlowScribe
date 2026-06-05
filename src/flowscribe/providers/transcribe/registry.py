@@ -9,13 +9,10 @@ from flowscribe.core.ports import Transcriber
 from flowscribe.model_manager import ensure_runtime_model_available
 from flowscribe.providers.transcribe.local_whisper import LocalWhisperTranscriber
 from flowscribe.providers.transcribe.native_engine import NativeEngineTranscriber
-from flowscribe.providers.transcribe.paraformer import (
-    PARAFORMER_MODEL_NAME,
-    ParaformerTranscriber,
-)
 
 ProviderCostTier = Literal["free-local", "usage-based", "fixed-paid", "unknown"]
 ProviderLatencyTier = Literal["fast-local", "medium-local", "network-bound", "unknown"]
+PARAFORMER_MODEL_NAME = "paraformer-zh"
 
 
 @dataclass(frozen=True)
@@ -187,6 +184,8 @@ class ParaformerProvider:
         return self._CAPABILITIES
 
     def build_transcriber(self, settings: ProviderTranscriptionSettings) -> Transcriber:
+        from flowscribe.providers.transcribe.paraformer import ParaformerTranscriber
+
         ensure_runtime_model_available("paraformer", settings.model_name or PARAFORMER_MODEL_NAME)
         return ParaformerTranscriber(
             model_name=settings.model_name or PARAFORMER_MODEL_NAME,

@@ -2,6 +2,8 @@ param(
     [string]$Python = "python",
     [string]$AppName = "FlowScribeGUI",
     [string]$DotNet = "dotnet",
+    [switch]$IncludeBundledModels,
+    [switch]$IncludeParaformer,
     [switch]$SkipHelperBuild,
     [switch]$SkipClean
 )
@@ -119,31 +121,76 @@ function Copy-WasapiHelper {
     }
 }
 
-function Copy-ModelAssets {
-    param(
-        [string]$SourceDir,
-        [string]$DestinationDir
-    )
-
-    if (-not (Test-Path $SourceDir)) {
-        Write-Host "  No models directory found at $SourceDir; packaged app may download models on first use." -ForegroundColor Yellow
-        return
-    }
-
-    $releaseModelsDir = Join-Path $DestinationDir "models"
-    if (Test-Path $releaseModelsDir) {
-        Remove-Item -LiteralPath $releaseModelsDir -Recurse -Force
-    }
-
-    Copy-Item -LiteralPath $SourceDir -Destination $releaseModelsDir -Recurse -Force
-    Write-Host "Copied model assets to $releaseModelsDir"
-}
-
 function Test-OptionalParaformerPackaging {
     param([string]$PythonCmd)
 
     & $PythonCmd -c "import funasr, modelscope; print('funasr', getattr(funasr, '__version__', 'unknown')); print('modelscope', getattr(modelscope, '__version__', 'unknown'))"
     return ($LASTEXITCODE -eq 0)
+}
+
+function Write-AppendedLogLines {
+    param(
+        [string]$Path,
+        [ref]$LineCount
+    )
+
+    if (-not (Test-Path $Path)) {
+        return
+    }
+
+    $lines = Get-Content -LiteralPath $Path
+    for ($i = $LineCount.Value; $i -lt $lines.Count; $i++) {
+        Write-Host $lines[$i]
+    }
+    $LineCount.Value = $lines.Count
+}
+
+function Invoke-LoggedNativeCommand {
+    param(
+        [string]$FilePath,
+        [string[]]$ArgumentList,
+        [string]$WorkingDirectory
+    )
+
+    $stdoutPath = Join-Path $env:TEMP "flowscribe-native-stdout.log"
+    $stderrPath = Join-Path $env:TEMP "flowscribe-native-stderr.log"
+
+    foreach ($logPath in @($stdoutPath, $stderrPath)) {
+        if (Test-Path $logPath) {
+            Remove-Item -LiteralPath $logPath -Force
+        }
+    }
+
+    try {
+        $process = Start-Process `
+            -FilePath $FilePath `
+            -ArgumentList $ArgumentList `
+            -WorkingDirectory $WorkingDirectory `
+            -PassThru `
+            -RedirectStandardOutput $stdoutPath `
+            -RedirectStandardError $stderrPath
+
+        $stdoutLineCount = 0
+        $stderrLineCount = 0
+        while (-not $process.HasExited) {
+            Write-AppendedLogLines -Path $stdoutPath -LineCount ([ref]$stdoutLineCount)
+            Write-AppendedLogLines -Path $stderrPath -LineCount ([ref]$stderrLineCount)
+            Start-Sleep -Milliseconds 500
+            $process.Refresh()
+        }
+
+        $process.WaitForExit()
+        Write-AppendedLogLines -Path $stdoutPath -LineCount ([ref]$stdoutLineCount)
+        Write-AppendedLogLines -Path $stderrPath -LineCount ([ref]$stderrLineCount)
+        return $process.ExitCode
+    }
+    finally {
+        foreach ($logPath in @($stdoutPath, $stderrPath)) {
+            if (Test-Path $logPath) {
+                Remove-Item -LiteralPath $logPath -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
 }
 
 Push-Location $ProjectRoot
@@ -214,12 +261,18 @@ try {
 
     Write-Step "Build GUI one-folder executable"
 
-    Write-Step "Check optional Paraformer packaging support"
-    $includeParaformer = Test-OptionalParaformerPackaging -PythonCmd $Python
-    if ($includeParaformer) {
-        Write-Host "  Paraformer dependencies are available; bundling optional FunASR support." -ForegroundColor Green
+    $includeParaformer = $false
+    if ($IncludeParaformer) {
+        Write-Step "Check optional Paraformer packaging support"
+        $includeParaformer = Test-OptionalParaformerPackaging -PythonCmd $Python
+        if ($includeParaformer) {
+            Write-Host "  Paraformer dependencies are available; bundling optional FunASR support." -ForegroundColor Green
+        } else {
+            throw "Paraformer packaging was requested, but funasr/modelscope are not importable in the selected Python environment."
+        }
     } else {
-        Write-Host "  Paraformer dependencies are not importable; building GUI without bundled FunASR support." -ForegroundColor Yellow
+        Write-Step "Skip optional Paraformer packaging"
+        Write-Host "  Building GUI without bundled FunASR/modelscope payloads. Pass -IncludeParaformer to opt in." -ForegroundColor Yellow
     }
 
     # Check if icon file exists
@@ -269,11 +322,16 @@ try {
 
     $PyInstallerArgs += "src\flowscribe\gui\__main__.py"
 
-    & $Python @PyInstallerArgs
-
     $exePath = Join-Path $PackageDir "$AppName.exe"
+    $pyInstallerExitCode = Invoke-LoggedNativeCommand `
+        -FilePath $Python `
+        -ArgumentList $PyInstallerArgs `
+        -WorkingDirectory $ProjectRoot
     if (-not (Test-Path $exePath)) {
-        throw "Expected GUI executable was not created: $exePath"
+        throw "PyInstaller failed for GUI packaging and no executable was created: $exePath"
+    }
+    if ($pyInstallerExitCode -ne 0) {
+        Write-Host "  Warning: PyInstaller returned exit code $pyInstallerExitCode, but the GUI executable was created successfully. Continuing packaging." -ForegroundColor Yellow
     }
 
     Write-Step "Copy WASAPI helper into GUI release folder"
@@ -283,8 +341,23 @@ try {
     Copy-Tool -Name "ffmpeg" -DestinationDir $PackageDir
     Copy-Tool -Name "ffprobe" -DestinationDir $PackageDir
 
-    Write-Step "Copy model assets into GUI release folder"
-    Copy-ModelAssets -SourceDir $ModelsSourceDir -DestinationDir $PackageDir
+    if ($IncludeBundledModels) {
+        if (-not (Test-Path $ModelsSourceDir)) {
+            throw "Bundled model packaging was requested but the models directory was not found: $ModelsSourceDir"
+        }
+
+        $releaseModelsDir = Join-Path $PackageDir "models"
+        if (Test-Path $releaseModelsDir) {
+            Remove-Item -LiteralPath $releaseModelsDir -Recurse -Force
+        }
+
+        Write-Step "Copy model assets into GUI release folder"
+        Copy-Item -LiteralPath $ModelsSourceDir -Destination $releaseModelsDir -Recurse -Force
+        Write-Host "Copied model assets to $releaseModelsDir"
+    } else {
+        Write-Step "Skip bundled model assets"
+        Write-Host "  Building zero-model GUI package. Users will download models from Model Center or via the installer." -ForegroundColor Yellow
+    }
 
     Write-Step "Done"
     Write-Host "GUI release folder: $PackageDir" -ForegroundColor Green
