@@ -524,6 +524,7 @@ begin
 
   Result := Result +
     'CLI helper action: installer will run FlowScribe CLI to write install-config.json.' + #13#10 +
+    'Program directory contains application files only. Models and local help docs stay outside this folder.' + #13#10 +
     'Models directory: ' + ResourcesPage.Values[0] + #13#10;
 
   if WizardIsComponentSelected('docs') then
@@ -603,7 +604,7 @@ begin
     ModelsPage.ID,
     'Resource Folders',
     'Choose shared resource folders',
-    'Models and local help docs are stored separately from the program directory.',
+    'Program files install into the chosen program directory. Models and local help docs are stored separately.',
     False,
     ''
   );
@@ -695,8 +696,30 @@ begin
   end;
 end;
 
-function GetDocsIndexPath(Param: String): String;
+function GetConfiguredDocsDir: String;
 begin
+  Result := Trim(SelectedDocsDir);
+  if (Result = '') and Assigned(ResourcesPage) then
+    Result := Trim(ResourcesPage.Values[1]);
+  if Result = '' then
+    Result := Trim(LoadInstallerStateValue(DocsDirStateFileName));
+end;
+
+function GetDocsIndexPath(Param: String): String;
+var
+  DocsDir: String;
+begin
+  DocsDir := GetConfiguredDocsDir;
+  if DocsDir <> '' then begin
+    if FileExists(AddBackslash(DocsDir) + 'index.html') then
+      Result := AddBackslash(DocsDir) + 'index.html'
+    else if FileExists(AddBackslash(DocsDir) + 'model-guide.html') then
+      Result := AddBackslash(DocsDir) + 'model-guide.html'
+    else
+      Result := AddBackslash(DocsDir) + 'index.html';
+    exit;
+  end;
+
   if FileExists(ExpandConstant('{app}\docs\index.html')) then
     Result := ExpandConstant('{app}\docs\index.html')
   else
@@ -704,7 +727,18 @@ begin
 end;
 
 function HasDocsIndex: Boolean;
+var
+  DocsDir: String;
 begin
+  DocsDir := GetConfiguredDocsDir;
+  if DocsDir <> '' then begin
+    Result :=
+      FileExists(AddBackslash(DocsDir) + 'index.html') or
+      FileExists(AddBackslash(DocsDir) + 'model-guide.html') or
+      WizardIsComponentSelected('docs');
+    exit;
+  end;
+
   Result := FileExists(GetDocsIndexPath(''));
 end;
 
@@ -866,6 +900,8 @@ begin
         ExpandConstant('{app}')
       ) then
         MsgBox('FlowScribe could not stage local docs into the shared docs folder.', mbError, MB_OK);
+      if DirExists(ExpandConstant('{app}\docs')) then
+        DeleteDirIfPresent(ExpandConstant('{app}\docs'));
     end;
   end;
 
