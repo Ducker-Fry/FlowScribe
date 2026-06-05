@@ -67,10 +67,18 @@ mean the VAD step removed the audio before the model had a chance to transcribe 
 
 FlowScribe does not enable VAD by default.
 
-The Chinese preset also does not force VAD. Use:
+The Chinese preset also does not force VAD. In current builds, `--preset zh`
+also auto-selects the `paraformer` provider when you do not pass `--provider`
+explicitly. Use:
 
 ```powershell
 flowscribe transcribe "D:\media\chinese.mp4" -o outputs --preset zh
+```
+
+If you want to keep the older faster-whisper style explicitly, use:
+
+```powershell
+flowscribe transcribe "D:\media\chinese.mp4" -o outputs --provider local-whisper --model small --preset zh
 ```
 
 If you suspect VAD is causing missing text, rerun with:

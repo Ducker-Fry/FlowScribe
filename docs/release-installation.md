@@ -10,12 +10,19 @@ Open the latest release page:
 https://github.com/Ducker-Fry/FlowScribe/releases
 ```
 
-Download the Windows zip package:
+Download the package you need:
 
 ```text
 FlowScribe-vX.Y.Z-windows-x64.zip
 FlowScribeGUI-vX.Y.Z-windows-x64.zip
+FlowScribeSetup-online-x64.exe
+FlowScribeSetup-offline-x64.exe
 ```
+
+- `FlowScribe-vX.Y.Z-windows-x64.zip`: portable CLI package.
+- `FlowScribeGUI-vX.Y.Z-windows-x64.zip`: portable GUI package.
+- `FlowScribeSetup-online-x64.exe`: installer that downloads packaged app files during setup.
+- `FlowScribeSetup-offline-x64.exe`: installer that bundles packaged app files locally.
 
 ## Install
 
@@ -76,12 +83,17 @@ You should see checks for:
 - Output directory write access.
 - Model download access.
 
+If you used the installer build, local help docs are copied into the managed
+docs folder and the installed GUI points Help actions there. Installed builds
+also default to **not** auto-downloading transcription models on first use, so
+the first launch may ask you to open **Model Center** or the local model guide.
+
 ## Transcribe a File
 
 Chinese-oriented transcription:
 
 ```powershell
-.\FlowScribe\FlowScribe.exe "D:\media\lecture.mp4" -o outputs --model small --preset zh
+.\FlowScribe\FlowScribe.exe transcribe "D:\media\lecture.mp4" -o outputs --preset zh
 ```
 
 Recommended command style:
@@ -93,13 +105,13 @@ Recommended command style:
 English transcription:
 
 ```powershell
-.\FlowScribe\FlowScribe.exe "D:\media\english.mp4" -o outputs --model small --language en
+.\FlowScribe\FlowScribe.exe transcribe "D:\media\english.mp4" -o outputs --model small --language en
 ```
 
 Quick smoke test:
 
 ```powershell
-.\FlowScribe\FlowScribe.exe "D:\media\short.wav" -o outputs --model tiny --overwrite
+.\FlowScribe\FlowScribe.exe transcribe "D:\media\short.wav" -o outputs --model tiny --overwrite
 ```
 
 ## Use The Desktop GUI
@@ -144,13 +156,27 @@ outputs/
 
 ## Model Downloads
 
-Whisper models are not bundled in the zip package. The first run with a selected model may download model files from Hugging Face.
+Transcription models are not bundled in the portable packages.
+
+- In source-tree or portable runs, selecting a new model may trigger a download.
+- In installed app builds, first-use auto-download is disabled by default. Open
+  **Model Center** or run `flowscribe model download ...` yourself.
 
 Recommended model choices:
 
 - `tiny`: quick smoke tests only.
 - `small`: recommended starting point.
 - `medium`: better accuracy, slower.
+- `paraformer-zh`: Chinese-first model package for the `paraformer` provider.
+
+Useful commands:
+
+```powershell
+flowscribe model list-available
+flowscribe model list-installed
+flowscribe model download small
+flowscribe model download paraformer-zh
+```
 
 ## Troubleshooting
 
@@ -158,7 +184,8 @@ If `doctor` passes but `outputs` is empty, that is normal. `doctor` only checks 
 
 If a file reports `No audio stream found`, it likely contains video only. Some downloaded media stores video and audio separately.
 
-If model access fails, check network access to Hugging Face or use a local model path.
+If model access fails, check network access to Hugging Face, open Model Center,
+or use a local model path where the selected provider supports it.
 
 If the GUI reports that `WasapiCaptureHelper.exe` is missing, the GUI package is
 incomplete. Re-extract the full `FlowScribeGUI` folder from the release ZIP and

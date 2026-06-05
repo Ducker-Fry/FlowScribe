@@ -308,7 +308,7 @@ FlowScribe 提供HTTP服务器，支持从浏览器一键添加URL到转录队�
 flowscribe serve
 ```
 
-默认监听 `http://localhost:5000`
+默认监听 `http://127.0.0.1:8765`
 
 #### 自定义端口
 
@@ -321,10 +321,18 @@ flowscribe serve --port 8080
 1. 启动服务器：`flowscribe serve`
 2. 在浏览器中创建书签，URL设置为：
    ```javascript
-   javascript:(function(){fetch('http://localhost:5000/add-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:window.location.href,title:document.title})});alert('已添加到FlowScribe队列');})();
+   javascript:(function(){fetch('http://127.0.0.1:8765/add-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:window.location.href,title:document.title})}).then(r=>r.json()).then(d=>alert(d.message||'已添加到FlowScribe队列')).catch(e=>alert('添加失败：'+e));})();
    ```
 3. 浏览视频页面时，点击书签即可添加到队列
 4. 在GUI的"队列"视图中查看和管理
+
+也可以直接打开：
+
+```text
+http://127.0.0.1:8765/bookmarklet.js
+```
+
+获取当前服务器生成的书签脚本。
 
 **注意**: 书签服务器主要配合GUI使用。CLI用户可以直接使用 `flowscribe url` 命令。
 
@@ -365,6 +373,9 @@ flowscribe transcribe "D:\media\lecture.mp4" -o outputs --preset zh
 - `task = transcribe`（不翻译）
 - `initial_prompt = "使用简体中文，保留中英文原语言，不要翻译"`
 
+当前版本中，如果没有显式传入 `--provider`，`--preset zh` 还会自动切换到
+`paraformer` 提供器，并使用 `paraformer-zh` 作为中文优先模型。
+
 #### 模型选择
 
 ```powershell
@@ -377,8 +388,14 @@ flowscribe transcribe "D:\media\lecture.mp4" -o outputs --model small
 # 更高准确率（速度较慢）
 flowscribe transcribe "D:\media\lecture.mp4" -o outputs --model medium
 
-# 最高准确率（速度最慢，资源占用大）
-flowscribe transcribe "D:\media\lecture.mp4" -o outputs --model large-v2
+# 大模型高速方案
+flowscribe transcribe "D:\media\lecture.mp4" -o outputs --model large-v3-turbo
+
+# 最高本地准确率（速度最慢，资源占用大）
+flowscribe transcribe "D:\media\lecture.mp4" -o outputs --model large-v3
+
+# 中文优先方案
+flowscribe transcribe "D:\media\lecture.mp4" -o outputs --provider paraformer --model paraformer-zh
 ```
 
 可用模型：
@@ -386,12 +403,28 @@ flowscribe transcribe "D:\media\lecture.mp4" -o outputs --model large-v2
 - `base` - 快速，准确率一般
 - `small` - **推荐**，平衡速度和准确率
 - `medium` - 准确率高，速度较慢
-- `large-v2` - 准确率最高，速度最慢
+- `large-v3-turbo` - 大模型中速度更快
+- `large-v3` - 本地准确率最高，资源占用最大
+- `paraformer-zh` - 中文优先模型包，需要 `paraformer` 提供器
 
 #### 查看可用模型
 
 ```powershell
 flowscribe models
+```
+
+查看当前可下载和已安装模型：
+
+```powershell
+flowscribe model list-available
+flowscribe model list-installed
+```
+
+下载模型：
+
+```powershell
+flowscribe model download small
+flowscribe model download paraformer-zh
 ```
 
 ---
@@ -552,15 +585,27 @@ flowscribe transcribe "D:\media\lecture.mp4" -o outputs --temperature 0.0
 1. 不要使用 `tiny` 模型做正式转录
 2. 使用中文预设：
    ```powershell
-   flowscribe transcribe "D:\media\chinese.mp4" -o outputs --model small --preset zh
+   flowscribe transcribe "D:\media\chinese.mp4" -o outputs --preset zh
    ```
-3. 如果仍不够好，尝试 `medium` 模型
+3. 如果想继续使用 faster-whisper，显式指定：
+   ```powershell
+   flowscribe transcribe "D:\media\chinese.mp4" -o outputs --provider local-whisper --model medium --preset zh
+   ```
+4. 如果是安装版且尚未下载模型，先打开 GUI 的 **Model Center**，或运行：
+   ```powershell
+   flowscribe model download small
+   ```
 
 #### 第一次运行很慢
 
 **原因**: 首次使用某个模型时需要下载模型文件（几百MB到几GB）
 
-**解决方法**: 耐心等待下载完成，后续运行会快很多
+**解决方法**:
+1. 便携版或源码环境下，耐心等待下载完成，后续运行会快很多
+2. 安装版默认不会在首次运行时静默自动下载模型，请先在 GUI 的 **Model Center** 下载，或运行：
+   ```powershell
+   flowscribe model download small
+   ```
 
 #### 转录速度太慢
 
