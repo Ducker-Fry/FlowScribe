@@ -1,15 +1,15 @@
-"""Tests for flowscribe.queue.store."""
+"""Tests for flowscribe.tasks.queue_store."""
 
 
 import pytest
 
-from flowscribe.app.models import SourceSpec
-from flowscribe.queue.models import (
+from flowscribe.tasks.models import SourceSpec
+from flowscribe.tasks.queue_models import (
     QueueItem,
     QueueItemSettings,
     generate_queue_item_id,
 )
-from flowscribe.queue.store import BatchQueueStore
+from flowscribe.tasks.queue_store import BatchQueueStore
 
 
 @pytest.fixture

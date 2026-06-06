@@ -10,9 +10,9 @@ from datetime import datetime
 from html import escape
 from pathlib import Path
 
-from flowscribe.app.models import ProgressEvent
-from flowscribe.cli.doctor import resolve_faster_whisper_repo
+from flowscribe.tasks.models import ProgressEvent
 from flowscribe.core.models import OutputArtifacts
+from flowscribe.model_catalog import resolve_faster_whisper_repo
 from flowscribe.output.time_format import format_timestamp
 
 

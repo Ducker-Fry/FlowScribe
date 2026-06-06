@@ -1,15 +1,15 @@
 """Tests for queue batch edit settings functionality."""
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from PySide6.QtWidgets import QApplication
 
-from flowscribe.app.models import SourceSpec
+from flowscribe.tasks.models import SourceSpec
 from flowscribe.gui.dialogs.queue_item_settings_dialog import QueueItemSettingsDialog
 from flowscribe.gui.views.queue_view import QueueView
-from flowscribe.queue.models import QueueItem, QueueItemSettings
+from flowscribe.tasks.queue_models import QueueItem, QueueItemSettings
 
 
 @pytest.fixture
@@ -104,7 +104,7 @@ def test_settings_dialog_single_mode_title(qapp, sample_items):
 
 def test_batch_edit_applies_to_all_items(qapp, sample_items):
     """Test that batch edit applies settings to all selected items."""
-    from flowscribe.queue.store import BatchQueueStore
+    from flowscribe.tasks.queue_store import BatchQueueStore
 
     # Create mock store
     store = MagicMock(spec=BatchQueueStore)

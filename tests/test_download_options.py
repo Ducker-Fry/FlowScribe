@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 
-from flowscribe.app.models import DownloadOptions, SourceSpec
+from flowscribe.tasks.models import DownloadOptions, SourceSpec
 from flowscribe.input.url_downloader import DownloadOptions as UrlDownloadOptions
 from flowscribe.input.url_downloader import UrlAudioDownloader
 

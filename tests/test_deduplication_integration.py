@@ -5,14 +5,14 @@ from unittest.mock import Mock
 
 import pytest
 
-from flowscribe.core.deduplication import TranscriptDeduplicator
+from flowscribe.pipeline.deduplication import TranscriptDeduplicator
 from flowscribe.core.models import (
     MediaItem,
     PreparedAudio,
     Transcript,
     TranscriptSegment,
 )
-from flowscribe.core.pipeline import LocalTranscriptionPipeline
+from flowscribe.pipeline.transcription import LocalTranscriptionPipeline
 
 
 @pytest.fixture

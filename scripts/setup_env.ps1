@@ -61,18 +61,18 @@ if (-not $NoVenv) {
 # ----- Install flowscribe -----
 Write-Step "Install flowscribe$extrasSpec via pip"
 & $Python -m pip install --upgrade pip
-$package = if (Test-Path (Join-Path (Get-Location) "pyproject.toml")) {
+$packageArgs = if (Test-Path (Join-Path (Get-Location) "pyproject.toml")) {
     # Local source install (when running from repo checkout)
     if ($extras.Count -gt 0) {
-        " -e .[$($extras -join ',')]"
+        @("-e", ".[{0}]" -f ($extras -join ","))
     } else {
-        " -e ."
+        @("-e", ".")
     }
 } else {
     # PyPI install
-    "flowscribe$extrasSpec"
+    @("flowscribe$extrasSpec")
 }
-& $Python -m pip install $package
+& $Python -m pip install @packageArgs
 if ($LASTEXITCODE -ne 0) { throw "pip install failed" }
 
 # ----- Verify CLI -----
@@ -153,8 +153,12 @@ if (-not $SkipWasapi -and $Gui) {
 # ----- Verify -----
 Write-Step "Run flowscribe doctor"
 try {
-    & $Python -m flowscribe.doctor *>&1
-    Write-Ok "Environment looks good"
+    & $Python -m flowscribe doctor *>&1
+    if ($LASTEXITCODE -eq 0) {
+        Write-Ok "Environment looks good"
+    } else {
+        Write-Warn "doctor reported issues; review the output above before first use"
+    }
 } catch {
     Write-Warn "doctor check skipped (not critical)"
 }

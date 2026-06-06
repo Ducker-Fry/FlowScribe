@@ -15,7 +15,7 @@ class CliOptions:
     inputs: list[Path]
     output_dir: Path
     work_dir: Path | None
-    provider_name: str
+    provider_name: str | None
     model_name: str
     language: str | None
     preset: str | None
@@ -35,15 +35,22 @@ class CliOptions:
     progressive_chunk_overlap_seconds: float
     progressive_resume: bool
     progressive_max_workers: int
+    json_output: bool = False
+    event_stream: str | None = None
+    non_interactive: bool = False
+    task_id: str | None = None
+    resume_token: str | None = None
+    checkpoint_id: str | None = None
 
 
 @dataclass(frozen=True)
 class DoctorOptions:
     command: str
     output_dir: Path
-    provider_name: str
+    provider_name: str | None
     model_name: str
     hello_smoke: bool = False
+    skip_model_access: bool = False
 
 
 @dataclass(frozen=True)
@@ -103,6 +110,12 @@ class UrlOptions:
     progressive_max_workers: int
     download_quality: str = "best"
     download_format: str | None = None
+    json_output: bool = False
+    event_stream: str | None = None
+    non_interactive: bool = False
+    task_id: str | None = None
+    resume_token: str | None = None
+    checkpoint_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -120,3 +133,25 @@ class ServeOptions:
 @dataclass(frozen=True)
 class SimpleCommandOptions:
     command: str
+
+
+@dataclass(frozen=True)
+class ModelCommandOptions:
+    command: str
+    subcommand: str
+    model_id: str | None = None
+    path: Path | None = None
+    models_dir: Path | None = None
+    json_output: bool = False
+
+
+@dataclass(frozen=True)
+class InstallCommandOptions:
+    command: str
+    subcommand: str
+    install_scope: str | None = None
+    models_dir: Path | None = None
+    docs_dir: Path | None = None
+    component_names: tuple[str, ...] = ()
+    allow_implicit_model_download: bool = False
+    json_output: bool = False

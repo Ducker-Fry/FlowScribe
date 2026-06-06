@@ -43,6 +43,7 @@ class SettingsDialog(QDialog):
     """Dialog for editing global application settings."""
 
     settings_changed = Signal(dict)
+    model_manager_requested = Signal()
 
     def __init__(self, parent: QWidget | None, settings: dict):
         super().__init__(parent)
@@ -168,9 +169,12 @@ class SettingsDialog(QDialog):
         self.model_combo.addItems(GUI_MODEL_OPTIONS)
         model_browse_button = QPushButton("Browse")
         model_browse_button.clicked.connect(self._choose_model_file)
+        model_center_button = QPushButton("Model Center")
+        model_center_button.clicked.connect(self.model_manager_requested.emit)
         model_row = QHBoxLayout()
         model_row.addWidget(self.model_combo, 1)
         model_row.addWidget(model_browse_button)
+        model_row.addWidget(model_center_button)
         self.model_browse_button = model_browse_button
 
         self.provider_combo = QComboBox()
@@ -434,12 +438,18 @@ class SettingsDialog(QDialog):
 
     def _sync_provider_controls(self) -> None:
         """Adjust model input affordances for the selected transcription engine."""
-        is_native = self.provider_combo.currentData() == "native-engine"
+        provider_name = self.provider_combo.currentData()
+        is_native = provider_name == "native-engine"
+        is_paraformer = provider_name == "paraformer"
         self.model_browse_button.setEnabled(is_native)
         if is_native:
             self.model_combo.setToolTip("Use a local whisper.cpp ggml .bin model file.")
             if self.model_combo.currentText() in GUI_MODEL_OPTIONS:
                 self.model_combo.setCurrentText("models/ggml-base.en.bin")
+        elif is_paraformer:
+            self.model_combo.setToolTip("Use the local FunASR Paraformer Chinese model.")
+            if self.model_combo.currentText() in GUI_MODEL_OPTIONS or not self.model_combo.currentText().strip():
+                self.model_combo.setCurrentText("paraformer-zh")
         else:
             self.model_combo.setToolTip("Use a faster-whisper model name or local model path.")
             if not self.model_combo.currentText().strip():

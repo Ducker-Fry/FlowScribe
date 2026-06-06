@@ -8,6 +8,7 @@ from pathlib import Path
 
 from flowscribe.core.errors import MediaPreparationError
 from flowscribe.media.tools import resolve_tool_path
+from flowscribe.utils.subprocess import hidden_subprocess_kwargs
 
 
 class FfmpegProbe:
@@ -28,7 +29,13 @@ class FfmpegProbe:
             str(path),
         ]
         try:
-            completed = subprocess.run(command, capture_output=True, text=True, check=True)
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                check=True,
+                **hidden_subprocess_kwargs(),
+            )
         except FileNotFoundError as exc:
             raise MediaPreparationError("ffprobe was not found. Install ffmpeg and add it to PATH.") from exc
         except subprocess.CalledProcessError as exc:

@@ -1,3 +1,5 @@
+# 中文 | [English](bookmarklet-quickstart-en.md)
+
 # Bookmarklet 快速开始指南
 
 ## 最简单的方式（推荐）
@@ -8,7 +10,7 @@ python -m flowscribe.gui
 ```
 
 ### 2. 启用 Server
-1. 点击 **Views** → **Queue**
+1. 点击顶部工具栏中的 **Queue**
 2. 勾选 **☑ Enable Server**
 3. 看到绿色提示：`Server: Running on port 8765`
 
@@ -53,5 +55,5 @@ javascript:(function(){var url=window.location.href;var title=document.title;fet
 ## 详细文档
 
 - [完整使用指南](bookmarklet.md)
-- [GUI 集成说明](gui-server-integration.md)
+- [完整使用指南（English）](bookmarklet-en.md)
 - [命令行配置](server-configuration.md)

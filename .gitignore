@@ -6,10 +6,12 @@ __pycache__/
 venv/
 .env
 .pytest_cache/
+.pytest-tmp-commit/
 .ruff_cache/
 
 # Build artifacts
 build/
+installer/build/
 dist/
 /dist-*/
 *.spec
@@ -20,6 +22,7 @@ native/.vs/
 .vscode/
 
 # Runtime outputs
+/logs/
 /outputs/
 /outputs*/
 /exe-outputs/

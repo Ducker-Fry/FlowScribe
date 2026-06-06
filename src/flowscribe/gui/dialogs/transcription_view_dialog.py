@@ -35,7 +35,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from flowscribe.app.models import ProgressEvent
+from flowscribe.tasks.models import ProgressEvent
 
 # Import the mixins that contain all the workspace logic
 from flowscribe.gui.windows.transcript_viewer_controls import TranscriptViewerControlsMixin

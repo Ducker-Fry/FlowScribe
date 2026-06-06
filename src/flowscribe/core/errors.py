@@ -31,5 +31,9 @@ class DownloadError(FlowScribeError):
     """Raised when remote media cannot be safely downloaded."""
 
 
+class SubtitleUnavailableError(FlowScribeError):
+    """Raised when a source is supported but no usable native subtitles exist."""
+
+
 class CancellationError(FlowScribeError):
     """Raised when a running operation is canceled by the user."""

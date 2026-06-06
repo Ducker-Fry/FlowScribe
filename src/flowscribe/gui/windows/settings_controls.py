@@ -18,12 +18,13 @@ from flowscribe.gui.export_profiles import (
 )
 from flowscribe.gui.state_manager import load_gui_state, save_gui_state
 from flowscribe.gui.utils import (
+    GUI_MODEL_OPTIONS,
     _gui_preferences_payload,
     _recent_work_payload,
 )
 
 if TYPE_CHECKING:
-    from flowscribe.gui.main_window import MainWindow
+    from flowscribe.gui.new_main_window import NewMainWindow as MainWindow
 
 
 class SettingsControlsMixin:
@@ -108,8 +109,28 @@ class SettingsControlsMixin:
             self.native_threads_spin.setValue(int(preferences.get("native_threads") or 0))
         self._apply_export_preferences(preferences)
         self.overwrite_check.setChecked(bool(preferences["overwrite"]))
+        self._sync_provider_controls()
         self._sync_url_media_controls()
         self._refresh_diagnostics_summary()
+
+    def _sync_provider_controls(self: MainWindow) -> None:
+        if not hasattr(self, "provider_combo"):
+            return
+        provider_name = self.provider_combo.currentData()
+        current_model = self.model_combo.currentText().strip()
+        if provider_name == "native-engine":
+            self.model_combo.setToolTip("Use a local whisper.cpp ggml .bin model file.")
+            if current_model in GUI_MODEL_OPTIONS or not current_model:
+                self.model_combo.setCurrentText("models/ggml-base.en.bin")
+            return
+        if provider_name == "paraformer":
+            self.model_combo.setToolTip("Use the local FunASR Paraformer Chinese model.")
+            if current_model in GUI_MODEL_OPTIONS or not current_model:
+                self.model_combo.setCurrentText("paraformer-zh")
+            return
+        self.model_combo.setToolTip("Use a faster-whisper model name or local model path.")
+        if current_model == "paraformer-zh" or not current_model:
+            self.model_combo.setCurrentText("small")
 
     def _save_settings(self: MainWindow) -> None:
         self._saved_preferences = _gui_preferences_payload(self._current_gui_preferences())

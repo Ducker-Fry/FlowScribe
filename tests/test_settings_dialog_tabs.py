@@ -7,7 +7,6 @@ import pytest
 
 def test_settings_dialog_has_tabs(qtbot):
     """Test that settings dialog has tab widget."""
-    pytest.importorskip("pytest_qt")
     from PySide6.QtWidgets import QApplication, QTabWidget
 
     from flowscribe.gui.dialogs.settings_dialog import SettingsDialog
@@ -53,7 +52,6 @@ def test_settings_dialog_has_tabs(qtbot):
 
 def test_appearance_tab_has_theme_selector(qtbot):
     """Test that appearance tab has theme selector."""
-    pytest.importorskip("pytest_qt")
     from PySide6.QtWidgets import QApplication, QComboBox
 
     from flowscribe.gui.dialogs.settings_dialog import SettingsDialog
@@ -82,7 +80,6 @@ def test_appearance_tab_has_theme_selector(qtbot):
 
 def test_transcription_tab_has_model_settings(qtbot):
     """Test that transcription tab has model settings."""
-    pytest.importorskip("pytest_qt")
     from PySide6.QtWidgets import QApplication, QComboBox
 
     from flowscribe.gui.dialogs.settings_dialog import SettingsDialog
@@ -111,7 +108,6 @@ def test_transcription_tab_has_model_settings(qtbot):
 
 def test_network_tab_has_network_settings(qtbot):
     """Test that network tab has network settings."""
-    pytest.importorskip("pytest_qt")
     from PySide6.QtWidgets import QApplication, QComboBox, QLineEdit
 
     from flowscribe.gui.dialogs.settings_dialog import SettingsDialog
@@ -140,7 +136,6 @@ def test_network_tab_has_network_settings(qtbot):
 
 def test_advanced_tab_has_progressive_settings(qtbot):
     """Test that advanced tab has progressive transcription settings."""
-    pytest.importorskip("pytest_qt")
     from PySide6.QtWidgets import QApplication, QCheckBox, QSpinBox
 
     from flowscribe.gui.dialogs.settings_dialog import SettingsDialog
@@ -178,7 +173,6 @@ def test_advanced_tab_has_progressive_settings(qtbot):
 
 def test_theme_change_applies_immediately(qtbot):
     """Test that theme change applies immediately."""
-    pytest.importorskip("pytest_qt")
     from PySide6.QtWidgets import QApplication
 
     from flowscribe.gui.dialogs.settings_dialog import SettingsDialog
@@ -203,7 +197,6 @@ def test_theme_change_applies_immediately(qtbot):
 
 def test_settings_collection_includes_all_tabs(qtbot):
     """Test that settings collection includes settings from all tabs."""
-    pytest.importorskip("pytest_qt")
     from PySide6.QtWidgets import QApplication
 
     from flowscribe.gui.dialogs.settings_dialog import SettingsDialog

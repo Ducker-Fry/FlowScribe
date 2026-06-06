@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
-    QFrame,
     QGraphicsDropShadowEffect,
     QGridLayout,
     QGroupBox,
@@ -28,7 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from flowscribe.app.models import (
+from flowscribe.tasks.models import (
     DownloadOptions,
     ProgressEvent,
     SourceSpec,

@@ -71,6 +71,11 @@ class Transcript:
     model_name: str | None = None
     options: TranscriptionOptions | None = None
     metadata: dict[str, object] = field(default_factory=dict)
+    task_id: str | None = None
+    document_id: str | None = None
+    resume_token: str | None = None
+    checkpoint_id: str | None = None
+    cache_key: str | None = None
     created_at: datetime = field(default_factory=datetime.now)
 
     @property
@@ -90,6 +95,9 @@ class OutputArtifacts:
     source_kind: str | None = None
     source_value: str | None = None
     auto_bind_media: bool = False
+    transcription_strategy: str | None = None
+    subtitle_source_kind: str | None = None
+    subtitle_language: str | None = None
 
     @property
     def txt_path(self) -> Path | None:

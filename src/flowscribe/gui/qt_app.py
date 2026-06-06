@@ -50,7 +50,11 @@ def run_gui(argv: list[str] | None = None) -> int:
     window = NewMainWindow()
     window.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
     window.show()
-    return app.exec()
+    try:
+        return app.exec()
+    except Exception:
+        LOGGER.exception("Unhandled GUI event loop failure.")
+        raise
 
 
 class FlowScribeMainWindow:

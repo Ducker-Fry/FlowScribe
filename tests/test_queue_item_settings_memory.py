@@ -5,10 +5,10 @@ from pathlib import Path
 import pytest
 from PySide6.QtWidgets import QApplication
 
-from flowscribe.app.models import SourceSpec
+from flowscribe.tasks.models import SourceSpec
 from flowscribe.gui.dialogs.queue_item_settings_dialog import QueueItemSettingsDialog
 from flowscribe.gui.dialogs.settings_dialog import SettingsDialog
-from flowscribe.queue.models import QueueItemSettings
+from flowscribe.tasks.queue_models import QueueItemSettings
 
 
 @pytest.fixture(scope="module")
@@ -157,3 +157,33 @@ def test_global_settings_dialog_collects_native_engine_settings(qapp):
     assert collected["provider_name"] == "native-engine"
     assert collected["model_name"] == "models/ggml-base.en.bin"
     assert collected["native_threads"] == 6
+
+
+def test_global_settings_dialog_syncs_paraformer_model(qapp):
+    dialog = SettingsDialog(
+        None,
+        {
+            "provider_name": "paraformer",
+            "model_name": "small",
+        },
+    )
+
+    assert dialog.provider_combo.currentData() == "paraformer"
+    assert dialog.model_combo.currentText() == "paraformer-zh"
+    assert not dialog.model_browse_button.isEnabled()
+
+
+def test_queue_item_settings_dialog_syncs_paraformer_model(qapp):
+    settings = QueueItemSettings(
+        provider_name="paraformer",
+        model_name="small",
+        preset="zh",
+    )
+    source = SourceSpec(kind="url", value="https://example.com/video")
+
+    dialog = QueueItemSettingsDialog(None, settings, source, "Test Item")
+
+    assert dialog.provider_combo.currentData() == "paraformer"
+    assert dialog.model_combo.currentText() == "paraformer-zh"
+    assert dialog.preset_combo.currentText() == "zh"
+    assert not dialog.model_browse_button.isEnabled()

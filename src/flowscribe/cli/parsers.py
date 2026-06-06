@@ -8,7 +8,9 @@ from pathlib import Path
 from .options import (
     CliOptions,
     DoctorOptions,
+    InstallCommandOptions,
     InspectOptions,
+    ModelCommandOptions,
     SearchOptions,
     ServeOptions,
     SimpleCommandOptions,
@@ -87,12 +89,13 @@ def add_transcription_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--provider",
         dest="provider_name",
-        choices=["local-whisper", "native-engine"],
-        default="local-whisper",
+        choices=["local-whisper", "native-engine", "paraformer"],
+        default=None,
         help=(
             "Transcription provider. Use local-whisper for faster-whisper model names like "
-            "`small`, or native-engine for a local whisper.cpp ggml .bin model path. "
-            "Default: local-whisper"
+            "`small`, native-engine for a local whisper.cpp ggml .bin model path, or "
+            "paraformer for Chinese-first FunASR transcription. Default: local-whisper "
+            "(auto-selects paraformer with --preset zh when omitted)."
         ),
     )
     parser.add_argument(
@@ -102,7 +105,8 @@ def add_transcription_options(parser: argparse.ArgumentParser) -> None:
         default="small",
         help=(
             "Model name or path. local-whisper accepts names like `small` or a local path; "
-            "native-engine requires a local whisper.cpp ggml .bin file path. Default: small"
+            "native-engine requires a local whisper.cpp ggml .bin file path; paraformer "
+            "accepts `paraformer-zh`. Default: small"
         ),
     )
     parser.add_argument(
@@ -179,6 +183,39 @@ def add_transcription_options(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Keep prepared WAV files in the work directory for debugging or reuse.",
     )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        dest="json_output",
+        help="Write structured task results as JSON for agent and automation use.",
+    )
+    parser.add_argument(
+        "--events",
+        choices=["jsonl"],
+        default=None,
+        dest="event_stream",
+        help="Write structured progress events to stdout as JSONL.",
+    )
+    parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="Disable human-oriented status output and use automation-safe output only.",
+    )
+    parser.add_argument(
+        "--task-id",
+        default=None,
+        help="Explicit stable task id for agent workflows.",
+    )
+    parser.add_argument(
+        "--resume-token",
+        default=None,
+        help="Explicit resume token for an existing progressive task.",
+    )
+    parser.add_argument(
+        "--checkpoint-id",
+        default=None,
+        help="Explicit checkpoint id for an existing progressive task.",
+    )
     add_progressive_options(parser)
 
 
@@ -209,12 +246,13 @@ def parse_transcribe_args(argv: list[str] | None = None, *, prog: str = "flowscr
     parser.add_argument(
         "--provider",
         dest="provider_name",
-        choices=["local-whisper", "native-engine"],
-        default="local-whisper",
+        choices=["local-whisper", "native-engine", "paraformer"],
+        default=None,
         help=(
             "Transcription provider. Use local-whisper for faster-whisper model names like "
-            "`small`, or native-engine for a local whisper.cpp ggml .bin model path. "
-            "Default: local-whisper"
+            "`small`, native-engine for a local whisper.cpp ggml .bin model path, or "
+            "paraformer for Chinese-first FunASR transcription. Default: local-whisper "
+            "(auto-selects paraformer with --preset zh when omitted)."
         ),
     )
     parser.add_argument(
@@ -224,7 +262,8 @@ def parse_transcribe_args(argv: list[str] | None = None, *, prog: str = "flowscr
         default="small",
         help=(
             "Model name or path. local-whisper accepts names like `small` or a local path; "
-            "native-engine requires a local whisper.cpp ggml .bin file path. Default: small"
+            "native-engine requires a local whisper.cpp ggml .bin file path; paraformer "
+            "accepts `paraformer-zh`. Default: small"
         ),
     )
     parser.add_argument(
@@ -307,6 +346,39 @@ def parse_transcribe_args(argv: list[str] | None = None, *, prog: str = "flowscr
         action="store_true",
         help="Keep prepared WAV files in the work directory for debugging or reuse.",
     )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        dest="json_output",
+        help="Write structured task results as JSON for agent and automation use.",
+    )
+    parser.add_argument(
+        "--events",
+        choices=["jsonl"],
+        default=None,
+        dest="event_stream",
+        help="Write structured progress events to stdout as JSONL.",
+    )
+    parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="Disable human-oriented status output and use automation-safe output only.",
+    )
+    parser.add_argument(
+        "--task-id",
+        default=None,
+        help="Explicit stable task id for agent workflows.",
+    )
+    parser.add_argument(
+        "--resume-token",
+        default=None,
+        help="Explicit resume token for an existing progressive task.",
+    )
+    parser.add_argument(
+        "--checkpoint-id",
+        default=None,
+        help="Explicit checkpoint id for an existing progressive task.",
+    )
     add_progressive_options(parser)
     namespace = parser.parse_args(argv)
     return CliOptions(
@@ -334,6 +406,12 @@ def parse_transcribe_args(argv: list[str] | None = None, *, prog: str = "flowscr
         progressive_chunk_overlap_seconds=namespace.progressive_chunk_overlap_seconds,
         progressive_resume=namespace.progressive_resume,
         progressive_max_workers=namespace.progressive_max_workers,
+        json_output=namespace.json_output,
+        event_stream=namespace.event_stream,
+        non_interactive=namespace.non_interactive,
+        task_id=namespace.task_id,
+        resume_token=namespace.resume_token,
+        checkpoint_id=namespace.checkpoint_id,
     )
 
 
@@ -429,6 +507,12 @@ def parse_url_args(argv: list[str] | None = None) -> UrlOptions:
         progressive_max_workers=namespace.progressive_max_workers,
         download_quality=namespace.download_quality,
         download_format=namespace.download_format,
+        json_output=namespace.json_output,
+        event_stream=namespace.event_stream,
+        non_interactive=namespace.non_interactive,
+        task_id=namespace.task_id,
+        resume_token=namespace.resume_token,
+        checkpoint_id=namespace.checkpoint_id,
     )
 
 
@@ -446,7 +530,7 @@ def parse_doctor_args(argv: list[str] | None = None) -> DoctorOptions:
     )
     parser.add_argument(
         "--provider",
-        choices=["local-whisper", "native-engine"],
+        choices=["local-whisper", "native-engine", "paraformer"],
         default="local-whisper",
         help="Provider to validate. Default: local-whisper",
     )
@@ -465,6 +549,11 @@ def parse_doctor_args(argv: list[str] | None = None) -> DoctorOptions:
         action="store_true",
         help="For native-engine, launch the engine and verify a hello round-trip.",
     )
+    parser.add_argument(
+        "--skip-model-access",
+        action="store_true",
+        help="Skip remote model reachability checks and validate only local runtime dependencies.",
+    )
     namespace = parser.parse_args(argv)
     return DoctorOptions(
         command="doctor",
@@ -472,6 +561,7 @@ def parse_doctor_args(argv: list[str] | None = None) -> DoctorOptions:
         provider_name=namespace.provider,
         model_name=namespace.model_name,
         hello_smoke=namespace.hello_smoke,
+        skip_model_access=namespace.skip_model_access,
     )
 
 
@@ -672,3 +762,113 @@ def parse_simple_command_args(command: str, argv: list[str]) -> SimpleCommandOpt
     )
     parser.parse_args(argv)
     return SimpleCommandOptions(command=command)
+
+
+def parse_model_args(argv: list[str] | None = None) -> ModelCommandOptions:
+    parser = argparse.ArgumentParser(
+        prog="flowscribe model",
+        description="Manage installed local transcription models.",
+    )
+    parser.add_argument(
+        "--models-dir",
+        type=Path,
+        default=None,
+        help="Override the models directory used for download and listing.",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        dest="json_output",
+        help="Write structured model management output as JSON.",
+    )
+    subparsers = parser.add_subparsers(dest="subcommand", required=True)
+
+    subparsers.add_parser("list-available", help="List downloadable and importable model options.")
+    subparsers.add_parser("list-installed", help="List installed and imported model entries.")
+
+    download_parser = subparsers.add_parser("download", help="Download a model into the managed models directory.")
+    download_parser.add_argument("model_id", help="Model id, such as small or paraformer-zh.")
+
+    remove_parser = subparsers.add_parser("remove", help="Remove an installed model entry.")
+    remove_parser.add_argument("model_id", help="Model id to remove.")
+
+    import_parser = subparsers.add_parser(
+        "import-native",
+        help="Register a local whisper.cpp ggml .bin file for native-engine use.",
+    )
+    import_parser.add_argument("path", type=Path, help="Path to a local whisper.cpp ggml .bin file.")
+
+    namespace = parser.parse_args(argv)
+    return ModelCommandOptions(
+        command="model",
+        subcommand=namespace.subcommand,
+        model_id=getattr(namespace, "model_id", None),
+        path=getattr(namespace, "path", None),
+        models_dir=namespace.models_dir,
+        json_output=namespace.json_output,
+    )
+
+
+def parse_install_args(argv: list[str] | None = None) -> InstallCommandOptions:
+    parser = argparse.ArgumentParser(
+        prog="flowscribe install",
+        description="Installer-facing commands for writing packaged-install configuration.",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        dest="json_output",
+        help="Write structured installer command output as JSON.",
+    )
+    subparsers = parser.add_subparsers(dest="subcommand", required=True)
+
+    write_config = subparsers.add_parser(
+        "write-config",
+        help="Write install-config.json for a packaged installation.",
+    )
+    write_config.add_argument(
+        "--scope",
+        dest="install_scope",
+        choices=["user", "machine"],
+        required=True,
+        help="Installation scope recorded in install-config.json.",
+    )
+    write_config.add_argument(
+        "--models-dir",
+        type=Path,
+        required=True,
+        help="Managed models directory.",
+    )
+    write_config.add_argument(
+        "--docs-dir",
+        type=Path,
+        required=True,
+        help="Managed docs directory.",
+    )
+    write_config.add_argument(
+        "--component",
+        dest="component_names",
+        action="append",
+        default=[],
+        choices=["gui", "cli", "docs"],
+        help="Installed component name. Repeat for multiple components.",
+    )
+    write_config.add_argument(
+        "--allow-implicit-model-download",
+        action="store_true",
+        help="Allow runtime model auto-download for this install. Defaults to disabled.",
+    )
+
+    namespace = parser.parse_args(argv)
+    return InstallCommandOptions(
+        command="install",
+        subcommand=namespace.subcommand,
+        install_scope=getattr(namespace, "install_scope", None),
+        models_dir=getattr(namespace, "models_dir", None),
+        docs_dir=getattr(namespace, "docs_dir", None),
+        component_names=tuple(getattr(namespace, "component_names", ()) or ()),
+        allow_implicit_model_download=bool(
+            getattr(namespace, "allow_implicit_model_download", False)
+        ),
+        json_output=namespace.json_output,
+    )

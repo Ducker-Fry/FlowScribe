@@ -10,7 +10,7 @@ from PySide6.QtCore import QThread, Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QListWidgetItem
 
-from flowscribe.app.models import ProgressEvent
+from flowscribe.tasks.models import ProgressEvent
 from flowscribe.gui.state import GuiTranscriptionForm
 from flowscribe.gui.utils import (
     _format_elapsed_time,

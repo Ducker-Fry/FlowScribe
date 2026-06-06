@@ -14,6 +14,7 @@ from flowscribe.core.errors import MediaPreparationError
 from flowscribe.core.models import MediaItem, PreparedAudio
 from flowscribe.media.ffmpeg_probe import FfmpegProbe
 from flowscribe.media.tools import resolve_tool_path
+from flowscribe.utils.subprocess import hidden_subprocess_kwargs
 
 
 class FfmpegAudioExtractor:
@@ -49,7 +50,13 @@ class FfmpegAudioExtractor:
             str(audio_path),
         ]
         try:
-            subprocess.run(command, capture_output=True, text=True, check=True)
+            subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                check=True,
+                **hidden_subprocess_kwargs(),
+            )
         except FileNotFoundError as exc:
             raise MediaPreparationError("ffmpeg was not found. Install ffmpeg and add it to PATH.") from exc
         except subprocess.CalledProcessError as exc:

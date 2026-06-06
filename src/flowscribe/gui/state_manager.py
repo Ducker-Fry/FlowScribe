@@ -33,7 +33,7 @@ def batch_queue_path() -> Path:
 
 
 def batch_queue_store():
-    from flowscribe.queue.store import BatchQueueStore
+    from flowscribe.tasks.queue_store import BatchQueueStore
 
     return BatchQueueStore(batch_queue_path())
 

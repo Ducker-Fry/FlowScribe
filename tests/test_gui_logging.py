@@ -1,5 +1,7 @@
 from types import ModuleType, SimpleNamespace
 import logging
+import sys
+from datetime import datetime
 
 from flowscribe.gui.gui_logging import (
     GUI_LOG_MODE_ENV,
@@ -50,7 +52,7 @@ def test_configure_gui_logging_applies_qt_filter_rules_in_user_mode(monkeypatch)
     assert "qt.multimedia.ffmpeg.info=false" in captured["rules"]
 
 
-def test_configure_gui_logging_keeps_dev_root_at_warning_and_limits_third_party(monkeypatch) -> None:
+def test_configure_gui_logging_keeps_runtime_info_and_limits_third_party(monkeypatch) -> None:
     root_logger = logging.getLogger()
     original_handlers = list(root_logger.handlers)
     original_root_level = root_logger.level
@@ -66,7 +68,7 @@ def test_configure_gui_logging_keeps_dev_root_at_warning_and_limits_third_party(
         mode = configure_gui_logging("dev")
 
         assert mode == "dev"
-        assert logging.getLogger().level == logging.WARNING
+        assert logging.getLogger().level == logging.INFO
         assert logging.getLogger(gui_logger_name).level == logging.DEBUG
         for logger_name, level in THIRD_PARTY_LOGGER_LEVELS.items():
             assert logging.getLogger(logger_name).level == level
@@ -75,3 +77,16 @@ def test_configure_gui_logging_keeps_dev_root_at_warning_and_limits_third_party(
         root_logger.setLevel(original_root_level)
         for logger_name, level in saved_levels.items():
             logging.getLogger(logger_name).setLevel(level)
+
+
+def test_configure_gui_logging_installs_writable_streams(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("FLOWSCRIBE_LOG_DIR", str(tmp_path))
+    monkeypatch.setattr(sys, "stdout", None)
+    monkeypatch.setattr(sys, "stderr", None)
+
+    configure_gui_logging("user")
+
+    assert sys.stdout.write("progress") == len("progress")
+    assert sys.stderr.write("error") == len("error")
+    expected_name = f"FlowScribeGUI-{datetime.now().strftime('%Y-%m-%d')}.log"
+    assert (tmp_path / expected_name).exists()

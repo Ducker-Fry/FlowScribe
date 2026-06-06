@@ -39,7 +39,7 @@ def test_format_elapsed_time_minutes():
 
 def test_elapsed_seconds_property():
     """Test TranscriptionResult.elapsed_seconds property."""
-    from flowscribe.app.models import TranscriptionResult, TranscriptionJob
+    from flowscribe.tasks.models import TranscriptionResult, TranscriptionJob
     from pathlib import Path
 
     # Create a job

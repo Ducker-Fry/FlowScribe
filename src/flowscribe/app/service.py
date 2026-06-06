@@ -2,23 +2,26 @@
 
 from __future__ import annotations
 
-import shutil
+import json
 import time
-import inspect
+import logging
 from collections.abc import Callable
-from datetime import datetime
+from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
-from shutil import move
 
-from flowscribe.app.models import (
+from flowscribe.tasks.models import (
+    CancelAck,
+    CancelRequest,
+    CapabilityResult,
     ErrorInfo,
     ProgressCallback,
     ProgressEvent,
     SourceSpec,
+    TaskSpec,
     TranscriptionJob,
     TranscriptionResult,
 )
-from flowscribe.config.settings import AppSettings
 from flowscribe.core.errors import CancellationError, FlowScribeError
 from flowscribe.core.models import (
     MediaDurationInfo,
@@ -27,28 +30,59 @@ from flowscribe.core.models import (
     ProgressiveTranscriptionUpdate,
     TranscriptionChunkPlan,
 )
-from flowscribe.core.pipeline import LocalTranscriptionPipeline
-from flowscribe.core.progressive import tuned_chunk_overlap_seconds
+from flowscribe.pipeline.progressive import tuned_chunk_overlap_seconds
+from flowscribe.pipeline.runtime_factory import (
+    build_pipeline_from_provider,
+    process_with_optional_progress,
+    settings_from_job,
+)
+from flowscribe.pipeline.url_transcription import UrlTranscriptionPipeline
 from flowscribe.input.local_source import LocalFileSource
 from flowscribe.input.url_downloader import UrlAudioDownloader
-from flowscribe.media.audio_extractor import FfmpegAudioExtractor
-from flowscribe.nlp.script_converter import simplify_chinese_transcript
-from flowscribe.output.artifact_writer import TranscriptArtifactWriter
-from flowscribe.output.json_writer import JsonTranscriptWriter
-from flowscribe.output.md_writer import MarkdownTranscriptWriter
-from flowscribe.output.paths import OutputPathBuilder
-from flowscribe.output.srt_writer import SrtTranscriptWriter
-from flowscribe.output.txt_writer import TxtTranscriptWriter
-from flowscribe.output.vtt_writer import VttTranscriptWriter
-from flowscribe.transcription.providers import (
+from flowscribe.providers.transcribe.registry import (
     ProviderTranscriptionSettings,
     is_native_engine_provider_name,
     resolve_transcription_provider,
+    supports_python_progressive_provider_name,
 )
+
+LOGGER = logging.getLogger(__name__)
+
+# Compatibility aliases for existing tests and external integrations.
+_process_with_optional_progress = process_with_optional_progress
+_settings_from_job = settings_from_job
+
+
+def _build_pipeline(job: TranscriptionJob, settings):
+    provider = resolve_transcription_provider(job.provider_name)
+    provider_settings = ProviderTranscriptionSettings(
+        model_name=settings.model_name,
+        language=settings.language,
+        task=settings.task,
+        beam_size=settings.beam_size,
+        vad_filter=settings.vad_filter,
+        initial_prompt=settings.initial_prompt,
+        preset=settings.preset,
+        word_timestamps=settings.word_timestamps,
+        progressive_enabled=job.progressive_enabled,
+        progressive_chunk_seconds=job.progressive_chunk_seconds,
+        progressive_chunk_overlap_seconds=job.progressive_chunk_overlap_seconds,
+        progressive_max_workers=job.progressive_max_workers,
+        native_threads=job.native_threads,
+    )
+    return build_pipeline_from_provider(
+        job,
+        settings,
+        provider=provider,
+        provider_settings=provider_settings,
+    )
 
 
 class TranscriptionService:
     """Run transcription jobs through a stable app-facing interface."""
+
+    def __init__(self) -> None:
+        self._event_sequence = 0
 
     def run(
         self,
@@ -58,9 +92,18 @@ class TranscriptionService:
     ) -> TranscriptionResult:
         progress = progress or (lambda event: None)
         should_cancel = should_cancel or (lambda: False)
+        task_specs = job.to_task_specs()
         started_at = datetime.now()
         outputs: list[OutputArtifacts] = []
         errors: list[ErrorInfo] = []
+        LOGGER.info(
+            "Starting transcription job: sources=%s provider=%s model=%s output_dir=%s progressive=%s",
+            len(job.sources),
+            job.provider_name,
+            job.model_name,
+            job.output_dir,
+            job.progressive_enabled,
+        )
 
         try:
             self._emit_progress(
@@ -70,13 +113,15 @@ class TranscriptionService:
                     stage="discover",
                     message=f"Received {len(job.sources)} source(s).",
                     total=len(job.sources),
+                    task_id=task_specs[0].task_id if task_specs else None,
                 )
             )
 
-            for index, source in enumerate(job.sources, start=1):
+            for index, (source, task_spec) in enumerate(zip(job.sources, task_specs, strict=False), start=1):
                 self._ensure_not_canceled(should_cancel)
                 source_outputs, source_errors = self._run_source(
                     job,
+                    task_spec,
                     source,
                     progress,
                     should_cancel,
@@ -86,15 +131,18 @@ class TranscriptionService:
                 outputs.extend(source_outputs)
                 errors.extend(source_errors)
         except CancellationError:
+            LOGGER.info("Transcription job canceled.")
             progress(
                 ProgressEvent(
                     stage="canceled",
                     message="Transcription canceled.",
                     total=len(job.sources),
+                    task_id=task_specs[0].task_id if task_specs else None,
                 ),
             )
             return TranscriptionResult(
                 job=job,
+                task_specs=task_specs,
                 outputs=tuple(outputs),
                 errors=tuple(errors),
                 canceled=True,
@@ -108,10 +156,22 @@ class TranscriptionService:
                 stage="complete",
                 message=f"Done. Succeeded: {len(outputs)}. Failed: {len(errors)}.",
                 total=len(job.sources),
+                task_id=task_specs[0].task_id if task_specs else None,
             ),
         )
+        if errors:
+            for error in errors:
+                LOGGER.error(
+                    "Transcription job source failed: source=%s code=%s message=%s",
+                    error.source,
+                    error.code,
+                    error.message,
+                )
+        else:
+            LOGGER.info("Transcription job completed successfully with %s output(s).", len(outputs))
         return TranscriptionResult(
             job=job,
+            task_specs=task_specs,
             outputs=tuple(outputs),
             errors=tuple(errors),
             started_at=started_at,
@@ -121,6 +181,7 @@ class TranscriptionService:
     def _run_source(
         self,
         job: TranscriptionJob,
+        task_spec: TaskSpec,
         source: SourceSpec,
         progress: ProgressCallback,
         should_cancel: Callable[[], bool],
@@ -129,15 +190,16 @@ class TranscriptionService:
     ) -> tuple[tuple[OutputArtifacts, ...], tuple[ErrorInfo, ...]]:
         try:
             if source.kind == "local":
-                return self._run_local_source(job, source, progress, should_cancel, current, total)
+                return self._run_local_source(job, task_spec, source, progress, should_cancel, current, total)
             if source.kind == "url":
-                return (self._run_url_source(job, source, progress, should_cancel, current, total),), ()
+                return (self._run_url_source(job, task_spec, source, progress, should_cancel, current, total),), ()
             if source.kind == "capture":
                 raise FlowScribeError("System audio capture source is planned but not implemented yet.")
             raise FlowScribeError(f"Unsupported source kind: {source.kind}")
         except CancellationError:
             raise
         except FlowScribeError as exc:
+            LOGGER.exception("Source failed: source=%s kind=%s", source.value, source.kind)
             error = _error_from_exception(exc, source=source.value)
             self._emit_progress(
                 progress,
@@ -148,6 +210,8 @@ class TranscriptionService:
                     source=source.value,
                     current=current,
                     total=total,
+                    task_id=task_spec.task_id,
+                    capability="transcribe",
                 )
             )
             return (), (error,)
@@ -155,6 +219,7 @@ class TranscriptionService:
     def _run_local_source(
         self,
         job: TranscriptionJob,
+        task_spec: TaskSpec,
         source: SourceSpec,
         progress: ProgressCallback,
         should_cancel: Callable[[], bool],
@@ -177,6 +242,8 @@ class TranscriptionService:
                 source=source.value,
                 current=current,
                 total=total,
+                task_id=task_spec.task_id,
+                capability="transcribe",
             )
         )
         for item_index, item in enumerate(items, start=1):
@@ -190,12 +257,14 @@ class TranscriptionService:
                     source=str(item.path),
                     current=item_index,
                     total=len(items),
+                    task_id=task_spec.task_id,
+                    capability="transcribe",
                 )
             )
             try:
                 if (
                     job.progressive_enabled
-                    and not is_native_engine_provider_name(job.provider_name)
+                    and supports_python_progressive_provider_name(job.provider_name)
                     and hasattr(pipeline, "process_progressive")
                 ):
                     run_started_at = time.perf_counter()
@@ -246,7 +315,13 @@ class TranscriptionService:
                         if is_native_engine_provider_name(job.provider_name)
                         else None,
                     )
+                self._update_json_artifacts(
+                    artifacts=artifacts,
+                    task_spec=task_spec,
+                    source=source,
+                )
             except FlowScribeError as exc:
+                LOGGER.exception("Local media item failed: %s", item.path)
                 errors.append(_error_from_exception(exc, source=str(item.path)))
                 self._emit_progress(
                     progress,
@@ -257,6 +332,8 @@ class TranscriptionService:
                         source=str(item.path),
                         current=item_index,
                         total=len(items),
+                        task_id=task_spec.task_id,
+                        capability="transcribe",
                     )
                 )
                 continue
@@ -270,6 +347,8 @@ class TranscriptionService:
                         message=f"Wrote: {path}",
                         source=str(item.path),
                         path=path,
+                        task_id=task_spec.task_id,
+                        capability="transcribe",
                     )
                 )
         return tuple(outputs), tuple(errors)
@@ -277,200 +356,88 @@ class TranscriptionService:
     def _run_url_source(
         self,
         job: TranscriptionJob,
+        task_spec: TaskSpec,
         source: SourceSpec,
         progress: ProgressCallback,
         should_cancel: Callable[[], bool],
         current: int,
         total: int,
     ) -> OutputArtifacts:
-        settings = _settings_from_job(job, recursive=False)
-        downloader = UrlAudioDownloader(
-            download_dir=settings.work_dir / ".url-media",
-            max_bytes=job.max_download_mb * 1024 * 1024,
-            max_duration_seconds=job.max_duration_seconds,
-            timeout_seconds=job.download_timeout_seconds,
-            network_family=job.network_family,
-            cookies_path=job.cookies_path,
-            proxy=job.proxy,
+        return UrlTranscriptionPipeline(
+            emit_progress=self._emit_progress,
+            emit_progressive_plan=self._emit_progressive_plan,
+            emit_progressive_update=self._emit_progressive_update,
+            ensure_not_canceled=self._ensure_not_canceled,
+            source_progress_wrapper=_with_source_and_totals_for_pipeline,
+            update_json_media_binding=self._update_json_media_binding,
+            downloader_cls=UrlAudioDownloader,
+            pipeline_builder=_build_pipeline,
+            subtitle_runner=self._run_subtitle_capability,
+        ).run(
+            job=job,
+            task_spec=task_spec,
+            source=source,
+            progress=progress,
+            should_cancel=should_cancel,
+            current=current,
+            total=total,
         )
 
-        self._emit_progress(
-            progress,
-            should_cancel,
-            ProgressEvent(
-                stage="download",
-                message="Downloading/extracting remote audio...",
-                source=source.value,
-                current=current,
-                total=total,
+    def _run_subtitle_capability(
+        self,
+        task_spec: TaskSpec,
+        progress: ProgressCallback,
+        should_cancel: Callable[[], bool],
+        *,
+        current: int,
+        total: int,
+    ) -> CapabilityResult:
+        """Compatibility hook retained for tests and external monkeypatching."""
+
+        from flowscribe.capabilities import SubtitleCapability
+
+        if "subtitle" not in task_spec.requested_capabilities or task_spec.source.kind != "url":
+            return CapabilityResult(
+                task_id=task_spec.task_id,
+                capability="subtitle",
+                supported=False,
+                status="unsupported",
             )
-        )
-        self._ensure_not_canceled(should_cancel)
-
-        from flowscribe.input.url_downloader import DownloadOptions as UrlDownloadOptions
-
-        url_download_opts = None
-        if source.download_options:
-            url_download_opts = UrlDownloadOptions(
-                media_kind=source.url_media_kind if source.keep_media else "audio",
-                quality=source.download_options.quality,
-                prefer_format=source.download_options.prefer_format,
-            )
-
-        download = downloader.download_audio(
-            source.value,
-            saved_media_kind=source.url_media_kind if source.keep_media else "audio",
-            download_options=url_download_opts,
-        )
-        try:
-            self._emit_progress(
+        return SubtitleCapability().run(
+            task_spec,
+            progress_cb=lambda event: self._emit_progress(
                 progress,
                 should_cancel,
-                ProgressEvent(
-                    stage="prepare",
-                    message=f"Remote audio ready: {download.path}",
-                    source=source.value,
-                    path=download.path,
-                )
-            )
-            pipeline = _build_pipeline(job, settings)
-            self._ensure_not_canceled(should_cancel)
-            item = MediaItem(path=download.path)
-            if (
-                job.progressive_enabled
-                and not is_native_engine_provider_name(job.provider_name)
-                and hasattr(pipeline, "process_progressive")
-            ):
-                run_started_at = time.perf_counter()
-                artifacts, _ = pipeline.process_progressive(
-                    item,
-                    chunk_duration_seconds=job.progressive_chunk_seconds,
-                    chunk_overlap_seconds=tuned_chunk_overlap_seconds(
-                        requested_overlap_seconds=job.progressive_chunk_overlap_seconds,
-                        language=job.language,
-                        preset=job.preset,
-                    ),
-                    resume=job.progressive_resume,
-                    keep_progressive_cache=True,
-                    max_workers=job.progressive_max_workers,
-                    plan_callback=lambda duration_info, chunk_plan: self._emit_progressive_plan(
-                        progress,
-                        should_cancel,
-                        item=item,
-                        duration_info=duration_info,
-                        chunk_plan=chunk_plan,
-                    ),
-                    update_callback=lambda update: self._emit_progressive_update(
-                        progress,
-                        should_cancel,
-                        item=item,
-                        update=update,
-                        run_started_at=run_started_at,
-                    ),
-                    should_cancel=should_cancel,
-                )
-            else:
-                artifacts = _process_with_optional_progress(
-                    pipeline,
-                    item,
-                    should_cancel=should_cancel,
-                    progress=(
-                        lambda event: self._emit_progress(
-                            progress,
-                            should_cancel,
-                            _with_source_and_totals(
-                                event,
-                                source=str(download.path),
-                                current=current,
-                                total=total,
-                            ),
-                        )
-                    )
-                    if is_native_engine_provider_name(job.provider_name)
-                    else None,
-                )
-            preserved_media_path = self._preserve_url_media(
-                download,
-                source=source,
-                job=job,
-            )
-            artifacts = OutputArtifacts(
-                paths=artifacts.paths,
-                media_path=preserved_media_path,
-                media_kind=download.saved_media_kind if preserved_media_path is not None else None,
-                requested_media_kind=source.url_media_kind if source.keep_media else None,
-                media_fallback=(
-                    preserved_media_path is not None
-                    and source.keep_media
-                    and download.saved_media_kind != source.url_media_kind
+                _with_source_and_totals(
+                    event,
+                    source=task_spec.source.value,
+                    current=current,
+                    total=total,
                 ),
-                source_kind=source.kind,
-                source_value=source.value,
-                auto_bind_media=source.auto_bind_media,
-            )
-
-            # Update JSON files with media binding info
-            if preserved_media_path is not None and source.auto_bind_media:
-                self._update_json_media_binding(artifacts, preserved_media_path, download.saved_media_kind)
-
-            for path in artifacts.paths:
-                self._emit_progress(
-                    progress,
-                    should_cancel,
-                    ProgressEvent(
-                        stage="write",
-                        message=f"Wrote: {path}",
-                        source=source.value,
-                        path=path,
-                    )
-                )
-        finally:
-            shutil.rmtree(download.cleanup_dir, ignore_errors=True)
-        return artifacts
-
-    def _preserve_url_media(
-        self,
-        download,
-        *,
-        source: SourceSpec,
-        job: TranscriptionJob,
-    ) -> Path | None:
-        if not source.keep_media:
-            return None
-
-        candidate = download.saved_media_path or download.path
-        if not candidate.exists():
-            return None
-
-        target_root = (
-            source.media_output_dir
-            if source.media_output_dir is not None
-            else job.output_dir / "url-media"
+            ),
+            cancel_token=should_cancel,
         )
-        target_root = target_root.expanduser().resolve()
-        target_dir = target_root / download.cleanup_dir.name
-        target_dir.mkdir(parents=True, exist_ok=True)
-        target_path = self._available_target_path(target_dir / candidate.name)
-        move(str(candidate), str(target_path))
-        return target_path
-
-    @staticmethod
-    def _available_target_path(path: Path) -> Path:
-        if not path.exists():
-            return path
-        stem = path.stem
-        suffix = path.suffix
-        counter = 2
-        while True:
-            candidate = path.with_name(f"{stem}-{counter}{suffix}")
-            if not candidate.exists():
-                return candidate
-            counter += 1
 
     @staticmethod
     def _ensure_not_canceled(should_cancel: Callable[[], bool]) -> None:
         if should_cancel():
             raise CancellationError("Transcription canceled.")
+
+    def build_cancel_request(self, task_spec: TaskSpec, *, force: bool = False) -> CancelRequest:
+        return CancelRequest(task_id=task_spec.task_id, force=force)
+
+    def acknowledge_cancel(
+        self,
+        request: CancelRequest,
+        *,
+        checkpoint: str | None = None,
+        failed: bool = False,
+    ) -> CancelAck:
+        return CancelAck(
+            task_id=request.task_id,
+            status="failed" if failed else "cancelled",
+            checkpoint=checkpoint,
+        )
 
     def _emit_progress(
         self,
@@ -479,9 +446,34 @@ class TranscriptionService:
         event: ProgressEvent,
     ) -> None:
         self._ensure_not_canceled(should_cancel)
-        progress(event)
+        progress(self._envelope_event(event))
         if event.stage != "canceled":
             self._ensure_not_canceled(should_cancel)
+
+    def _envelope_event(self, event: ProgressEvent) -> ProgressEvent:
+        self._event_sequence += 1
+        return replace(
+            event,
+            event_type=event.event_type or self._event_type_for_event(event),
+            timestamp=event.timestamp or datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+            sequence=event.sequence if event.sequence is not None else self._event_sequence,
+        )
+
+    @staticmethod
+    def _event_type_for_event(event: ProgressEvent) -> str:
+        if event.stage == "discover" and event.source is None:
+            return "task.accepted"
+        if event.stage == "discover":
+            return "task.started"
+        if event.stage == "write":
+            return "artifact.written"
+        if event.stage == "complete":
+            return "task.completed"
+        if event.stage == "error":
+            return "task.failed"
+        if event.stage == "canceled":
+            return "task.canceled"
+        return "progress"
 
     def _emit_progressive_plan(
         self,
@@ -509,6 +501,7 @@ class TranscriptionService:
                 source=str(item.path),
                 total_duration_seconds=duration_seconds,
                 chunk_count=len(chunk_plan.chunks),
+                capability="transcribe",
             ),
         )
 
@@ -558,6 +551,7 @@ class TranscriptionService:
                 failed_chunks=update.state.failed_chunks,
                 segments=update.appended_segments,
                 resumed=update.resumed,
+                capability="transcribe",
             ),
         )
 
@@ -568,45 +562,65 @@ class TranscriptionService:
         media_kind: str,
     ) -> None:
         """Update JSON transcript files with media binding information."""
-        import json
-
         for path in artifacts.paths:
             if path.suffix.lower() == ".json":
                 try:
-                    with open(path, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-
+                    data = self._load_json_payload(path)
                     data["media_binding"] = {
                         "path": str(media_path),
                         "kind": media_kind,
                     }
-
-                    with open(path, "w", encoding="utf-8") as f:
-                        json.dump(data, f, ensure_ascii=False, indent=2)
-                        f.write("\n")
+                    self._write_json_payload(path, data)
                 except (OSError, json.JSONDecodeError) as e:
                     # Log error but don't fail the transcription
                     import warnings
                     warnings.warn(f"Failed to update media binding in {path}: {e}", UserWarning)
 
+    def _update_json_artifacts(
+        self,
+        *,
+        artifacts: OutputArtifacts,
+        task_spec: TaskSpec,
+        source: SourceSpec,
+    ) -> None:
+        for path in artifacts.paths:
+            if path.suffix.lower() != ".json":
+                continue
+            try:
+                data = self._load_json_payload(path)
+                data["task_id"] = task_spec.task_id
+                data["resume"] = {
+                    "resume_token": task_spec.resume_token,
+                    "checkpoint_id": task_spec.checkpoint_id,
+                    "cache_key": task_spec.cache_key,
+                }
+                data["artifacts"] = [
+                    {
+                        "format": artifact_path.suffix.lstrip(".").lower(),
+                        "path": str(artifact_path),
+                    }
+                    for artifact_path in artifacts.paths
+                ]
+                metadata = data.get("metadata")
+                if not isinstance(metadata, dict):
+                    metadata = {}
+                    data["metadata"] = metadata
+                metadata.setdefault("source_kind", source.kind)
+                metadata.setdefault("source_locator", source.resolved_locator)
+                self._write_json_payload(path, data)
+            except (OSError, json.JSONDecodeError):
+                LOGGER.warning("Failed to update JSON artifact metadata: %s", path, exc_info=True)
 
-def _settings_from_job(job: TranscriptionJob, *, recursive: bool) -> AppSettings:
-    return AppSettings.from_options(
-        output_dir=job.output_dir,
-        work_dir=job.work_dir,
-        model_name=job.model_name,
-        language=job.language,
-        preset=job.preset,
-        task=job.task,
-        beam_size=job.beam_size,
-        vad_filter=job.vad_filter,
-        no_vad_filter=job.no_vad_filter,
-        initial_prompt=job.initial_prompt,
-        word_timestamps=job.word_timestamps,
-        recursive=recursive,
-        overwrite=job.overwrite,
-        keep_audio=job.keep_audio,
-    )
+    @staticmethod
+    def _load_json_payload(path: Path) -> dict:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    @staticmethod
+    def _write_json_payload(path: Path, data: dict) -> None:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            f.write("\n")
 
 
 def _error_from_exception(exc: FlowScribeError, *, source: str) -> ErrorInfo:
@@ -616,72 +630,6 @@ def _error_from_exception(exc: FlowScribeError, *, source: str) -> ErrorInfo:
         source=source,
         recoverable=True,
     )
-
-
-def _build_pipeline(job: TranscriptionJob, settings: AppSettings) -> LocalTranscriptionPipeline:
-    path_builder = OutputPathBuilder(
-        overwrite=settings.overwrite,
-        base_name=job.output_name_base,
-    )
-    provider = resolve_transcription_provider(job.provider_name)
-    provider_settings = ProviderTranscriptionSettings(
-        model_name=settings.model_name,
-        language=settings.language,
-        task=settings.task,
-        beam_size=settings.beam_size,
-        vad_filter=settings.vad_filter,
-        initial_prompt=settings.initial_prompt,
-        preset=settings.preset,
-        word_timestamps=settings.word_timestamps,
-        progressive_enabled=job.progressive_enabled,
-        progressive_chunk_seconds=job.progressive_chunk_seconds,
-        progressive_chunk_overlap_seconds=job.progressive_chunk_overlap_seconds,
-        progressive_max_workers=job.progressive_max_workers,
-        native_threads=job.native_threads,
-    )
-    return LocalTranscriptionPipeline(
-        media_preparer=FfmpegAudioExtractor(sample_rate=settings.sample_rate),
-        transcriber=provider.build_transcriber(provider_settings),
-        artifact_writer=TranscriptArtifactWriter(
-            formats=job.output_formats,
-            txt_writer=TxtTranscriptWriter(path_builder),
-            md_writer=MarkdownTranscriptWriter(
-                path_builder,
-                include_timestamps=job.timestamps,
-            ),
-            json_writer=JsonTranscriptWriter(path_builder),
-            srt_writer=SrtTranscriptWriter(path_builder),
-            vtt_writer=VttTranscriptWriter(path_builder),
-        ),
-        work_dir=settings.work_dir,
-        output_dir=settings.output_dir,
-        keep_audio=settings.keep_audio,
-        transcript_normalizer=(
-            simplify_chinese_transcript
-            if settings.language == "zh" or settings.preset == "zh"
-            else None
-        ),
-    )
-
-
-def _process_with_optional_progress(
-    pipeline,
-    item: MediaItem,
-    *,
-    should_cancel: Callable[[], bool],
-    progress: Callable[[ProgressEvent], None] | None,
-) -> OutputArtifacts:
-    if progress is None or not _callable_accepts_keyword(pipeline.process, "progress"):
-        return pipeline.process(item, should_cancel=should_cancel)
-    return pipeline.process(item, should_cancel=should_cancel, progress=progress)
-
-
-def _callable_accepts_keyword(func, name: str) -> bool:
-    try:
-        signature = inspect.signature(func)
-    except (TypeError, ValueError):
-        return False
-    return name in signature.parameters
 
 
 def _with_source_and_totals(
@@ -708,6 +656,24 @@ def _with_source_and_totals(
         failed_chunks=event.failed_chunks,
         segments=event.segments,
         resumed=event.resumed,
+        task_id=event.task_id,
+        capability=event.capability,
+        percent=event.percent,
+        raw_metadata=event.raw_metadata,
+    )
+
+
+def _with_source_and_totals_for_pipeline(
+    event: ProgressEvent,
+    source: str,
+    current: int,
+    total: int,
+) -> ProgressEvent:
+    return _with_source_and_totals(
+        event,
+        source=source,
+        current=current,
+        total=total,
     )
 
 

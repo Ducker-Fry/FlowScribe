@@ -1,6 +1,6 @@
 ﻿"""Core domain models and pipeline orchestration."""
 
-from flowscribe.core.deduplication import TranscriptDeduplicator
+from flowscribe.pipeline.deduplication import TranscriptDeduplicator
 from flowscribe.core.errors import (
     FlowScribeError,
     InputError,
@@ -23,9 +23,9 @@ from flowscribe.core.models import (
     TranscriptionChunkPlan,
     TranscriptionOptions,
 )
-from flowscribe.core.pipeline import LocalTranscriptionPipeline
+from flowscribe.pipeline.transcription import LocalTranscriptionPipeline
 from flowscribe.core.ports import ArtifactWriter, MediaPreparer, Transcriber
-from flowscribe.core.progressive import (
+from flowscribe.pipeline.progressive import (
     ChunkMergePolicy,
     ClipTranscriber,
     ConservativeChunkMergePolicy,

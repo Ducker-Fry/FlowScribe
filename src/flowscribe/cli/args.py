@@ -7,7 +7,9 @@ import sys
 from .options import (
     CliOptions,
     DoctorOptions,
+    InstallCommandOptions,
     InspectOptions,
+    ModelCommandOptions,
     ProgressiveMode,
     SearchOptions,
     ServeOptions,
@@ -18,7 +20,9 @@ from .parsers import (
     add_progressive_options,
     add_transcription_options,
     parse_doctor_args,
+    parse_install_args,
     parse_inspect_args,
+    parse_model_args,
     parse_search_args,
     parse_serve_args,
     parse_simple_command_args,
@@ -37,7 +41,9 @@ from .validators import (
 __all__ = [
     "CliOptions",
     "DoctorOptions",
+    "InstallCommandOptions",
     "InspectOptions",
+    "ModelCommandOptions",
     "ProgressiveMode",
     "SearchOptions",
     "ServeOptions",
@@ -49,7 +55,9 @@ __all__ = [
     "non_negative_int",
     "parse_args",
     "parse_doctor_args",
+    "parse_install_args",
     "parse_inspect_args",
+    "parse_model_args",
     "parse_output_formats",
     "parse_search_args",
     "parse_serve_args",
@@ -64,7 +72,7 @@ __all__ = [
 
 def parse_args(
     argv: list[str] | None = None,
-) -> CliOptions | DoctorOptions | SearchOptions | InspectOptions | UrlOptions | ServeOptions | SimpleCommandOptions:
+) -> CliOptions | DoctorOptions | SearchOptions | InspectOptions | UrlOptions | ServeOptions | SimpleCommandOptions | ModelCommandOptions | InstallCommandOptions:
     argv = sys.argv[1:] if argv is None else argv
     if not argv:
         return parse_transcribe_args(argv)
@@ -82,6 +90,10 @@ def parse_args(
         return parse_url_args(argv[1:])
     if command == "serve":
         return parse_serve_args(argv[1:])
+    if command == "model":
+        return parse_model_args(argv[1:])
+    if command == "install":
+        return parse_install_args(argv[1:])
     if command in {"version", "formats", "models", "capture", "gui"}:
         return parse_simple_command_args(command, argv[1:])
     return parse_transcribe_args(argv)

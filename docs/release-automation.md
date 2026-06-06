@@ -4,10 +4,10 @@ FlowScribe uses GitHub Actions to build and publish Windows release packages aut
 
 ## What the Release Workflow Does
 
-When a version tag such as `v0.2.6` is pushed, `.github/workflows/release.yml` runs on GitHub-hosted Windows runners and performs the full release flow:
+When a version tag such as `vX.Y.Z` is pushed, `.github/workflows/release.yml` runs on GitHub-hosted Windows runners and performs the full release flow:
 
 ```text
-push tag v0.2.6
+push tag vX.Y.Z
 -> check out the tagged release ref
 -> verify the workflow is building the expected tag contents
 -> install Python
@@ -27,8 +27,8 @@ push tag v0.2.6
 -> compress dist/FlowScribeGUI
 -> inspect existing GitHub Release state
 -> create or update GitHub Release metadata
--> upload or overwrite FlowScribe-v0.2.6-windows-x64.zip
--> upload or overwrite FlowScribeGUI-v0.2.6-windows-x64.zip
+-> upload or overwrite FlowScribe-vX.Y.Z-windows-x64.zip
+-> upload or overwrite FlowScribeGUI-vX.Y.Z-windows-x64.zip
 -> summarize final release URL and asset list
 ```
 
@@ -39,15 +39,15 @@ Update code and documentation first, then commit and push `main`:
 ```powershell
 git status
 git add .
-git commit -m "Prepare v0.2.6"
+git commit -m "Prepare vX.Y.Z"
 git push
 ```
 
 Create and push a version tag:
 
 ```powershell
-git tag v0.2.6
-git push origin v0.2.6
+git tag vX.Y.Z
+git push origin vX.Y.Z
 ```
 
 GitHub Actions will build and publish the release.
@@ -59,7 +59,7 @@ The workflow also supports manual runs through GitHub Actions with `workflow_dis
 When running manually, provide a version string:
 
 ```text
-v0.2.6
+vX.Y.Z
 ```
 
 For normal releases, prefer tag-triggered releases because tags give the published artifact a stable source reference.
@@ -71,8 +71,8 @@ requested tag ref and verifies that `HEAD` matches that tag before it builds.
 The uploaded assets are:
 
 ```text
-FlowScribe-v0.2.6-windows-x64.zip
-FlowScribeGUI-v0.2.6-windows-x64.zip
+FlowScribe-vX.Y.Z-windows-x64.zip
+FlowScribeGUI-vX.Y.Z-windows-x64.zip
 ```
 
 The CLI ZIP contains the entire portable application folder:
@@ -128,7 +128,7 @@ run is the first run for that tag.
 - The workflow only runs automatically for tags matching `v*.*.*`.
 - Whisper models are not bundled in the release zip.
 - First use of a selected model may download model files from Hugging Face.
-- The workflow verifies the packaged executable with `FlowScribe.exe doctor` before creating the release.
+- The workflow verifies the packaged executable with `FlowScribe.exe doctor --skip-model-access` so packaged smoke checks validate bundled dependencies without failing on temporary Hugging Face reachability issues.
 - The workflow verifies the packaged WASAPI helper with `WasapiCaptureHelper.exe version` and `WasapiCaptureHelper.exe probe`.
 - The workflow verifies the packaged GUI entry point with `FlowScribeGUI.exe --self-test`.
 - If GitHub has a temporary checkout or release API failure, rerun the workflow from the Actions page. The rerun path should now update the existing release instead of failing on duplicate creation.

@@ -3,7 +3,9 @@ from pathlib import Path
 from flowscribe.cli.args import (
     CliOptions,
     DoctorOptions,
+    InstallCommandOptions,
     InspectOptions,
+    ModelCommandOptions,
     SearchOptions,
     SimpleCommandOptions,
     parse_args,
@@ -24,6 +26,7 @@ def test_parse_doctor_args() -> None:
     assert options.output_dir == Path("health-out")
     assert options.provider_name == "local-whisper"
     assert options.model_name == "tiny"
+    assert options.skip_model_access is False
 
 
 def test_parse_doctor_args_supports_native_provider() -> None:
@@ -41,6 +44,41 @@ def test_parse_doctor_args_supports_native_provider() -> None:
     assert isinstance(options, DoctorOptions)
     assert options.provider_name == "native-engine"
     assert options.hello_smoke is True
+
+
+def test_parse_doctor_args_supports_skip_model_access() -> None:
+    options = parse_args(["doctor", "--skip-model-access"])
+
+    assert isinstance(options, DoctorOptions)
+    assert options.skip_model_access is True
+
+
+def test_run_doctor_can_skip_model_access(monkeypatch, tmp_path: Path) -> None:
+    from flowscribe.cli.doctor import run_doctor
+
+    monkeypatch.setattr("flowscribe.cli.doctor.check_command", lambda name: type("C", (), {"name": name, "ok": True, "message": "ok", "marker": "OK"})())
+    monkeypatch.setattr("flowscribe.cli.doctor.check_python_version", lambda: type("C", (), {"name": "Python", "ok": True, "message": "ok", "marker": "OK"})())
+    monkeypatch.setattr("flowscribe.cli.doctor.check_output_dir", lambda path: type("C", (), {"name": "Output directory", "ok": True, "message": "ok", "marker": "OK"})())
+    monkeypatch.setattr("flowscribe.cli.doctor.check_faster_whisper_import", lambda: type("C", (), {"name": "faster-whisper", "ok": True, "message": "ok", "marker": "OK"})())
+
+    called = {"model_access": False}
+
+    def fail_if_called(model_name: str):
+        called["model_access"] = True
+        raise AssertionError("check_model_download should be skipped")
+
+    monkeypatch.setattr("flowscribe.cli.doctor.check_model_download", fail_if_called)
+
+    exit_code = run_doctor(
+        output_dir=tmp_path / "out",
+        provider_name="local-whisper",
+        model_name="small",
+        skip_model_access=True,
+        print_result=False,
+    )
+
+    assert exit_code == 0
+    assert called["model_access"] is False
 
 
 def test_parse_transcribe_subcommand_args() -> None:
@@ -141,6 +179,45 @@ def test_parse_inspect_args() -> None:
     assert options.json_output is True
     assert options.timeout_seconds == 12
     assert options.network_family == "ipv4"
+
+
+def test_parse_model_args() -> None:
+    options = parse_args(["model", "--json", "download", "small"])
+
+    assert isinstance(options, ModelCommandOptions)
+    assert options.command == "model"
+    assert options.subcommand == "download"
+    assert options.model_id == "small"
+    assert options.json_output is True
+
+
+def test_parse_install_write_config_args() -> None:
+    options = parse_args(
+        [
+            "install",
+            "--json",
+            "write-config",
+            "--scope",
+            "user",
+            "--models-dir",
+            "managed-models",
+            "--docs-dir",
+            "managed-docs",
+            "--component",
+            "gui",
+            "--component",
+            "docs",
+        ]
+    )
+
+    assert isinstance(options, InstallCommandOptions)
+    assert options.command == "install"
+    assert options.subcommand == "write-config"
+    assert options.install_scope == "user"
+    assert options.models_dir == Path("managed-models")
+    assert options.docs_dir == Path("managed-docs")
+    assert options.component_names == ("gui", "docs")
+    assert options.json_output is True
 
 
 def test_parse_time_value_accepts_common_timestamp_forms() -> None:

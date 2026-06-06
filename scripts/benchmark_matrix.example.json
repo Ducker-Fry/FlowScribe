@@ -1,0 +1,124 @@
+{
+  "samples": [
+    {
+      "id": "local_audio_short",
+      "source_kind": "local",
+      "media_kind": "audio",
+      "duration_bucket": "short",
+      "value": "E:\\Draft\\FlowScribe\\samples\\english_test.wav",
+      "language": "en",
+      "enabled": true,
+      "notes": "Short local audio sample."
+    },
+    {
+      "id": "local_audio_medium",
+      "source_kind": "local",
+      "media_kind": "audio",
+      "duration_bucket": "medium",
+      "value": "E:\\Draft\\ForTest\\medium_audio\\url-media\\url-7cc647f2f889d8ac\\remote-audio.m4a",
+      "language": "en",
+      "enabled": true,
+      "notes": "Medium local audio sample from Bilibili audio cache."
+    },
+    {
+      "id": "local_audio_long",
+      "source_kind": "local",
+      "media_kind": "audio",
+      "duration_bucket": "long",
+      "value": "E:\\Draft\\ForTest\\long_audio\\url-media\\url-6d5ba90d60c93976\\remote-audio.m4a",
+      "language": "en",
+      "enabled": true,
+      "notes": "Long local audio sample from Bilibili audio cache."
+    },
+    {
+      "id": "local_video_short",
+      "source_kind": "local",
+      "media_kind": "video",
+      "duration_bucket": "short",
+      "value": "<provide-local-video-short>",
+      "language": "en",
+      "enabled": false,
+      "notes": "Replace with a real local video file path."
+    },
+    {
+      "id": "local_video_medium",
+      "source_kind": "local",
+      "media_kind": "video",
+      "duration_bucket": "medium",
+      "value": "<provide-local-video-medium>",
+      "language": "en",
+      "enabled": false,
+      "notes": "Replace with a real local video file path."
+    },
+    {
+      "id": "local_video_long",
+      "source_kind": "local",
+      "media_kind": "video",
+      "duration_bucket": "long",
+      "value": "<provide-local-video-long>",
+      "language": "en",
+      "enabled": false,
+      "notes": "Replace with a real local video file path."
+    },
+    {
+      "id": "url_audio_short",
+      "source_kind": "url",
+      "media_kind": "audio",
+      "duration_bucket": "short",
+      "value": "<provide-url-audio-short>",
+      "language": "en",
+      "enabled": false,
+      "notes": "Replace with a stable public audio URL."
+    },
+    {
+      "id": "url_audio_medium",
+      "source_kind": "url",
+      "media_kind": "audio",
+      "duration_bucket": "medium",
+      "value": "<provide-url-audio-medium>",
+      "language": "en",
+      "enabled": false,
+      "notes": "Replace with a stable public audio URL."
+    },
+    {
+      "id": "url_audio_long",
+      "source_kind": "url",
+      "media_kind": "audio",
+      "duration_bucket": "long",
+      "value": "<provide-url-audio-long>",
+      "language": "en",
+      "enabled": false,
+      "notes": "Replace with a stable public audio URL."
+    },
+    {
+      "id": "url_video_short",
+      "source_kind": "url",
+      "media_kind": "video",
+      "duration_bucket": "short",
+      "value": "<provide-url-video-short>",
+      "language": "en",
+      "enabled": false,
+      "notes": "Replace with a stable public video URL."
+    },
+    {
+      "id": "url_video_medium",
+      "source_kind": "url",
+      "media_kind": "video",
+      "duration_bucket": "medium",
+      "value": "<provide-url-video-medium>",
+      "language": "en",
+      "enabled": false,
+      "notes": "Replace with a stable public video URL."
+    },
+    {
+      "id": "url_video_long",
+      "source_kind": "url",
+      "media_kind": "video",
+      "duration_bucket": "long",
+      "value": "<provide-url-video-long>",
+      "language": "en",
+      "enabled": false,
+      "notes": "Replace with a stable public video URL."
+    }
+  ]
+}

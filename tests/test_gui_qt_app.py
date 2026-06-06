@@ -1,7 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 
-from flowscribe.app.models import ProgressEvent, SourceSpec, TranscriptionJob, TranscriptionResult
+from flowscribe.tasks.models import ProgressEvent, SourceSpec, TranscriptionJob, TranscriptionResult
 from flowscribe.core.models import OutputArtifacts, TranscriptSegment
 from flowscribe.gui.export_profiles import ExportProfile
 from flowscribe.gui.utils import (
@@ -133,7 +133,35 @@ def test_normalize_gui_preferences_payload_filters_invalid_values() -> None:
         "proxy": "",
         "theme": "light",
         "native_threads": None,
+        "show_model_download_prompt": True,
     }
+
+
+def test_normalize_gui_preferences_payload_accepts_paraformer() -> None:
+    preferences = _normalize_gui_preferences_payload(
+        {
+            "provider_name": "paraformer",
+            "model_name": "paraformer-zh",
+            "language": "zh",
+            "preset": "zh",
+        }
+    )
+
+    assert preferences["provider_name"] == "paraformer"
+    assert preferences["model_name"] == "paraformer-zh"
+    assert preferences["language"] == "zh"
+    assert preferences["preset"] == "zh"
+
+
+def test_unified_main_window_uses_single_task_view_settings(qtbot):
+    from flowscribe.gui.main_window import MainWindow
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    assert window._view_stack.count() == 3
+    assert window._single_task_view is not None
+    assert window._queue_view is not None
+    assert window._library_view is not None
 
 
 def test_onboarding_state_payload_defaults_and_reads_help_seen_flag() -> None:
@@ -294,6 +322,7 @@ def test_gui_state_payload_uses_nested_preferences_and_local_sources(tmp_path: P
             "proxy": "http://127.0.0.1:7890",
             "theme": "light",
             "native_threads": 8,
+            "show_model_download_prompt": True,
         },
         "local_sources": {
             "local_paths": [str(media)],
@@ -426,6 +455,7 @@ def test_normalize_gui_state_payload_supports_nested_and_legacy_formats(tmp_path
     assert preferences["url_media_output_dir"] == "saved-url-media"
     assert preferences["url_auto_bind_media"] is False
     assert preferences["native_threads"] == 4
+    assert preferences["show_model_download_prompt"] is True
     assert recent_work["recent_transcripts"] == [str(transcript)]
     assert recent_work["recent_output_dirs"] == [str(outputs)]
     assert export_profiles[0].name == "Review"
@@ -469,6 +499,7 @@ def test_normalize_gui_state_payload_supports_nested_and_legacy_formats(tmp_path
     assert legacy_preferences["url_media_kind"] == "audio"
     assert legacy_preferences["url_media_output_dir"] == ""
     assert legacy_preferences["url_auto_bind_media"] is True
+    assert legacy_preferences["show_model_download_prompt"] is True
     assert legacy_recent_work == {
         "recent_transcripts": [],
         "recent_output_dirs": [],

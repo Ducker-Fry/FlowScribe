@@ -6,14 +6,15 @@ from pathlib import Path
 
 from PySide6.QtCore import QThread, QFileSystemWatcher, Qt
 
-from flowscribe.app.models import SourceSpec
+from flowscribe.tasks.models import SourceSpec
 from flowscribe.gui.gui_logging import get_gui_logger
-from flowscribe.queue.models import (
+from flowscribe.tasks.queue_models import (
     QueueItem,
     QueueItemSettings,
+    apply_source_edit_options,
     generate_queue_item_id,
 )
-from flowscribe.queue.importers import (
+from flowscribe.tasks.queue_importers import (
     deduplicate_sources,
     import_urls_from_file,
     parse_urls_from_text,
@@ -229,6 +230,8 @@ class QueueControlsMixin:
             self._queue_tab.set_current_item_status(event.message)
 
     def _on_queue_item_completed(self, payload) -> None:
+        item, result = payload
+        self._index_queue_result_in_library(item, result)
         self._refresh_queue_tab()
 
     def _on_queue_item_failed(self, payload) -> None:
@@ -290,7 +293,14 @@ class QueueControlsMixin:
             new_settings, new_source = result
             # Apply to all selected items
             for item_id in item_ids:
-                self._queue_store.update_item(item_id, settings=new_settings, source=new_source)
+                current_item = self._queue_store.get_item(item_id)
+                if current_item is None:
+                    continue
+                self._queue_store.update_item(
+                    item_id,
+                    settings=new_settings,
+                    source=apply_source_edit_options(current_item.source, new_source),
+                )
             self._refresh_queue_tab()
             if is_batch:
                 self.status_label.setText(f"Updated settings for {len(item_ids)} items")

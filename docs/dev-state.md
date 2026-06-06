@@ -9,7 +9,7 @@ and then return here for more detail.
 - Name: FlowScribe
 - Path: `E:\Draft\FlowScribe`
 - Language: Python
-- Current version: v0.2.9
+- Current version: v0.3.3
 - Next release: v1.0.0 (major release in preparation)
 - Current branch: `dev`
 - Main branch: `main`
@@ -31,10 +31,10 @@ The long-term goal is an open-source, portfolio-quality project that can:
 
 ## Current Release
 
-- Latest GitHub Release: `v0.2.9`
+- Latest GitHub Release: use the newest tag published on GitHub Releases
 - Release assets:
-  - `FlowScribe-v0.2.9-windows-x64.zip`
-  - `FlowScribeGUI-v0.2.9-windows-x64.zip`
+  - `FlowScribe-vX.Y.Z-windows-x64.zip`
+  - `FlowScribeGUI-vX.Y.Z-windows-x64.zip`
 - Next major release: `v1.0.0` (in preparation)
 
 ## Completed Capabilities

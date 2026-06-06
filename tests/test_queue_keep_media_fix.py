@@ -3,8 +3,8 @@
 from dataclasses import replace
 from pathlib import Path
 
-from flowscribe.app.models import SourceSpec
-from flowscribe.queue.models import QueueItem, QueueItemSettings, generate_queue_item_id
+from flowscribe.tasks.models import SourceSpec
+from flowscribe.tasks.queue_models import QueueItem, QueueItemSettings, generate_queue_item_id
 
 
 def test_queue_item_source_update():

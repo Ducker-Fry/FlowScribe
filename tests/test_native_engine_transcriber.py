@@ -7,8 +7,8 @@ import pytest
 from flowscribe.core.errors import CancellationError, TranscriptionError
 from flowscribe.core.models import MediaItem, PreparedAudio
 from flowscribe.engine.protocol import MessageKind
-import flowscribe.transcription.native_engine as native_engine
-from flowscribe.transcription.native_engine import NativeEngineTranscriber
+import flowscribe.providers.transcribe.native_engine as native_engine
+from flowscribe.providers.transcribe.native_engine import NativeEngineTranscriber
 
 
 class FakeProcess:
@@ -110,6 +110,30 @@ def _model_and_engine(tmp_path: Path) -> tuple[Path, Path]:
     engine = tmp_path / "flowscribe-engine.exe"
     engine.write_bytes(b"exe")
     return model, engine
+
+
+def test_native_engine_start_uses_hidden_subprocess_kwargs(monkeypatch, tmp_path: Path) -> None:
+    model, engine = _model_and_engine(tmp_path)
+    process = FakeProcess()
+    calls = []
+
+    def fake_process_factory(*args, **kwargs):
+        calls.append((args, kwargs))
+        return process
+
+    monkeypatch.setattr(
+        "flowscribe.providers.transcribe.native_engine.hidden_subprocess_kwargs",
+        lambda: {"creationflags": 123},
+    )
+
+    transcriber = NativeEngineTranscriber(
+        model_name=str(model),
+        engine_exe=engine,
+        process_factory=fake_process_factory,
+    )
+
+    assert transcriber._start_engine(engine, pipe_name="test-pipe") is process
+    assert calls[0][1]["creationflags"] == 123
 
 
 def test_native_transcriber_maps_result_and_uses_protocol_payload(tmp_path: Path) -> None:

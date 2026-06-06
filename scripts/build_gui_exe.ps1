@@ -2,6 +2,8 @@ param(
     [string]$Python = "python",
     [string]$AppName = "FlowScribeGUI",
     [string]$DotNet = "dotnet",
+    [switch]$IncludeBundledModels,
+    [switch]$IncludeParaformer,
     [switch]$SkipHelperBuild,
     [switch]$SkipClean
 )
@@ -21,6 +23,7 @@ $HelperBuildScript = Join-Path $ProjectRoot "scripts\build_wasapi_helper.ps1"
 $HelperStageDir = Join-Path $ProjectRoot "build\wasapi-helper"
 $UserBase = Join-Path $ProjectRoot ".py-user-base"
 $DependencyChecker = Join-Path $PSScriptRoot "Check-BuildDependencies.ps1"
+$ModelsSourceDir = Join-Path $ProjectRoot "models"
 
 function Write-Step {
     param([string]$Message)
@@ -118,6 +121,78 @@ function Copy-WasapiHelper {
     }
 }
 
+function Test-OptionalParaformerPackaging {
+    param([string]$PythonCmd)
+
+    & $PythonCmd -c "import funasr, modelscope; print('funasr', getattr(funasr, '__version__', 'unknown')); print('modelscope', getattr(modelscope, '__version__', 'unknown'))"
+    return ($LASTEXITCODE -eq 0)
+}
+
+function Write-AppendedLogLines {
+    param(
+        [string]$Path,
+        [ref]$LineCount
+    )
+
+    if (-not (Test-Path $Path)) {
+        return
+    }
+
+    $lines = Get-Content -LiteralPath $Path
+    for ($i = $LineCount.Value; $i -lt $lines.Count; $i++) {
+        Write-Host $lines[$i]
+    }
+    $LineCount.Value = $lines.Count
+}
+
+function Invoke-LoggedNativeCommand {
+    param(
+        [string]$FilePath,
+        [string[]]$ArgumentList,
+        [string]$WorkingDirectory
+    )
+
+    $stdoutPath = Join-Path $env:TEMP "flowscribe-native-stdout.log"
+    $stderrPath = Join-Path $env:TEMP "flowscribe-native-stderr.log"
+
+    foreach ($logPath in @($stdoutPath, $stderrPath)) {
+        if (Test-Path $logPath) {
+            Remove-Item -LiteralPath $logPath -Force
+        }
+    }
+
+    try {
+        $process = Start-Process `
+            -FilePath $FilePath `
+            -ArgumentList $ArgumentList `
+            -WorkingDirectory $WorkingDirectory `
+            -PassThru `
+            -RedirectStandardOutput $stdoutPath `
+            -RedirectStandardError $stderrPath
+
+        $stdoutLineCount = 0
+        $stderrLineCount = 0
+        while (-not $process.HasExited) {
+            Write-AppendedLogLines -Path $stdoutPath -LineCount ([ref]$stdoutLineCount)
+            Write-AppendedLogLines -Path $stderrPath -LineCount ([ref]$stderrLineCount)
+            Start-Sleep -Milliseconds 500
+            $process.Refresh()
+        }
+
+        $process.WaitForExit()
+        Write-AppendedLogLines -Path $stdoutPath -LineCount ([ref]$stdoutLineCount)
+        Write-AppendedLogLines -Path $stderrPath -LineCount ([ref]$stderrLineCount)
+        return $process.ExitCode
+    }
+    finally {
+        foreach ($logPath in @($stdoutPath, $stderrPath)) {
+            if (Test-Path $logPath) {
+                Remove-Item -LiteralPath $logPath -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+}
+
 Push-Location $ProjectRoot
 try {
     Write-Step "Check build dependencies"
@@ -186,6 +261,20 @@ try {
 
     Write-Step "Build GUI one-folder executable"
 
+    $includeParaformer = $false
+    if ($IncludeParaformer) {
+        Write-Step "Check optional Paraformer packaging support"
+        $includeParaformer = Test-OptionalParaformerPackaging -PythonCmd $Python
+        if ($includeParaformer) {
+            Write-Host "  Paraformer dependencies are available; bundling optional FunASR support." -ForegroundColor Green
+        } else {
+            throw "Paraformer packaging was requested, but funasr/modelscope are not importable in the selected Python environment."
+        }
+    } else {
+        Write-Step "Skip optional Paraformer packaging"
+        Write-Host "  Building GUI without bundled FunASR/modelscope payloads. Pass -IncludeParaformer to opt in." -ForegroundColor Yellow
+    }
+
     # Check if icon file exists
     $IconPath = Join-Path $ProjectRoot "icons\flowscribe.ico"
     if (-not (Test-Path $IconPath)) {
@@ -197,26 +286,52 @@ try {
         $IconArg = @("--icon", $IconPath)
     }
 
-    & $Python -s -m PyInstaller `
-        --name $AppName `
-        --onedir `
-        --windowed `
-        --clean `
-        --noconfirm `
-        --runtime-hook $RuntimeHook `
-        --hidden-import PySide6.QtCore `
-        --hidden-import PySide6.QtGui `
-        --hidden-import PySide6.QtMultimedia `
-        --hidden-import PySide6.QtMultimediaWidgets `
-        --hidden-import PySide6.QtWidgets `
-        --hidden-import PySide6.QtSvg `
-        --add-data "icons;icons" `
-        @IconArg `
-        "src\flowscribe\gui\__main__.py"
+    $PyInstallerArgs = @(
+        "-s",
+        "-m",
+        "PyInstaller",
+        "--name", $AppName,
+        "--onedir",
+        "--windowed",
+        "--clean",
+        "--noconfirm",
+        "--runtime-hook", $RuntimeHook,
+        "--hidden-import", "PySide6.QtCore",
+        "--hidden-import", "PySide6.QtGui",
+        "--hidden-import", "PySide6.QtMultimedia",
+        "--hidden-import", "PySide6.QtMultimediaWidgets",
+        "--hidden-import", "PySide6.QtWidgets",
+        "--hidden-import", "PySide6.QtSvg",
+        "--add-data", "icons;icons",
+        "--add-data", "src\flowscribe\gui\themes;flowscribe\gui\themes",
+        "--add-data", "src\flowscribe\gui\assets;flowscribe\gui\assets"
+    )
+
+    if ($includeParaformer) {
+        $PyInstallerArgs += @(
+            "--hidden-import", "funasr",
+            "--hidden-import", "modelscope",
+            "--collect-all", "funasr",
+            "--collect-all", "modelscope"
+        )
+    }
+
+    if ($IconArg.Count -gt 0) {
+        $PyInstallerArgs += $IconArg
+    }
+
+    $PyInstallerArgs += "src\flowscribe\gui\__main__.py"
 
     $exePath = Join-Path $PackageDir "$AppName.exe"
+    $pyInstallerExitCode = Invoke-LoggedNativeCommand `
+        -FilePath $Python `
+        -ArgumentList $PyInstallerArgs `
+        -WorkingDirectory $ProjectRoot
     if (-not (Test-Path $exePath)) {
-        throw "Expected GUI executable was not created: $exePath"
+        throw "PyInstaller failed for GUI packaging and no executable was created: $exePath"
+    }
+    if ($pyInstallerExitCode -ne 0) {
+        Write-Host "  Warning: PyInstaller returned exit code $pyInstallerExitCode, but the GUI executable was created successfully. Continuing packaging." -ForegroundColor Yellow
     }
 
     Write-Step "Copy WASAPI helper into GUI release folder"
@@ -225,6 +340,24 @@ try {
     Write-Step "Copy ffmpeg and ffprobe into GUI release folder"
     Copy-Tool -Name "ffmpeg" -DestinationDir $PackageDir
     Copy-Tool -Name "ffprobe" -DestinationDir $PackageDir
+
+    if ($IncludeBundledModels) {
+        if (-not (Test-Path $ModelsSourceDir)) {
+            throw "Bundled model packaging was requested but the models directory was not found: $ModelsSourceDir"
+        }
+
+        $releaseModelsDir = Join-Path $PackageDir "models"
+        if (Test-Path $releaseModelsDir) {
+            Remove-Item -LiteralPath $releaseModelsDir -Recurse -Force
+        }
+
+        Write-Step "Copy model assets into GUI release folder"
+        Copy-Item -LiteralPath $ModelsSourceDir -Destination $releaseModelsDir -Recurse -Force
+        Write-Host "Copied model assets to $releaseModelsDir"
+    } else {
+        Write-Step "Skip bundled model assets"
+        Write-Host "  Building zero-model GUI package. Users will download models from Model Center or via the installer." -ForegroundColor Yellow
+    }
 
     Write-Step "Done"
     Write-Host "GUI release folder: $PackageDir" -ForegroundColor Green

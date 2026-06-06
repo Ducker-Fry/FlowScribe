@@ -120,7 +120,7 @@ jobs:
 
       - name: Verify packaged executable
         shell: pwsh
-        run: .\dist\FlowScribe\FlowScribe.exe doctor -o release-smoke-test --model small
+        run: .\dist\FlowScribe\FlowScribe.exe doctor -o release-smoke-test --model small --skip-model-access
 
       - name: Verify packaged GUI executable
         shell: pwsh

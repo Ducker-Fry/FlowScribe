@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import hashlib
 
 from flowscribe.core.errors import OutputError
 from flowscribe import __version__
@@ -25,26 +26,54 @@ class JsonTranscriptWriter:
         self._media_path = media_path
         self._media_kind = media_kind
 
-    def write(self, transcript: Transcript, output_dir: Path) -> Path:
+    def write(
+        self,
+        transcript: Transcript,
+        output_dir: Path,
+        *,
+        artifact_paths: tuple[Path, ...] = (),
+    ) -> Path:
         path = self._path_builder.build(transcript.source, output_dir, ".json")
         try:
             path.write_text(
-                json.dumps(self._to_payload(transcript), ensure_ascii=False, indent=2) + "\n",
+                json.dumps(
+                    self._to_payload(transcript, document_path=path, artifact_paths=artifact_paths),
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n",
                 encoding="utf-8",
             )
         except OSError as exc:
             raise OutputError(f"Could not write JSON transcript to {path}: {exc}") from exc
         return path
 
-    def _to_payload(self, transcript: Transcript) -> dict:
+    def _to_payload(
+        self,
+        transcript: Transcript,
+        *,
+        document_path: Path,
+        artifact_paths: tuple[Path, ...],
+    ) -> dict:
         options = transcript.options
         source = transcript.source.path
         segments = [
             self._segment_to_payload(index, segment)
             for index, segment in enumerate(transcript.segments, start=1)
         ]
+        document_id = transcript.document_id or self._document_id(transcript)
+        chunks = self._chunks_payload(document_id, segments)
+        artifact_entries = [
+            {
+                "format": path.suffix.lstrip(".").lower(),
+                "path": str(path),
+            }
+            for path in (*artifact_paths, document_path)
+        ]
         payload = {
             "schema_version": JSON_SCHEMA_VERSION,
+            "document_id": document_id,
+            "task_id": transcript.task_id,
             "generator": {
                 "name": "FlowScribe",
                 "version": __version__,
@@ -64,6 +93,14 @@ class JsonTranscriptWriter:
             "segment_count": len(transcript.segments),
             "word_count": sum(len(segment.words) for segment in transcript.segments),
             "raw_word_count": sum(len(segment.raw_words) for segment in transcript.segments),
+            "provenance": {
+                "generator": "FlowScribe",
+                "generator_version": __version__,
+                "provider": options.provider_name if options is not None else None,
+                "model": transcript.model_name,
+                "language": transcript.language,
+                "created_at": transcript.created_at.isoformat(timespec="seconds"),
+            },
             "options": None
             if options is None
             else {
@@ -79,10 +116,17 @@ class JsonTranscriptWriter:
             },
             "text": transcript.text,
             "segments": segments,
+            "chunks": chunks,
+            "artifacts": artifact_entries,
+            "resume": {
+                "resume_token": transcript.resume_token,
+                "checkpoint_id": transcript.checkpoint_id,
+                "cache_key": transcript.cache_key,
+            },
+            "metadata": transcript.metadata,
         }
         payload.update(transcript.metadata)
 
-        # Add media binding information if available
         if self._media_path is not None:
             payload["media_binding"] = {
                 "path": str(self._media_path),
@@ -90,6 +134,36 @@ class JsonTranscriptWriter:
             }
 
         return payload
+
+    def _document_id(self, transcript: Transcript) -> str:
+        seed = {
+            "source": str(transcript.source.path),
+            "language": transcript.language,
+            "model": transcript.model_name,
+            "segment_count": len(transcript.segments),
+            "text": transcript.text,
+        }
+        return hashlib.md5(
+            json.dumps(seed, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+
+    def _chunks_payload(self, document_id: str, segments: list[dict]) -> list[dict]:
+        chunks: list[dict] = []
+        for segment in segments:
+            index = int(segment["index"])
+            chunk_seed = f"{document_id}:{index}:{segment['text']}:{segment['start_seconds']}:{segment['end_seconds']}"
+            chunks.append(
+                {
+                    "chunk_id": hashlib.md5(chunk_seed.encode("utf-8")).hexdigest(),
+                    "index": index,
+                    "text": segment["text"],
+                    "start_seconds": segment["start_seconds"],
+                    "end_seconds": segment["end_seconds"],
+                    "segment_ids": [segment["id"]],
+                    "segment_indexes": [segment["index"]],
+                }
+            )
+        return chunks
 
     def _segment_to_payload(self, index: int, segment: TranscriptSegment) -> dict:
         return {

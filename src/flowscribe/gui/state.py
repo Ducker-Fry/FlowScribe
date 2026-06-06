@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
-from flowscribe.app.models import SourceSpec, TranscriptionJob
+from flowscribe.tasks.models import SourceSpec, TranscriptionJob
 from flowscribe.core.errors import DownloadError
 from flowscribe.input.file_filter import is_supported_media
 from flowscribe.input.url_security import validate_public_http_url
@@ -82,8 +82,8 @@ class GuiTranscriptionForm:
         if self.url_media_kind not in {"audio", "video"}:
             errors.append("URL media kind must be audio or video.")
 
-        if self.provider_name not in {"local-whisper", "native-engine"}:
-            errors.append("Engine must be local-whisper or native-engine.")
+        if self.provider_name not in {"local-whisper", "native-engine", "paraformer"}:
+            errors.append("Engine must be local-whisper, native-engine, or paraformer.")
 
         if self.native_threads is not None and self.native_threads <= 0:
             errors.append("Native threads must be a positive integer.")

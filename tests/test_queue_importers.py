@@ -1,17 +1,17 @@
-"""Tests for flowscribe.queue.importers."""
+"""Tests for flowscribe.tasks.queue_importers."""
 
 
 import pytest
 
-from flowscribe.app.models import SourceSpec
-from flowscribe.queue.importers import (
+from flowscribe.tasks.models import SourceSpec
+from flowscribe.tasks.queue_importers import (
     deduplicate_sources,
     import_urls_from_csv,
     import_urls_from_file,
     import_urls_from_txt,
     parse_urls_from_text,
 )
-from flowscribe.queue.models import QueueItem, QueueItemSettings
+from flowscribe.tasks.queue_models import QueueItem, QueueItemSettings
 
 
 def test_parse_urls_from_text_basic():

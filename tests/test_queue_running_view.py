@@ -3,8 +3,8 @@
 from pathlib import Path
 
 
-from flowscribe.app.models import ProgressEvent, SourceSpec
-from flowscribe.queue.models import QueueItem, QueueItemSettings
+from flowscribe.tasks.models import ProgressEvent, SourceSpec
+from flowscribe.tasks.queue_models import QueueItem, QueueItemSettings
 
 
 def test_queue_view_running_item_tracking():

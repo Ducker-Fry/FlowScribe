@@ -13,7 +13,8 @@ from pathlib import Path
 
 from flowscribe.engine.pipe_client import FlowScribeEngineClient, pywintypes, win32file
 from flowscribe.media.tools import resolve_tool_path
-from flowscribe.transcription.native_engine import resolve_engine_exe
+from flowscribe.model_catalog import resolve_faster_whisper_repo
+from flowscribe.providers.transcribe.native_engine import resolve_engine_exe
 
 
 @dataclass(frozen=True)
@@ -33,6 +34,7 @@ def run_doctor(
     provider_name: str,
     model_name: str,
     hello_smoke: bool = False,
+    skip_model_access: bool = False,
     print_result: bool = True,
 ) -> int:
     checks = [check_python_version(), check_command("ffmpeg"), check_command("ffprobe"), check_output_dir(output_dir)]
@@ -47,7 +49,17 @@ def run_doctor(
         if hello_smoke:
             checks.append(check_native_engine_hello_smoke())
     else:
-        checks.extend([check_faster_whisper_import(), check_model_download(model_name)])
+        checks.append(check_faster_whisper_import())
+        if skip_model_access:
+            checks.append(
+                DoctorCheck(
+                    "Model access",
+                    True,
+                    "skipped by --skip-model-access; remote model reachability was not checked",
+                )
+            )
+        else:
+            checks.append(check_model_download(model_name))
 
     if print_result:
         print("FlowScribe doctor")
@@ -230,25 +242,3 @@ def check_native_engine_hello_smoke() -> DoctorCheck:
         except subprocess.TimeoutExpired:
             proc.kill()
             proc.wait(timeout=5)
-
-
-def resolve_faster_whisper_repo(model_name: str) -> str | None:
-    known = {
-        "tiny",
-        "tiny.en",
-        "base",
-        "base.en",
-        "small",
-        "small.en",
-        "medium",
-        "medium.en",
-        "large-v1",
-        "large-v2",
-        "large-v3",
-        "large-v3-turbo",
-    }
-    if model_name in known:
-        return f"Systran/faster-whisper-{model_name}"
-    if "/" in model_name:
-        return model_name
-    return None

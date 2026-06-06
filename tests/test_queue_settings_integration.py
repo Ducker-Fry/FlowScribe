@@ -2,9 +2,9 @@
 
 from pathlib import Path
 
-from flowscribe.app.models import SourceSpec
-from flowscribe.queue.models import QueueItem, QueueItemSettings, generate_queue_item_id
-from flowscribe.queue.store import BatchQueueStore
+from flowscribe.tasks.models import SourceSpec
+from flowscribe.tasks.queue_models import QueueItem, QueueItemSettings, generate_queue_item_id
+from flowscribe.tasks.queue_store import BatchQueueStore
 
 
 def test_queue_item_settings_persistence(tmp_path):
