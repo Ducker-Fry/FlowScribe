@@ -299,7 +299,12 @@ def import_native_model(path: Path, *, display_name: str | None = None) -> Insta
 
 def local_docs_index_path() -> Path | None:
     docs_dir = resolve_resource_paths().docs_dir
-    for candidate in (docs_dir / "index.html", docs_dir / "model-guide.html"):
+    for candidate in (
+        docs_dir / "index.html",
+        docs_dir / "index-en.html",
+        docs_dir / "model-guide.html",
+        docs_dir / "model-guide-en.html",
+    ):
         if candidate.exists():
             return candidate.resolve()
     return None
@@ -307,7 +312,12 @@ def local_docs_index_path() -> Path | None:
 
 def local_model_guide_path() -> Path | None:
     docs_dir = resolve_resource_paths().docs_dir
-    for candidate in (docs_dir / "model-guide.html", docs_dir / "index.html"):
+    for candidate in (
+        docs_dir / "model-guide.html",
+        docs_dir / "model-guide-en.html",
+        docs_dir / "index.html",
+        docs_dir / "index-en.html",
+    ):
         if candidate.exists():
             return candidate.resolve()
     return None

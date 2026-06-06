@@ -1,23 +1,26 @@
-# Inspect Command
+# 中文 | [English](inspect-en.md)
 
-`flowscribe inspect` checks a local media file or public URL before transcription.
-It does not transcribe and does not download URL media.
+# Inspect 命令
 
-Use it when you want to know:
+`flowscribe inspect` 用来在正式转录前检查本地媒体文件或公开 URL。
 
-- Whether a local file has an audio stream.
-- Whether a URL is a direct audio/video URL or a supported video page.
-- Whether a page has an audio-only stream.
-- Whether FlowScribe will need to stream combined media and extract audio.
-- Basic duration, format count, and selected strategy.
+它不会开始转录，也不会真正下载 URL 媒体。
 
-## Inspect A Local File
+适合这些场景：
+
+- 先确认本地文件里有没有音频流
+- 先确认一个 URL 是直链媒体，还是支持的视频页面
+- 先确认页面是否提供音频流
+- 先确认 FlowScribe 会采用什么处理策略
+- 先看大致时长、格式数量和计划行为
+
+## 检查本地文件
 
 ```powershell
 flowscribe inspect "D:\media\lecture.mp4"
 ```
 
-Example:
+示例输出：
 
 ```text
 FlowScribe inspect
@@ -33,43 +36,27 @@ Size: 120.4 MiB
 Ready for transcription: yes
 ```
 
-If `Ready for transcription` is `no`, the file has no audio stream.
+如果 `Ready for transcription` 是 `no`，通常说明文件没有音频流。
 
-## Inspect A Public URL
+## 检查公开 URL
 
 ```powershell
 flowscribe inspect "https://tv.cctv.com/2026/05/12/VIDEBtNAQbQRT5vvxRFP28FR260512.shtml"
 ```
 
-Example shape:
+常见输出形态会包含：
 
-```text
-FlowScribe inspect
-===================
-Type: url
-Source: https://tv.cctv.com/...
-Kind: video-page-url
-Title: ...
-Duration: 00:02:16.000
-Formats: 1
-Audio-only stream: no
-Combined media stream: yes
-Planned strategy: stream lowest combined media and extract audio
-Selected format:
-  id: hls-460
-  ext: mp4
-  protocol: m3u8
-  resolution: 480x270
-  audio codec: unknown
-  video codec: unknown
-  bitrate: 461.0
-  size: 7.5 MiB
-Note: no standalone audio stream was found; FlowScribe will stream combined media and save only extracted audio.
-```
+- 来源类型
+- 页面标题
+- 时长
+- 格式数量
+- 是否存在音频专用流
+- 是否存在音视频合并流
+- 计划采用的处理策略
 
-## JSON Output
+## JSON 输出
 
-For GUI, scripts, or debugging:
+如果你要给 GUI、脚本或自动化流程使用：
 
 ```powershell
 flowscribe inspect "D:\media\lecture.mp4" --json
@@ -78,89 +65,63 @@ flowscribe inspect "https://example.com/video" --json
 
 ## Cookies
 
-Some supported sites only expose media after a normal browser login. For sources
-you are allowed to access, pass a Netscape-format cookie file explicitly:
+某些站点登录后才会暴露可用媒体。对于你有合法访问权限的来源，可以显式传入 Netscape 格式的 cookies 文件：
 
 ```powershell
 flowscribe inspect "https://example.com/video" --cookies "D:\private\cookies.txt"
 flowscribe url "https://example.com/video" --cookies "D:\private\cookies.txt" -o outputs
 ```
 
-Cookie files can contain active session data. Keep them private and do not commit
-them to Git. See [Cookies For URL Media](cookies.md).
+详见 [cookies.md](cookies.md)。
 
 ## Network Family
 
-By default, FlowScribe uses automatic address-family resolution and blocks private,
-loopback, reserved, and other unsafe addresses. Some DNS or proxy environments may
-return an unusual blocked IPv6 address for a public video site. In that case, use
-IPv4 explicitly:
+默认情况下 FlowScribe 会自动选择地址族，同时继续阻止私有地址、回环地址和保留地址。
+
+如果你的 DNS 或代理环境对某些公开视频站点存在异常 IPv6 返回值，可以显式指定 IPv4：
 
 ```powershell
 flowscribe inspect "https://www.youtube.com/watch?v=aUL-VAt0gDI" --network-family ipv4
 flowscribe url "https://www.youtube.com/watch?v=aUL-VAt0gDI" --network-family ipv4
 ```
 
-This still keeps the public-address safety check for IPv4 addresses.
-
 ## Proxy
 
-If a URL only works through a local proxy such as Clash, pass the proxy
-explicitly:
+如果某个 URL 必须走本地代理：
 
 ```powershell
 flowscribe inspect "https://www.youtube.com/watch?v=aUL-VAt0gDI" --proxy "http://127.0.0.1:7890"
 flowscribe url "https://www.youtube.com/watch?v=aUL-VAt0gDI" --proxy "http://127.0.0.1:7890" -o outputs
 ```
 
-See [Proxy Configuration](proxy.md).
+详见 [proxy.md](proxy.md)。
 
-## How To Read The Strategy
+## 怎么理解策略字段
 
-`download audio directly`
+常见计划策略包括：
 
-The URL looks like a direct audio file, such as `.mp3` or `.m4a`.
+- `download audio directly`
+- `stream URL with ffmpeg and extract audio`
+- `download audio-only stream`
+- `stream lowest combined media and extract audio`
+- `stream selected page media and extract audio`
+- `unsupported: no usable audio or combined media stream`
 
-`stream URL with ffmpeg and extract audio`
+它们的核心意思是：FlowScribe 是直接取音频、还是要流式读取合并媒体后提取音频，或者当前根本找不到可用媒体。
 
-The URL looks like a direct video file. FlowScribe asks `ffmpeg` to read the URL
-and save only extracted audio.
+## 常见 URL 失败原因
 
-`download audio-only stream`
+常见原因包括：
 
-The page exposes a standalone audio stream. FlowScribe downloads that audio stream.
+- 站点不受支持
+- 媒体需要登录
+- cookies 缺失或失效
+- DRM 或保护性媒体
+- 网络或代理问题
+- 站点的反爬策略
+- `yt-dlp` 提取器过旧
 
-`stream lowest combined media and extract audio`
-
-The page does not expose standalone audio. FlowScribe selects the smallest combined
-media stream and extracts audio without saving the original video.
-
-`stream selected page media and extract audio`
-
-The page extractor exposes one selected playable stream but does not describe audio
-and video codecs clearly. FlowScribe follows the selected page media URL and saves
-only extracted audio.
-
-`unsupported: no usable audio or combined media stream`
-
-FlowScribe could not find a usable stream. The source may be video-only, protected,
-unsupported, or require login.
-
-## Common URL Failures
-
-If inspection fails, FlowScribe now reports likely causes:
-
-- Unsupported site.
-- Login-only media.
-- Missing or expired cookies.
-- DRM or protected media.
-- Network or proxy issue.
-- Site anti-bot rules.
-- Outdated `yt-dlp` extractor.
-
-Try opening the URL in a browser, passing `--proxy http://127.0.0.1:7890` for
-local proxy access, passing `--cookies path\to\cookies.txt` for login-required
-media, using a public direct media URL, or updating dependencies with:
+如果需要，可以先更新依赖：
 
 ```powershell
 python -m pip install -U yt-dlp

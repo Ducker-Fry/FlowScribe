@@ -17,7 +17,17 @@ HTML_OUTPUT_ENCODING = "utf-8-sig"
 
 DOC_FILES = (
     ("index.html", "FlowScribe Help", ("user-guide.md", "gui-user-guide.md", "release-installation.md")),
+    (
+        "index-en.html",
+        "FlowScribe Help (EN)",
+        ("user-guide-en.md", "gui-user-guide-en.md", "release-installation-en.md"),
+    ),
     ("model-guide.html", "Model Guide", ("user-guide.md", "gui-user-guide.md", "vad-guide.md")),
+    (
+        "model-guide-en.html",
+        "Model Guide (EN)",
+        ("user-guide-en.md", "gui-user-guide-en.md", "vad-guide-en.md"),
+    ),
 )
 
 _CSS = """\
@@ -229,16 +239,25 @@ def _md_to_html(md_text: str) -> str:
 
 
 def _build_page(title: str, sources: tuple[str, ...]) -> str:
+    is_english = title.endswith("(EN)")
+    nav = (
+        "<nav>"
+        "<a href='index.html'>Help Home</a> | "
+        "<a href='index-en.html'>Help Home (EN)</a> | "
+        "<a href='model-guide.html'>Model Guide</a> | "
+        "<a href='model-guide-en.html'>Model Guide (EN)</a>"
+        "</nav>"
+    )
     parts = [
         "<!DOCTYPE html>",
-        "<html lang='en'>",
+        f"<html lang='{'en' if is_english else 'zh-CN'}'>",
         "<head>",
         "  <meta charset='utf-8'>",
         f"  <title>{_escape(title)}</title>",
         f"  <style>{_CSS}</style>",
         "</head>",
         "<body>",
-        "<nav><a href='index.html'>Help Home</a> | <a href='model-guide.html'>Model Guide</a></nav>",
+        nav,
         f"<h1>{_escape(title)}</h1>",
     ]
     for name in sources:

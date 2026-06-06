@@ -1,3 +1,5 @@
+# 中文 | [English](bookmarklet-en.md)
+
 # Bookmarklet 集成指南
 
 FlowScribe 支持通过浏览器 Bookmarklet 快速添加网页视频/音频到转录队列。
@@ -13,8 +15,8 @@ FlowScribe 支持通过浏览器 Bookmarklet 快速添加网页视频/音频到�
    python -m flowscribe.gui
    ```
 
-2. **打开 Queue 标签**
-   - 点击 **Views** → **Queue**
+2. **打开 Queue 视图**
+   - 点击顶部工具栏中的 **Queue**
 
 3. **启用 Server**
    - 勾选 **"Enable Server"** 复选框
@@ -52,7 +54,7 @@ FlowScribe 支持通过浏览器 Bookmarklet 快速添加网页视频/音频到�
    ```powershell
    python -m flowscribe.gui
    ```
-   - 打开 Views → Queue 查看队列
+   - 打开 `Queue` 查看队列
    - 点击 "Start Queue" 开始转录
 
 ## Bookmarklet 脚本
@@ -117,7 +119,7 @@ Position: 1
 1. 启动 GUI
    python -m flowscribe.gui
 
-2. 打开 Views → Queue
+2. 打开 `Queue`
    勾选 "Enable Server"
 
 3. 浏览器中访问 YouTube
@@ -146,7 +148,7 @@ python -m flowscribe.gui
 点击 Bookmarklet → URL 添加到队列
 
 GUI：
-打开 Views → Queue → Start Queue
+打开 `Queue` → `Start Queue`
 ```
 
 ### 场景 3：批量添加
@@ -271,7 +273,7 @@ python -m flowscribe serve \
 **原因**：Server 未运行
 
 **解决**：
-1. GUI 方式：打开 Views → Queue，勾选 "Enable Server"
+1. GUI 方式：打开顶部工具栏中的 `Queue`，勾选 `Enable Server`
 2. 命令行方式：运行 `python -m flowscribe serve`
 3. 验证：访问 http://127.0.0.1:8765/status
 
@@ -360,6 +362,6 @@ requests.post('http://127.0.0.1:8765/add-url', json={'url': 'https://example.com
 
 ## 相关文档
 
-- [Server 配置选项](server-configuration.md) - 命令行 Server 详细配置
+- [Server 配置选项](server-configuration.md) - 命令行 Server 详细配置（暂时仅英文）
 - [Server 输出示例](server-output-example.md) - 命令行 Server 日志示例
-- [GUI Server 集成](gui-server-integration.md) - GUI 内置 Server 详细说明
+- [bookmarklet-en.md](bookmarklet-en.md) - English bookmarklet guide

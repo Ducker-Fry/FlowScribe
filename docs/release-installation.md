@@ -1,16 +1,18 @@
-# Release Installation
+# 中文 | [English](release-installation-en.md)
 
-This guide is for users who want to run FlowScribe without setting up Python or using the source tree.
+# 发布安装说明
 
-## Download
+这份文档面向不想配置 Python、也不想直接从源码运行的用户。
 
-Open the latest release page:
+## 下载
+
+打开最新发布页：
 
 ```text
 https://github.com/Ducker-Fry/FlowScribe/releases
 ```
 
-Download the package you need:
+根据需要下载：
 
 ```text
 FlowScribe-vX.Y.Z-windows-x64.zip
@@ -19,20 +21,20 @@ FlowScribeSetup-online-x64.exe
 FlowScribeSetup-offline-x64.exe
 ```
 
-- `FlowScribe-vX.Y.Z-windows-x64.zip`: portable CLI package.
-- `FlowScribeGUI-vX.Y.Z-windows-x64.zip`: portable GUI package.
-- `FlowScribeSetup-online-x64.exe`: installer that downloads packaged app files during setup.
-- `FlowScribeSetup-offline-x64.exe`: installer that bundles packaged app files locally.
+- `FlowScribe-vX.Y.Z-windows-x64.zip`：CLI 便携版
+- `FlowScribeGUI-vX.Y.Z-windows-x64.zip`：GUI 便携版
+- `FlowScribeSetup-online-x64.exe`：在线安装器，安装时下载打包文件
+- `FlowScribeSetup-offline-x64.exe`：离线安装器，安装包内已包含打包文件
 
-## Install
+## 安装
 
-Unzip the file to a folder you control, for example:
+把压缩包解压到你可控的目录，例如：
 
 ```text
 D:\Tools\FlowScribe
 ```
 
-After extracting the CLI package, the folder should contain:
+CLI 解压后目录应类似：
 
 ```text
 FlowScribe/
@@ -43,9 +45,9 @@ FlowScribe/
 `-- _internal/
 ```
 
-Do not move only `FlowScribe.exe` by itself. The surrounding files are required.
+不要只单独移动 `FlowScribe.exe`。
 
-After extracting the GUI package, the folder should contain:
+GUI 解压后目录应类似：
 
 ```text
 FlowScribeGUI/
@@ -55,121 +57,118 @@ FlowScribeGUI/
 `-- _internal/
 ```
 
-Do not move only `FlowScribeGUI.exe` by itself.
+也不要只单独移动 `FlowScribeGUI.exe`。
 
-## First Check
+## 首次检查
 
-Open PowerShell in the extracted folder and run:
+在解压后的目录中打开 PowerShell，运行：
 
 ```powershell
 .\FlowScribe\FlowScribe.exe doctor
 ```
 
-For the GUI package, start:
+GUI 包则直接运行：
 
 ```powershell
 .\FlowScribeGUI\FlowScribeGUI.exe
 ```
 
-The packaged GUI launches in quiet `user` logging mode and does not open a
-console window during normal use.
+打包后的 GUI 会使用安静的 `user` 日志模式，正常使用时不会额外弹出控制台窗口。
 
-You should see checks for:
+你应当能看到这些检查项：
 
-- Python runtime inside the package.
-- Bundled `ffmpeg.exe`.
-- Bundled `ffprobe.exe`.
-- `faster-whisper`.
-- Output directory write access.
-- Model download access.
+- 包内运行时组件
+- 内置 `ffmpeg.exe`
+- 内置 `ffprobe.exe`
+- `faster-whisper`
+- 输出目录写权限
+- 模型下载访问能力
 
-If you used the installer build, local help docs are copied into the managed
-docs folder and the installed GUI points Help actions there. Installed builds
-also default to **not** auto-downloading transcription models on first use, so
-the first launch may ask you to open **Model Center** or the local model guide.
+如果你使用安装版，安装过程会把本地帮助文档复制到受管 docs 目录中，GUI 的 `Help` 和 `Open Model Guide` 会指向那里。安装版默认也不会在首次使用时静默自动下载模型，因此第一次启动时可能会提示你先打开 `Model Center` 或本地模型指南。
 
-## Transcribe a File
+## 转录一个文件
 
-Chinese-oriented transcription:
+中文优先写法：
 
 ```powershell
 .\FlowScribe\FlowScribe.exe transcribe "D:\media\lecture.mp4" -o outputs --preset zh
 ```
 
-Recommended command style:
+推荐通用写法：
 
 ```powershell
 .\FlowScribe\FlowScribe.exe transcribe "D:\media\lecture.mp4" -o outputs --model small --preset zh
 ```
 
-English transcription:
+英文示例：
 
 ```powershell
 .\FlowScribe\FlowScribe.exe transcribe "D:\media\english.mp4" -o outputs --model small --language en
 ```
 
-Quick smoke test:
+快速试跑：
 
 ```powershell
 .\FlowScribe\FlowScribe.exe transcribe "D:\media\short.wav" -o outputs --model tiny --overwrite
 ```
 
-## Use The Desktop GUI
+## 使用桌面 GUI
 
-Inside the GUI package you can:
+当前 GUI 的主线围绕这些入口：
 
-- add local files and folders with checkbox selection
-- paste a public URL
-- capture Windows system playback through the bundled WASAPI helper
-- open an existing transcript JSON or another generated transcript artifact
-- browse a transcript library
-- use a unified `Views` window to switch between run details, transcript review,
-  and generated transcript artifacts
-- edit transcript segment text
-- save corrected transcript JSON by overwriting or writing a copy
-- re-export transcript JSON into TXT, Markdown, JSON, SRT, or VTT
-- save and apply named export profiles
-- search transcript keywords
-- bind local media to a transcript for playback sync directly inside the
-  transcript review view
+- `Single Task`：单个本地文件或单个 URL
+- `Queue`：批量任务、URL 队列、书签服务器入口
+- `Library`：历史转录库
+- `Open View`：日志、搜索、分段编辑、重新导出
 
-During capture, the GUI stays quiet in packaged mode but now reports whether the
-capture file is actively growing or appears stalled. If capture starts but no
-new audio data arrives, verify that Windows playback is active and that the
-default output device is the one producing sound.
+目前你可以：
 
-## Output
+- 添加本地文件和文件夹
+- 粘贴公开 URL
+- 打开现有 transcript JSON
+- 浏览 transcript 库
+- 搜索 transcript 关键词
+- 编辑 segment 文本
+- 覆盖保存或另存修订后的 JSON
+- 重新导出为 TXT、Markdown、JSON、SRT、VTT
+- 绑定本地媒体并做播放同步
 
-For an input file named:
+GUI 里也有 `System Audio Capture` 入口，但这条路径仍在完善中，现阶段不要把它当成最稳的正式主流程。
+
+## 输出
+
+如果输入文件名是：
 
 ```text
 lecture.mp4
 ```
 
-FlowScribe writes:
+FlowScribe 常见会生成：
 
 ```text
 outputs/
 |-- lecture.txt
-`-- lecture.md
+|-- lecture.md
+|-- lecture.json
+|-- lecture.srt
+`-- lecture.vtt
 ```
 
-## Model Downloads
+## 模型下载
 
-Transcription models are not bundled in the portable packages.
+转录模型不会预置在便携包中。
 
-- In source-tree or portable runs, selecting a new model may trigger a download.
-- In installed app builds, first-use auto-download is disabled by default. Open
-  **Model Center** or run `flowscribe model download ...` yourself.
+- 源码运行和便携运行时，选中某个模型后可能触发下载
+- 安装版默认关闭首次自动下载，需要你手动先准备模型
 
-Recommended model choices:
+推荐模型：
 
-- `tiny`: quick smoke tests only.
-- `small`: recommended starting point.
-- `medium`: better accuracy, slower.
-- `paraformer-zh`: Chinese-first model package for the `paraformer` provider.
+- `tiny`：只适合快速冒烟测试
+- `small`：最推荐的起点
+- `medium`：更准但更慢
+- `paraformer-zh`：面向中文优先的 `paraformer` 模型包
 
-Useful commands:
+常用命令：
 
 ```powershell
 flowscribe model list-available
@@ -178,19 +177,14 @@ flowscribe model download small
 flowscribe model download paraformer-zh
 ```
 
-## Troubleshooting
+## 故障排除
 
-If `doctor` passes but `outputs` is empty, that is normal. `doctor` only checks the environment. Run a transcription command to create TXT and Markdown files.
+如果 `doctor` 通过了但 `outputs` 还是空的，这是正常现象。`doctor` 只做环境检查，不生成转录结果。
 
-If a file reports `No audio stream found`, it likely contains video only. Some downloaded media stores video and audio separately.
+如果文件提示 `No audio stream found`，先用 `inspect` 检查。部分媒体可能只有视频流，或音视频分离存储。
 
-If model access fails, check network access to Hugging Face, open Model Center,
-or use a local model path where the selected provider supports it.
+如果模型访问失败，先检查网络访问，打开 `Model Center`，或在支持的 provider 下使用本地模型路径。
 
-If the GUI reports that `WasapiCaptureHelper.exe` is missing, the GUI package is
-incomplete. Re-extract the full `FlowScribeGUI` folder from the release ZIP and
-do not move only `FlowScribeGUI.exe` by itself.
+如果 GUI 报告 `WasapiCaptureHelper.exe` 缺失，说明 GUI 包不完整。请重新完整解压整个 `FlowScribeGUI` 文件夹，不要只拷贝单个 exe。
 
-If the GUI says capture is running but no new audio data has arrived recently,
-start actual system playback and confirm the expected Windows output device is
-the current default playback device.
+如果系统音频捕获显示已开始，但长时间没有新音频数据，请确认系统确实正在播放声音，并确认当前默认播放设备就是你想录制的输出设备。
