@@ -14,7 +14,7 @@ def test_paraformer_transcriber_maps_top_level_text(monkeypatch, tmp_path: Path)
     _redirect_model_dirs(monkeypatch, tmp_path)
     audio = _prepared_audio(tmp_path, duration_seconds=12.5)
     fake_models = _install_fake_funasr(monkeypatch, [{"text": "hello zh"}])
-    fake_downloads = _install_fake_modelscope(monkeypatch)
+    _install_fake_paraformer_components(monkeypatch, tmp_path)
 
     transcript = ParaformerTranscriber(language="zh").transcribe(audio)
 
@@ -29,11 +29,6 @@ def test_paraformer_transcriber_maps_top_level_text(monkeypatch, tmp_path: Path)
     assert Path(fake_models[0].kwargs["vad_model"]).parts[-2:] == ("models", "fsmn-vad")
     assert Path(fake_models[0].kwargs["punc_model"]).parts[-2:] == ("models", "ct-punc")
     assert fake_models[0].kwargs["disable_update"] is True
-    assert [Path(item["local_dir"]).parts[-2:] for item in fake_downloads] == [
-        ("models", "paraformer-zh"),
-        ("models", "fsmn-vad"),
-        ("models", "ct-punc"),
-    ]
 
 
 def test_paraformer_transcriber_maps_sentence_info(monkeypatch, tmp_path: Path) -> None:
@@ -51,7 +46,7 @@ def test_paraformer_transcriber_maps_sentence_info(monkeypatch, tmp_path: Path) 
             }
         ],
     )
-    _install_fake_modelscope(monkeypatch)
+    _install_fake_paraformer_components(monkeypatch, tmp_path)
 
     transcript = ParaformerTranscriber(language="zh").transcribe(audio)
 
@@ -69,7 +64,7 @@ def test_paraformer_transcribe_clip_slices_audio_and_maps_local_timestamps(
     _redirect_model_dirs(monkeypatch, tmp_path)
     audio = _prepared_audio(tmp_path, duration_seconds=30.0)
     fake_models = _install_fake_funasr(monkeypatch, [{"text": "clip text"}])
-    _install_fake_modelscope(monkeypatch)
+    _install_fake_paraformer_components(monkeypatch, tmp_path)
     commands = []
 
     def fake_run(command, **kwargs):
@@ -100,7 +95,7 @@ def test_paraformer_clip_uses_hidden_subprocess_kwargs(monkeypatch, tmp_path: Pa
     _redirect_model_dirs(monkeypatch, tmp_path)
     audio = _prepared_audio(tmp_path, duration_seconds=30.0)
     _install_fake_funasr(monkeypatch, [{"text": "clip text"}])
-    _install_fake_modelscope(monkeypatch)
+    _install_fake_paraformer_components(monkeypatch, tmp_path)
     calls = []
 
     def fake_run(command, **kwargs):
@@ -203,21 +198,23 @@ def _install_fake_funasr(monkeypatch, result):
     return models
 
 
-def _install_fake_modelscope(monkeypatch):
-    downloads = []
-
-    def fake_snapshot_download(**kwargs):
-        downloads.append(kwargs)
-        local_dir = Path(kwargs["local_dir"])
-        local_dir.mkdir(parents=True, exist_ok=True)
-        (local_dir / "configuration.json").write_text("{}", encoding="utf-8")
-        return str(local_dir)
-
-    modelscope_module = types.ModuleType("modelscope")
-    hub_module = types.ModuleType("modelscope.hub")
-    snapshot_module = types.ModuleType("modelscope.hub.snapshot_download")
-    snapshot_module.snapshot_download = fake_snapshot_download
-    monkeypatch.setitem(sys.modules, "modelscope", modelscope_module)
-    monkeypatch.setitem(sys.modules, "modelscope.hub", hub_module)
-    monkeypatch.setitem(sys.modules, "modelscope.hub.snapshot_download", snapshot_module)
-    return downloads
+def _install_fake_paraformer_components(monkeypatch, tmp_path: Path) -> None:
+    model_root = tmp_path / "models"
+    for name, files in {
+        "paraformer-zh": ("configuration.json", "config.yaml", "model.pt", "tokens.json", "am.mvn"),
+        "fsmn-vad": ("configuration.json", "config.yaml", "model.pt"),
+        "ct-punc": ("configuration.json", "config.yaml", "model.pt"),
+    }.items():
+        target = model_root / name
+        target.mkdir(parents=True, exist_ok=True)
+        for file_name in files:
+            (target / file_name).write_text("ok", encoding="utf-8")
+    monkeypatch.setattr(
+        paraformer,
+        "paraformer_component_paths",
+        lambda ensure_download=True: (
+            (model_root / "paraformer-zh").resolve(),
+            (model_root / "fsmn-vad").resolve(),
+            (model_root / "ct-punc").resolve(),
+        ),
+    )

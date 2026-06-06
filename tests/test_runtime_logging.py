@@ -4,6 +4,7 @@ from datetime import datetime
 
 from flowscribe.utils import runtime_logging
 from flowscribe.utils.runtime_logging import (
+    active_log_file_path,
     configure_runtime_logging,
     flowscribe_log_dir,
     install_null_standard_streams,
@@ -25,7 +26,7 @@ def test_flowscribe_log_dir_uses_executable_logs_for_frozen_runs(monkeypatch) ->
     monkeypatch.setattr(runtime_logging.sys, "frozen", True, raising=False)
     monkeypatch.setattr(runtime_logging.sys, "executable", r"E:\Software\FlowScribeGUI\FlowScribeGUI.exe")
 
-    assert flowscribe_log_dir({}) == runtime_logging.Path(r"E:\Software\FlowScribeGUI\logs")
+    assert flowscribe_log_dir({}) == runtime_logging.Path(r"E:\Software\FlowScribeGUI")
 
 
 def test_install_null_standard_streams_replaces_missing_streams(monkeypatch) -> None:
@@ -48,6 +49,14 @@ def test_configure_runtime_logging_writes_file(monkeypatch, tmp_path) -> None:
     assert log_path == tmp_path / expected_name
     assert log_path.exists()
     assert "runtime log smoke" in log_path.read_text(encoding="utf-8")
+
+
+def test_active_log_file_path_returns_current_handler_path(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("FLOWSCRIBE_LOG_DIR", str(tmp_path))
+
+    log_path = configure_runtime_logging("FlowScribeTest")
+
+    assert active_log_file_path("FlowScribeTest") == log_path
 
 
 def test_select_log_path_uses_current_date_name(tmp_path) -> None:

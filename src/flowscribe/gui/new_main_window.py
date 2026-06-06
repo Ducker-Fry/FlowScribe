@@ -15,6 +15,7 @@ from flowscribe.gui.dialogs.settings_dialog import SettingsDialog
 from flowscribe.gui.icons import (
     get_app_icon,
     get_application_icon,
+    get_help_icon,
     get_library_icon,
     get_queue_icon,
     get_settings_icon,
@@ -117,7 +118,7 @@ class NewMainWindow(QMainWindow):
 
         settings_action = toolbar.addAction(get_settings_icon(theme), "Settings")
         settings_action.triggered.connect(self._show_settings_dialog)
-        help_action = toolbar.addAction(get_settings_icon(theme), "Help")
+        help_action = toolbar.addAction(get_help_icon(theme), "Help")
         help_action.triggered.connect(self._show_help)
 
         toolbar.addSeparator()
@@ -224,7 +225,7 @@ class NewMainWindow(QMainWindow):
             actions = toolbar.actions()
             if len(actions) >= 6:
                 actions[0].setIcon(get_settings_icon(theme))  # Settings
-                actions[1].setIcon(get_settings_icon(theme))  # Help
+                actions[1].setIcon(get_help_icon(theme))  # Help
                 # Skip separator at index 2
                 actions[3].setIcon(get_application_icon(theme))  # Single Task
                 actions[4].setIcon(get_library_icon(theme))  # Library

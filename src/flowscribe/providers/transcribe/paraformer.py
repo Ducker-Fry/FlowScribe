@@ -21,7 +21,7 @@ from flowscribe.core.models import (
     TranscriptionOptions,
 )
 from flowscribe.media.tools import resolve_tool_path
-from flowscribe.model_manager import runtime_model_reference
+from flowscribe.model_manager import paraformer_component_paths, runtime_model_reference
 from flowscribe.utils.subprocess import hidden_subprocess_kwargs
 
 PARAFORMER_PROVIDER_NAME = "paraformer"
@@ -136,17 +136,8 @@ class ParaformerTranscriber:
             from funasr import AutoModel
             runtime_model_reference("paraformer", self._model_name)
 
-            model_path = self._ensure_model_snapshot(
-                self._resolve_model_id(self._model_name),
-                PARAFORMER_MODEL_DIR,
-            )
-            vad_model_path = self._ensure_model_snapshot(
-                PARAFORMER_FUNASR_VAD_MODEL_ID,
-                PARAFORMER_VAD_MODEL_DIR,
-            )
-            punc_model_path = self._ensure_model_snapshot(
-                PARAFORMER_FUNASR_PUNC_MODEL_ID,
-                PARAFORMER_PUNC_MODEL_DIR,
+            model_path, vad_model_path, punc_model_path = paraformer_component_paths(
+                ensure_download=True
             )
             LOGGER.info(
                 "Loading Paraformer model: model=%s vad=%s punc=%s frozen=%s executable=%s",
@@ -359,25 +350,6 @@ class ParaformerTranscriber:
         return model_name
 
     @staticmethod
-    def _ensure_model_snapshot(model_id: str, target_dir: Path) -> Path:
-        target_dir.mkdir(parents=True, exist_ok=True)
-        if _looks_like_funasr_model_dir(target_dir):
-            LOGGER.debug("Using existing Paraformer model directory for %s: %s", model_id, target_dir)
-            return target_dir
-
-        try:
-            from modelscope.hub.snapshot_download import snapshot_download
-        except ImportError as exc:
-            raise ImportError("modelscope is required to download Paraformer models") from exc
-
-        snapshot_path = snapshot_download(
-            model_id=model_id,
-            local_dir=str(target_dir),
-            cache_dir=str(DEFAULT_EXTERNAL_MODEL_CACHE_ROOT / "modelscope"),
-        )
-        return Path(snapshot_path)
-
-    @staticmethod
     def _configure_external_model_cache() -> None:
         cache_root = resolve_resource_paths().model_cache_dir
         cache_root.mkdir(parents=True, exist_ok=True)
@@ -414,11 +386,6 @@ class ParaformerTranscriber:
             return float(value)
         except (TypeError, ValueError):
             return None
-
-
-def _looks_like_funasr_model_dir(path: Path) -> bool:
-    return (path / "configuration.json").exists() or (path / "config.yaml").exists()
-
 
 def _safe_timestamp(value: float) -> str:
     return f"{max(0.0, value):.3f}".replace(".", "p")

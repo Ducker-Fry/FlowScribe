@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -75,6 +75,7 @@ class QueueItemCard(QWidget):
         self._check_button.setProperty("queueCheck", True)
         self._check_button.setCheckable(True)
         self._check_button.setChecked(False)
+        self._check_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._check_button.clicked.connect(self._on_checked_changed)
         root_layout.addWidget(self._check_button, 0, Qt.AlignmentFlag.AlignTop)
 
@@ -119,6 +120,7 @@ class QueueItemCard(QWidget):
         retry_button = QPushButton("Retry")
         retry_button.setProperty("secondary", True)
         retry_button.setProperty("cardAction", True)
+        retry_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         retry_button.clicked.connect(lambda: self.retry_requested.emit(self._item_id))
         retry_button.setVisible(item.status in {"failed", "canceled"})
         actions_column.addWidget(retry_button)
@@ -126,6 +128,7 @@ class QueueItemCard(QWidget):
         remove_button = QPushButton("Remove")
         remove_button.setProperty("secondary", True)
         remove_button.setProperty("cardAction", True)
+        remove_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         remove_button.clicked.connect(lambda: self.remove_requested.emit(self._item_id))
         actions_column.addWidget(remove_button)
         actions_column.addStretch()
@@ -163,6 +166,23 @@ class QueueItemCard(QWidget):
         if item.source.kind == "local":
             return f"Local file - {Path(item.source.value)}"
         return f"URL - {item.source.value}"
+
+
+class QueueListWidget(QListWidget):
+    """List widget that avoids starting item drags from embedded action buttons."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._allow_drag_from_press = True
+
+    def mousePressEvent(self, event) -> None:
+        self._allow_drag_from_press = not _is_card_action_widget(self.viewport().childAt(event.pos()))
+        super().mousePressEvent(event)
+
+    def startDrag(self, supportedActions) -> None:
+        if not self._allow_drag_from_press:
+            return
+        super().startDrag(supportedActions)
 
 
 class QueueView(QWidget):
@@ -328,7 +348,7 @@ class QueueView(QWidget):
 
         queue_content_layout = QHBoxLayout()
         queue_content_layout.setSpacing(10)
-        self._queue_list = QListWidget()
+        self._queue_list = QueueListWidget()
         self._queue_list.setProperty("cardList", True)
         self._queue_list.setDragDropMode(QListWidget.DragDropMode.InternalMove)
         self._queue_list.setDefaultDropAction(Qt.DropAction.MoveAction)
@@ -598,26 +618,38 @@ class QueueView(QWidget):
 
     def _on_rows_moved(self, parent, start: int, end: int, dest, row: int) -> None:
         """Handle drag-drop reordering."""
-        self.reorder_requested.emit(self._collect_item_order())
+        self._item_ids = self._collect_item_order()
+        self.reorder_requested.emit(self._item_ids)
 
     def _get_selected_item_ids(self) -> list[str]:
         """Get IDs of checked items."""
         selected: list[str] = []
         selected_rows = {index.row() for index in self._queue_list.selectedIndexes()}
         for i in range(self._queue_list.count()):
-            if i < len(self._item_ids):
-                item_id = self._item_ids[i]
-                if item_id in self._checked_item_ids or i in selected_rows:
-                    selected.append(item_id)
+            item_id = self._list_item_id(i)
+            if item_id is None:
+                continue
+            if item_id in self._checked_item_ids or i in selected_rows:
+                selected.append(item_id)
         return selected
 
     def _collect_item_order(self) -> list[str]:
         """Collect current item order."""
         order = []
         for i in range(self._queue_list.count()):
-            if i < len(self._item_ids):
-                order.append(self._item_ids[i])
+            item_id = self._list_item_id(i)
+            if item_id is not None:
+                order.append(item_id)
         return order
+
+    def _list_item_id(self, row: int) -> str | None:
+        list_item = self._queue_list.item(row)
+        if list_item is None:
+            return None
+        value = list_item.data(Qt.ItemDataRole.UserRole)
+        if isinstance(value, str) and value:
+            return value
+        return None
 
     def _update_button_states(self) -> None:
         """Update button enabled states."""
@@ -633,7 +665,10 @@ class QueueView(QWidget):
 
     def _sync_all_card_check_states(self) -> None:
         """Refresh all visible card checkboxes from the checked item set."""
-        for row, item_id in enumerate(self._item_ids):
+        for row in range(self._queue_list.count()):
+            item_id = self._list_item_id(row)
+            if item_id is None:
+                continue
             list_item = self._queue_list.item(row)
             if list_item is None:
                 continue
@@ -667,6 +702,7 @@ class QueueView(QWidget):
             display_text = self._format_item_display(item)
             list_item = QListWidgetItem()
             list_item.setToolTip(display_text)
+            list_item.setData(Qt.ItemDataRole.UserRole, item.item_id)
             self._queue_list.addItem(list_item)
             card = QueueItemCard(item, self._queue_list)
             card.set_checked(False)
@@ -766,3 +802,14 @@ class QueueView(QWidget):
         """Handle item canceled event."""
         self._current_running_item_id = None
         self._current_run_output = ""
+
+
+def _is_card_action_widget(widget: QObject | None) -> bool:
+    current = widget
+    while current is not None:
+        property_getter = getattr(current, "property", None)
+        if callable(property_getter):
+            if bool(property_getter("cardAction")) or bool(property_getter("queueCheck")):
+                return True
+        current = current.parent()
+    return False

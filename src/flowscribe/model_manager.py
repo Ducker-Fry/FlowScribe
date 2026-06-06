@@ -6,6 +6,7 @@ import os
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
+from time import monotonic
 
 from flowscribe.config.resources import (
     InstallConfig,
@@ -23,12 +24,22 @@ try:
 except ImportError:  # pragma: no cover - optional runtime dependency
     huggingface_snapshot_download = None
 
+try:
+    from huggingface_hub.utils import tqdm as huggingface_tqdm
+except ImportError:  # pragma: no cover - optional runtime dependency
+    huggingface_tqdm = None
+
 PARAFORMER_MODEL_ID = "paraformer-zh"
 PARAFORMER_MODEL_SOURCE_ID = (
     "iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch"
 )
 PARAFORMER_VAD_SOURCE_ID = "iic/speech_fsmn_vad_zh-cn-16k-common-pytorch"
 PARAFORMER_PUNC_SOURCE_ID = "iic/punc_ct-transformer_cn-en-common-vocab471067-large"
+PARAFORMER_REQUIRED_FILES = {
+    PARAFORMER_MODEL_ID: ("configuration.json", "config.yaml", "model.pt", "tokens.json", "am.mvn"),
+    "fsmn-vad": ("configuration.json", "config.yaml", "model.pt"),
+    "ct-punc": ("configuration.json", "config.yaml", "model.pt"),
+}
 
 
 @dataclass(frozen=True)
@@ -144,6 +155,13 @@ def list_installed_models() -> tuple[InstalledModelRecord, ...]:
 
 def installed_model_path(model_id: str) -> Path | None:
     resources = resolve_resource_paths()
+    config = resources.install_config
+    if config is not None:
+        for entry in config.installed_models:
+            if entry.model_id != model_id or not entry.path:
+                continue
+            record_path = Path(entry.path).expanduser()
+            return record_path.resolve() if record_path.exists() else record_path
     if model_id == PARAFORMER_MODEL_ID:
         target = resources.models_dir / PARAFORMER_MODEL_ID
         return target if target.exists() else None
@@ -199,6 +217,34 @@ def ensure_runtime_model_available(provider_name: str, model_name: str) -> None:
     runtime_model_reference(provider_name, model_name)
 
 
+def paraformer_component_paths(*, ensure_download: bool = False) -> tuple[Path, Path, Path]:
+    for root in _candidate_paraformer_roots():
+        model_path = root / PARAFORMER_MODEL_ID
+        vad_path = root / "fsmn-vad"
+        punc_path = root / "ct-punc"
+        if all(_missing_paraformer_files(path) == () for path in (model_path, vad_path, punc_path)):
+            return model_path.resolve(), vad_path.resolve(), punc_path.resolve()
+
+    if not ensure_download:
+        raise TranscriptionError(
+            "Paraformer model package is incomplete or not installed. "
+            f"{model_download_guidance(PARAFORMER_MODEL_ID)}"
+        )
+
+    target_root, cache_root = _resolve_download_paths(None)
+    _download_paraformer_package(target_root, cache_root)
+
+    model_path = target_root / PARAFORMER_MODEL_ID
+    vad_path = target_root / "fsmn-vad"
+    punc_path = target_root / "ct-punc"
+    if any(_missing_paraformer_files(path) for path in (model_path, vad_path, punc_path)):
+        raise TranscriptionError(
+            "Paraformer model package is incomplete after download. "
+            f"{model_download_guidance(PARAFORMER_MODEL_ID)}"
+        )
+    return model_path.resolve(), vad_path.resolve(), punc_path.resolve()
+
+
 def download_model(
     model_id: str,
     *,
@@ -214,6 +260,7 @@ def download_model(
 
     if progress is not None:
         progress(f"Preparing model download: {catalog.display_name}")
+        progress(f"Target directory: {target_root}")
 
     if catalog.provider_name == "local-whisper":
         if huggingface_snapshot_download is None:
@@ -224,11 +271,13 @@ def download_model(
         target_dir = target_root / model_id
         if progress is not None:
             progress(f"Downloading {repo_id}...")
+        tqdm_class = _build_hf_progress_tqdm(progress, label=repo_id) if progress is not None else None
         huggingface_snapshot_download(
             repo_id=repo_id,
             local_dir=str(target_dir),
             cache_dir=str(cache_root / "huggingface"),
             local_dir_use_symlinks=False,
+            tqdm_class=tqdm_class,
         )
         record_path = target_dir
     elif catalog.provider_name == "paraformer":
@@ -325,6 +374,7 @@ def local_model_guide_path() -> Path | None:
 def _download_paraformer_package(target_root: Path, cache_root: Path, *, progress: callable | None = None) -> None:
     try:
         from modelscope.hub.snapshot_download import snapshot_download
+        from modelscope.hub.errors import FileDownloadError
     except ImportError as exc:
         raise TranscriptionError("modelscope is required to download Paraformer models.") from exc
 
@@ -339,13 +389,41 @@ def _download_paraformer_package(target_root: Path, cache_root: Path, *, progres
         (PARAFORMER_PUNC_SOURCE_ID, target_root / "ct-punc", "Downloading Paraformer punctuation model..."),
     )
     for model_source_id, target_dir, message in stages:
+        target_dir.mkdir(parents=True, exist_ok=True)
         if progress is not None:
             progress(message)
-        snapshot_download(
-            model_id=model_source_id,
-            local_dir=str(target_dir),
-            cache_dir=str(cache_root / "modelscope"),
-        )
+            callbacks = [_build_modelscope_progress_callback(model_source_id, progress)]
+        else:
+            callbacks = None
+        try:
+            snapshot_download(
+                model_id=model_source_id,
+                local_dir=str(target_dir),
+                cache_dir=str(cache_root / "modelscope"),
+                progress_callbacks=callbacks,
+                allow_patterns=list(_paraformer_allow_patterns(target_dir.name)),
+            )
+        except FileDownloadError as exc:
+            if progress is not None:
+                progress(f"Retrying {model_source_id} with single-thread download...")
+            shutil.rmtree(target_dir, ignore_errors=True)
+            target_dir.mkdir(parents=True, exist_ok=True)
+            snapshot_download(
+                model_id=model_source_id,
+                local_dir=str(target_dir),
+                cache_dir=str(cache_root / "modelscope"),
+                progress_callbacks=callbacks,
+                allow_patterns=list(_paraformer_allow_patterns(target_dir.name)),
+                max_workers=1,
+            )
+        missing_files = _missing_paraformer_files(target_dir)
+        if missing_files:
+            shutil.rmtree(target_dir, ignore_errors=True)
+            missing_summary = ", ".join(missing_files)
+            raise TranscriptionError(
+                f"Paraformer package `{model_source_id}` is incomplete after download. "
+                f"Missing required files: {missing_summary}"
+            )
 
 
 def _upsert_installed_model(
@@ -429,3 +507,130 @@ def _resolve_download_paths(models_dir: Path | None) -> tuple[Path, Path]:
         cache_root = target_root.parent / "model-cache"
     target_root.mkdir(parents=True, exist_ok=True)
     return target_root, cache_root.expanduser()
+
+
+def _candidate_paraformer_roots() -> tuple[Path, ...]:
+    resources = resolve_resource_paths()
+    candidates: list[Path] = []
+
+    installed = installed_model_path(PARAFORMER_MODEL_ID)
+    if installed is not None:
+        candidates.append(installed.expanduser().resolve().parent)
+
+    candidates.append(resources.models_dir.expanduser().resolve())
+
+    seen: set[Path] = set()
+    ordered: list[Path] = []
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        ordered.append(candidate)
+    return tuple(ordered)
+
+
+def _build_hf_progress_tqdm(progress: callable | None, *, label: str) -> type | None:
+    if progress is None:
+        return None
+
+    if huggingface_tqdm is None:
+        return None
+
+    class _ProgressTqdm(huggingface_tqdm):
+        def __init__(self, *args, **kwargs) -> None:
+            self._progress = progress
+            self._label = kwargs.get("desc") or label
+            self._last_percent = -1
+            self._last_emit_at = 0.0
+            kwargs.setdefault("disable", True)
+            super().__init__(*args, **kwargs)
+            self._emit(force=True)
+
+        def update(self, n: int = 1) -> None:
+            super().update(n)
+            self._emit()
+
+        def refresh(self, *args, **kwargs) -> None:
+            super().refresh(*args, **kwargs)
+            self._emit()
+
+        def close(self) -> None:
+            self._emit(force=True)
+            super().close()
+
+        def set_description(self, desc: str | None = None, refresh: bool = True) -> None:
+            if desc:
+                self._label = desc
+            super().set_description(desc, refresh=refresh)
+            if refresh:
+                self._emit(force=True)
+
+        def _emit(self, *, force: bool = False) -> None:
+            now = monotonic()
+            total = getattr(self, "total", None)
+            current = getattr(self, "n", 0) or 0
+            if total:
+                percent = int(min(100, (current / total) * 100))
+                if force or percent != self._last_percent or (now - self._last_emit_at) >= 0.8:
+                    self._progress(f"{self._label}: {percent}%")
+                    self._last_percent = percent
+                    self._last_emit_at = now
+            elif force or (now - self._last_emit_at) >= 0.8:
+                self._progress(f"{self._label}: downloading...")
+                self._last_emit_at = now
+
+    return _ProgressTqdm
+
+
+def _build_modelscope_progress_callback(model_id: str, progress: callable) -> type:
+    class _ModelScopeProgressCallback:
+        def __init__(self, filename: str, file_size: int) -> None:
+            self._filename = filename
+            self._file_size = file_size
+            self._model_id = model_id
+            self._progress = progress
+            self._downloaded = 0
+            self._last_percent = -1
+            self._last_emit_at = 0.0
+
+        def update(self, size: int) -> None:
+            self._downloaded += size
+            now = monotonic()
+            if self._file_size > 0:
+                percent = int(min(100, (self._downloaded / self._file_size) * 100))
+                if percent != self._last_percent or (now - self._last_emit_at) >= 0.8:
+                    self._progress(f"{self._model_id}/{self._filename}: {percent}%")
+                    self._last_percent = percent
+                    self._last_emit_at = now
+            elif (now - self._last_emit_at) >= 0.8:
+                self._progress(
+                    f"{self._model_id}/{self._filename}: downloaded {self._downloaded // (1024 * 1024)} MB"
+                )
+                self._last_emit_at = now
+
+        def end(self) -> None:
+            self._progress(f"{self._model_id}/{self._filename}: download complete")
+
+    return _ModelScopeProgressCallback
+
+
+def _paraformer_allow_patterns(target_name: str) -> tuple[str, ...]:
+    required = PARAFORMER_REQUIRED_FILES.get(target_name, ())
+    return tuple(required)
+
+
+def _missing_paraformer_files(target_dir: Path) -> tuple[str, ...]:
+    required = PARAFORMER_REQUIRED_FILES.get(target_dir.name, ())
+    if not required:
+        return ()
+
+    exists_config = any((target_dir / candidate).exists() for candidate in ("configuration.json", "config.yaml"))
+    missing: list[str] = []
+    for name in required:
+        if name in {"configuration.json", "config.yaml"}:
+            continue
+        if not (target_dir / name).exists():
+            missing.append(name)
+    if not exists_config:
+        missing.append("configuration.json/config.yaml")
+    return tuple(missing)
