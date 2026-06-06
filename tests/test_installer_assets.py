@@ -28,3 +28,18 @@ def test_build_installers_script_mentions_docs_and_signing() -> None:
     assert "build_docs_site.py" in content
     assert "Invoke-SignIfConfigured" in content
     assert "FlowScribeSetup-offline-x64.exe" in content
+
+
+def test_online_installer_defaults_to_gitee_release_mirror() -> None:
+    content = (PROJECT_ROOT / "installer" / "FlowScribe-online.iss").read_text(encoding="utf-8")
+
+    assert "https://gitee.com/Ducker-Fry/FlowScribe/releases/download/" in content
+
+
+def test_build_installers_script_supports_release_mirror_selection() -> None:
+    content = (PROJECT_ROOT / "scripts" / "build_installers.ps1").read_text(encoding="utf-8")
+
+    assert '[ValidateSet("gitee", "github")]' in content
+    assert '[string]$ReleaseMirror = "gitee"' in content
+    assert "Get-DefaultReleaseBaseUrl" in content
+    assert "https://gitee.com/Ducker-Fry/FlowScribe/releases/download/$VersionTag" in content

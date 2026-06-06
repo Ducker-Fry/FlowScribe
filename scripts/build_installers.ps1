@@ -4,6 +4,8 @@ param(
     [switch]$OfflineOnly,
     [switch]$OnlineOnly,
     [string]$OnlineVersion = "",
+    [ValidateSet("gitee", "github")]
+    [string]$ReleaseMirror = "gitee",
     [string]$OnlineBaseUrl = "",
     [string]$OnlineCliUrl = "",
     [string]$OnlineGuiUrl = "",
@@ -56,6 +58,19 @@ function Get-ProjectVersion {
         throw "Could not determine version from $pyprojectPath"
     }
     return $match.Groups[1].Value
+}
+
+function Get-DefaultReleaseBaseUrl {
+    param(
+        [string]$VersionTag,
+        [string]$Mirror
+    )
+
+    if ($Mirror -eq "github") {
+        return "https://github.com/Ducker-Fry/FlowScribe/releases/download/$VersionTag"
+    }
+
+    return "https://gitee.com/Ducker-Fry/FlowScribe/releases/download/$VersionTag"
 }
 
 function Resolve-IsccPath {
@@ -204,7 +219,7 @@ function Get-OnlineAssetMetadata {
         $resolvedBaseUrl = $LocalTestFeedBaseUrl.TrimEnd('/')
     } elseif (-not $OnlineCliUrl -and -not $OnlineGuiUrl) {
         if (-not $resolvedBaseUrl) {
-            $resolvedBaseUrl = "https://github.com/Ducker-Fry/FlowScribe/releases/download/$versionTag"
+            $resolvedBaseUrl = Get-DefaultReleaseBaseUrl -VersionTag $versionTag -Mirror $ReleaseMirror
         }
     }
 

@@ -9,7 +9,7 @@
 打开最新发布页：
 
 ```text
-https://github.com/Ducker-Fry/FlowScribe/releases
+https://gitee.com/Ducker-Fry/FlowScribe/releases
 ```
 
 根据需要下载：
