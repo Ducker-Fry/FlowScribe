@@ -344,7 +344,7 @@ def test_parse_transcribe_args_supports_agent_flags(tmp_path: Path) -> None:
 def test_run_transcribe_json_output(monkeypatch, tmp_path: Path) -> None:
     from flowscribe.cli.main import run_transcribe
     from flowscribe.core.models import OutputArtifacts
-    from flowscribe.tasks.models import TaskSpec, TranscriptionResult
+    from flowscribe.tasks.models import TranscriptionResult
 
     media = tmp_path / "sample.mp4"
     media.write_bytes(b"media")

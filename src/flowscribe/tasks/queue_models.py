@@ -7,6 +7,7 @@ from datetime import datetime
 from hashlib import sha1
 from pathlib import Path
 from typing import Literal
+from urllib.parse import unquote, urlparse
 
 from flowscribe.tasks.models import SourceSpec, TranscriptionJob
 
@@ -68,7 +69,11 @@ class QueueItem:
         return Path(self.source.value).name
 
     def to_job(self) -> TranscriptionJob:
-        effective_output_dir = allocate_series_output_dir(self.settings.output_dir)
+        effective_output_dir = (
+            allocate_series_output_dir(self.settings.output_dir)
+            if self.settings.output_dir.is_absolute()
+            else self.settings.output_dir / _queue_item_output_dir_name(self)
+        )
 
         return TranscriptionJob(
             sources=(self.source,),
@@ -118,6 +123,35 @@ def allocate_series_output_dir(root_dir: Path) -> Path:
             return candidate
         except FileExistsError:
             next_index += 1
+
+
+def _queue_item_output_dir_name(item: QueueItem) -> str:
+    timestamp = item.created_at.strftime("%H%M%S")
+    stem = _sanitize_dirname(_source_stem(item.source))
+    return f"{timestamp}-{item.item_id}-{stem}"
+
+
+def _source_stem(source: SourceSpec) -> str:
+    if source.kind == "local":
+        return Path(source.value).stem
+
+    if source.kind == "url":
+        parsed = urlparse(source.value)
+        name = Path(unquote(parsed.path)).stem
+        if name:
+            return name
+        return f"url-{generate_queue_item_id(source)}"
+
+    return f"{source.kind}-{generate_queue_item_id(source)}"
+
+
+def _sanitize_dirname(value: str, *, max_length: int = 100) -> str:
+    forbidden = '<>:"/\\|?*'
+    cleaned = "".join("-" if char in forbidden else char for char in str(value).strip())
+    cleaned = cleaned.strip(" .")
+    if not cleaned:
+        cleaned = "source"
+    return cleaned[:max_length]
 
 
 def generate_queue_item_id(source: SourceSpec) -> str:

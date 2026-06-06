@@ -32,7 +32,7 @@ from flowscribe.core.models import (
 )
 from flowscribe.pipeline.progressive import tuned_chunk_overlap_seconds
 from flowscribe.pipeline.runtime_factory import (
-    build_transcription_pipeline,
+    build_pipeline_from_provider,
     process_with_optional_progress,
     settings_from_job,
 )
@@ -40,16 +40,42 @@ from flowscribe.pipeline.url_transcription import UrlTranscriptionPipeline
 from flowscribe.input.local_source import LocalFileSource
 from flowscribe.input.url_downloader import UrlAudioDownloader
 from flowscribe.providers.transcribe.registry import (
+    ProviderTranscriptionSettings,
     is_native_engine_provider_name,
+    resolve_transcription_provider,
     supports_python_progressive_provider_name,
 )
 
 LOGGER = logging.getLogger(__name__)
 
 # Compatibility aliases for existing tests and external integrations.
-_build_pipeline = build_transcription_pipeline
 _process_with_optional_progress = process_with_optional_progress
 _settings_from_job = settings_from_job
+
+
+def _build_pipeline(job: TranscriptionJob, settings):
+    provider = resolve_transcription_provider(job.provider_name)
+    provider_settings = ProviderTranscriptionSettings(
+        model_name=settings.model_name,
+        language=settings.language,
+        task=settings.task,
+        beam_size=settings.beam_size,
+        vad_filter=settings.vad_filter,
+        initial_prompt=settings.initial_prompt,
+        preset=settings.preset,
+        word_timestamps=settings.word_timestamps,
+        progressive_enabled=job.progressive_enabled,
+        progressive_chunk_seconds=job.progressive_chunk_seconds,
+        progressive_chunk_overlap_seconds=job.progressive_chunk_overlap_seconds,
+        progressive_max_workers=job.progressive_max_workers,
+        native_threads=job.native_threads,
+    )
+    return build_pipeline_from_provider(
+        job,
+        settings,
+        provider=provider,
+        provider_settings=provider_settings,
+    )
 
 
 class TranscriptionService:

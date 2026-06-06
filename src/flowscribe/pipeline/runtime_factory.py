@@ -20,6 +20,7 @@ from flowscribe.output.vtt_writer import VttTranscriptWriter
 from flowscribe.pipeline.transcription import LocalTranscriptionPipeline
 from flowscribe.providers.transcribe.registry import (
     ProviderTranscriptionSettings,
+    TranscriptionProvider,
     resolve_transcription_provider,
 )
 from flowscribe.tasks.models import ProgressEvent, TranscriptionJob
@@ -45,10 +46,6 @@ def settings_from_job(job: TranscriptionJob, *, recursive: bool) -> AppSettings:
 
 
 def build_transcription_pipeline(job: TranscriptionJob, settings: AppSettings) -> LocalTranscriptionPipeline:
-    path_builder = OutputPathBuilder(
-        overwrite=settings.overwrite,
-        base_name=job.output_name_base,
-    )
     provider = resolve_transcription_provider(job.provider_name)
     provider_settings = ProviderTranscriptionSettings(
         model_name=settings.model_name,
@@ -64,6 +61,25 @@ def build_transcription_pipeline(job: TranscriptionJob, settings: AppSettings) -
         progressive_chunk_overlap_seconds=job.progressive_chunk_overlap_seconds,
         progressive_max_workers=job.progressive_max_workers,
         native_threads=job.native_threads,
+    )
+    return build_pipeline_from_provider(
+        job,
+        settings,
+        provider=provider,
+        provider_settings=provider_settings,
+    )
+
+
+def build_pipeline_from_provider(
+    job: TranscriptionJob,
+    settings: AppSettings,
+    *,
+    provider: TranscriptionProvider,
+    provider_settings: ProviderTranscriptionSettings,
+) -> LocalTranscriptionPipeline:
+    path_builder = OutputPathBuilder(
+        overwrite=settings.overwrite,
+        base_name=job.output_name_base,
     )
     return LocalTranscriptionPipeline(
         media_preparer=FfmpegAudioExtractor(sample_rate=settings.sample_rate),

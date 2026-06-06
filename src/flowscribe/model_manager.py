@@ -210,7 +210,6 @@ def download_model(
         raise InputError(f"Unknown model id: {model_id}")
 
     target_root, cache_root = _resolve_download_paths(models_dir)
-    resources = resolve_resource_paths()
     cache_root.mkdir(parents=True, exist_ok=True)
 
     if progress is not None:
@@ -356,14 +355,10 @@ def _upsert_installed_model(
 ) -> InstalledModelRecord:
     resources = resolve_resource_paths()
     config = resources.install_config
-    existing_entries = ()
     if config is not None:
         filtered = [item for item in config.installed_models if item.model_id != entry.model_id]
         filtered.append(entry)
         update_installed_models(tuple(filtered))
-        existing_entries = tuple(filtered)
-    elif catalog is not None:
-        existing_entries = (entry,)
     return InstalledModelRecord(
         model_id=entry.model_id,
         provider_name=entry.provider_name,

@@ -8,7 +8,6 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import TextIO
 
 LOG_DIR_ENV = "FLOWSCRIBE_LOG_DIR"
 LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"

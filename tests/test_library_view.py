@@ -10,7 +10,6 @@ import pytest
 from flowscribe.library import TranscriptLibraryEntry, TranscriptLibraryStore
 
 try:
-    from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QApplication, QListWidget
 except ImportError:  # pragma: no cover
     pytest.skip("PySide6 not available", allow_module_level=True)
