@@ -12,9 +12,16 @@ The GUI build also builds and copies the WASAPI capture helper into
 `dist\FlowScribeGUI` so packaged system-audio capture can find
 `WasapiCaptureHelper.exe` next to `FlowScribeGUI.exe`.
 
-The GUI package now always bundles the Paraformer runtime (`funasr`,
-`modelscope`). Users only need to download Paraformer models from Model Center;
-they should not need to install extra Python packages on the target machine.
+The GUI script now stages PyInstaller output under `build\pyinstaller-dist`
+and syncs only the GUI application payload back into `dist\FlowScribeGUI`.
+Stable sibling files such as `ffmpeg.exe`, `ffprobe.exe`,
+`WasapiCaptureHelper.exe`, and `FlowScribeURL.exe` are reused when unchanged
+instead of being deleted and recopied on every source edit.
+
+When the selected Python build environment can fully import `funasr`,
+`modelscope`, and `torch`, the GUI and CLI packaging scripts also bundle the
+Paraformer runtime. If those optional runtime dependencies are incomplete, the
+build now skips Paraformer bundling instead of failing the whole package build.
 
 ## URL Packaging
 

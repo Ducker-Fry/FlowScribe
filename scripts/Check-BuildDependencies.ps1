@@ -384,6 +384,41 @@ function Test-PythonPackage {
     }
 }
 
+function Test-PythonPackagePresence {
+    param(
+        [string]$PythonCmd,
+        [string]$PackageName,
+        [string]$ImportName = $PackageName
+    )
+
+    try {
+        $checkScript = @"
+import importlib.metadata as metadata
+import importlib.util as util
+
+version = metadata.version('$PackageName')
+if util.find_spec('$ImportName') is None:
+    raise ModuleNotFoundError('$ImportName')
+print(version)
+"@
+        $versionOutput = & $PythonCmd -c $checkScript 2>&1
+
+        if ($LASTEXITCODE -eq 0) {
+            return @{ Success = $true; Version = $versionOutput.Trim() }
+        }
+
+        $message = ($versionOutput | Select-Object -Last 1)
+        if (-not [string]::IsNullOrWhiteSpace($message)) {
+            return @{ Success = $false; Message = $message.ToString().Trim() }
+        }
+
+        return @{ Success = $false; Message = "Package metadata or module spec not found" }
+    }
+    catch {
+        return @{ Success = $false; Message = $_.Exception.Message }
+    }
+}
+
 function Install-PythonPackage {
     param(
         [string]$PythonCmd,
@@ -707,37 +742,27 @@ if ($CheckParaformer) {
     )
 
     foreach ($package in $paraformerPackages) {
-        $check = Test-PythonPackage `
+        $check = Test-PythonPackagePresence `
             -PythonCmd $Python `
             -PackageName $package.PackageName `
             -ImportName $package.ImportName
 
         if ($check.Success) {
-            Write-Success "$($package.PackageName) $($check.Version) found"
+            Write-Success "$($package.PackageName) $($check.Version) found for packaging"
             continue
         }
 
-        Write-Warning "$($package.PackageName) not found: $($check.Message)"
+        Write-Warning "$($package.PackageName) not available for packaging: $($check.Message)"
         if ($AutoInstall) {
             $install = Install-PythonPackage -PythonCmd $Python -PackageName $package.PackageName
             if (-not $install) {
-                $allChecksPassed = $false
+                Write-Warning "Continuing without optional Paraformer packaging support for $($package.PackageName)."
             }
             continue
         }
 
-        $choice = Get-UserChoice -Prompt "Install $($package.PackageName) now?"
-        if ($choice -eq "Y") {
-            $install = Install-PythonPackage -PythonCmd $Python -PackageName $package.PackageName
-            if (-not $install) {
-                $allChecksPassed = $false
-            }
-        }
-        else {
-            Write-Info "Skipping $($package.PackageName) installation"
-            Write-Info "Install manually with: $Python -m pip install $($package.PackageName)"
-            $allChecksPassed = $false
-        }
+        Write-Info "Paraformer packaging is optional. Build scripts can continue without $($package.PackageName)."
+        Write-Info "Install manually with: $Python -m pip install $($package.PackageName)"
     }
 }
 

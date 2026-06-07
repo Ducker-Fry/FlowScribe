@@ -64,25 +64,33 @@ The CLI script will:
 2. Install FlowScribe dependencies.
 3. Install PyInstaller.
 4. Clean previous `dist/` and `build/` folders unless `-SkipClean` is used.
-5. Build a one-folder executable.
-6. Copy `ffmpeg.exe` and `ffprobe.exe` into the release folder.
-7. Generate `README-USER.txt` for end users.
+5. Bundle optional FunASR Paraformer support only when `funasr`, `modelscope`,
+   and `torch` are fully importable inside the packaging virtual environment.
+6. Build a one-folder executable.
+7. Copy `ffmpeg.exe` and `ffprobe.exe` into the release folder.
+8. Generate `README-USER.txt` for end users.
 
 The GUI script will:
 
 1. Reuse the active Python environment.
-2. Build or verify the WASAPI capture helper staging output.
-3. Clean previous GUI build artifacts unless `-SkipClean` is used.
-4. Build a one-folder GUI executable with PyInstaller.
-5. Bundle optional FunASR Paraformer support only when `funasr` and `modelscope`
-   are importable in the build environment.
-6. Copy `WasapiCaptureHelper.exe` and NAudio dependency files into the GUI release folder.
-7. Smoke-test the packaged helper with `WasapiCaptureHelper.exe version`.
-8. Copy `ffmpeg.exe` and `ffprobe.exe` into the GUI release folder for URL media
+2. Rebuild the WASAPI capture helper only when its source tree changed, or
+   reuse `build\wasapi-helper\` when it is already up to date.
+3. Clean only the GUI PyInstaller work area unless `-SkipClean` is used.
+4. Build a one-folder GUI executable with PyInstaller into a staging folder
+   under `build\pyinstaller-dist\FlowScribeGUI`.
+5. Bundle optional FunASR Paraformer support only when `funasr`, `modelscope`,
+   and `torch` are fully importable in the build environment.
+6. Sync the staged GUI payload back into `dist\FlowScribeGUI` without deleting
+   stable sibling dependencies first.
+7. Copy `WasapiCaptureHelper.exe` and NAudio dependency files into the GUI release folder.
+8. Reuse existing `ffmpeg.exe`, `ffprobe.exe`, and `FlowScribeURL.exe` when
+   their source files have not changed.
+9. Smoke-test the packaged helper with `WasapiCaptureHelper.exe version`.
+10. Copy `ffmpeg.exe` and `ffprobe.exe` into the GUI release folder for URL media
    extraction support (same lookup path as the CLI package).
-9. Apply a runtime hook that defaults packaged GUI builds to `FLOWSCRIBE_GUI_LOG_MODE=user`.
-10. Launch the GUI with `--windowed`, so end-user runs do not open a console window.
-11. Preserve the packaged GUI's quiet logging mode while keeping user-facing
+11. Apply a runtime hook that defaults packaged GUI builds to `FLOWSCRIBE_GUI_LOG_MODE=user`.
+12. Launch the GUI with `--windowed`, so end-user runs do not open a console window.
+13. Preserve the packaged GUI's quiet logging mode while keeping user-facing
     helper/capture status text inside the application.
 
 Optional parameters:

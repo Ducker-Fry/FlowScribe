@@ -99,6 +99,67 @@ function Ensure-UrlToolSibling {
     Write-Host "Copied FlowScribeURL.exe into $PackageDir"
 }
 
+function Get-ParaformerPackagingSupport {
+    param([string]$PythonCmd)
+
+    $checkScript = @'
+import importlib.metadata as metadata
+import importlib.util as util
+
+required = {
+    "funasr": "funasr",
+    "modelscope": "modelscope",
+    "torch": "torch",
+}
+
+versions = {}
+for package_name, module_name in required.items():
+    try:
+        versions[package_name] = metadata.version(package_name)
+    except metadata.PackageNotFoundError:
+        print(f"missing package metadata: {package_name}")
+        raise SystemExit(1)
+
+    if util.find_spec(module_name) is None:
+        print(f"missing import spec: {module_name}")
+        raise SystemExit(1)
+
+try:
+    import torch  # noqa: F401
+    import funasr
+    import modelscope
+except Exception as exc:
+    print(f"runtime import failed: {exc.__class__.__name__}: {exc}")
+    raise SystemExit(1)
+
+print(
+    "funasr={0}; modelscope={1}; torch={2}".format(
+        versions["funasr"],
+        versions["modelscope"],
+        versions["torch"],
+    )
+)
+'@
+
+    $output = $checkScript | & $PythonCmd - 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        return @{
+            Available = $true
+            Message = ($output | Select-Object -Last 1).ToString().Trim()
+        }
+    }
+
+    $message = ($output | Select-Object -Last 1)
+    if ([string]::IsNullOrWhiteSpace($message)) {
+        $message = "unknown reason"
+    }
+
+    return @{
+        Available = $false
+        Message = $message.ToString().Trim()
+    }
+}
+
 Push-Location $ProjectRoot
 try {
     Write-Step "Check build dependencies"
@@ -131,29 +192,53 @@ try {
         }
     }
 
+    Write-Step "Check optional Paraformer packaging support"
+    $paraformerSupport = Get-ParaformerPackagingSupport -PythonCmd $PythonExe
+    if ($paraformerSupport.Available) {
+        Write-Host "  Paraformer runtime will be bundled ($($paraformerSupport.Message))." -ForegroundColor Green
+    } else {
+        Write-Host "  Skipping Paraformer runtime bundling: $($paraformerSupport.Message)" -ForegroundColor Yellow
+    }
+
     Write-Step "Build one-folder executable"
-    & $PythonExe -m PyInstaller `
-        --name $AppName `
-        --onedir `
-        --console `
-        --clean `
-        --noconfirm `
-        --collect-all faster_whisper `
-        --collect-all ctranslate2 `
-        --collect-all tokenizers `
-        --collect-all av `
-        --collect-all onnxruntime `
-        --hidden-import faster_whisper `
-        --hidden-import ctranslate2 `
-        --hidden-import tokenizers `
-        --hidden-import av `
-        --hidden-import onnxruntime `
-        --copy-metadata faster-whisper `
-        --copy-metadata ctranslate2 `
-        --copy-metadata tokenizers `
-        --copy-metadata av `
-        --copy-metadata onnxruntime `
-        "src\flowscribe\__main__.py"
+    $PyInstallerArgs = @(
+        "-m",
+        "PyInstaller",
+        "--name", $AppName,
+        "--onedir",
+        "--console",
+        "--clean",
+        "--noconfirm",
+        "--collect-all", "faster_whisper",
+        "--collect-all", "ctranslate2",
+        "--collect-all", "tokenizers",
+        "--collect-all", "av",
+        "--collect-all", "onnxruntime",
+        "--hidden-import", "faster_whisper",
+        "--hidden-import", "ctranslate2",
+        "--hidden-import", "tokenizers",
+        "--hidden-import", "av",
+        "--hidden-import", "onnxruntime",
+        "--copy-metadata", "faster-whisper",
+        "--copy-metadata", "ctranslate2",
+        "--copy-metadata", "tokenizers",
+        "--copy-metadata", "av",
+        "--copy-metadata", "onnxruntime"
+    )
+
+    if ($paraformerSupport.Available) {
+        $PyInstallerArgs += @(
+            "--hidden-import", "funasr",
+            "--hidden-import", "modelscope",
+            "--collect-all", "funasr",
+            "--collect-all", "modelscope",
+            "--copy-metadata", "funasr",
+            "--copy-metadata", "modelscope"
+        )
+    }
+
+    $PyInstallerArgs += "src\flowscribe\__main__.py"
+    & $PythonExe @PyInstallerArgs
 
     Write-Step "Copy ffmpeg and ffprobe into release folder"
     Copy-Tool -Name "ffmpeg" -DestinationDir $PackageDir
