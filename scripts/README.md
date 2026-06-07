@@ -12,9 +12,9 @@ The GUI build also builds and copies the WASAPI capture helper into
 `dist\FlowScribeGUI` so packaged system-audio capture can find
 `WasapiCaptureHelper.exe` next to `FlowScribeGUI.exe`.
 
-If optional Paraformer dependencies (`funasr`, `modelscope`) are importable,
-the GUI package also bundles FunASR support. If they are missing, the GUI build
-still succeeds and packages the rest of the desktop app.
+The GUI package now always bundles the Paraformer runtime (`funasr`,
+`modelscope`). Users only need to download Paraformer models from Model Center;
+they should not need to install extra Python packages on the target machine.
 
 ## URL Packaging
 

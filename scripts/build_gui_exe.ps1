@@ -3,7 +3,6 @@ param(
     [string]$AppName = "FlowScribeGUI",
     [string]$DotNet = "dotnet",
     [switch]$IncludeBundledModels,
-    [switch]$IncludeParaformer,
     [switch]$SkipHelperBuild,
     [switch]$SkipClean
 )
@@ -123,6 +122,19 @@ function Copy-WasapiHelper {
     }
 }
 
+function Assert-PackagedParaformerRuntime {
+    param([string]$DestinationDir)
+
+    $funasrDir = Join-Path $DestinationDir "_internal\funasr"
+    $modelscopeDir = Join-Path $DestinationDir "_internal\modelscope"
+    if (-not (Test-Path $funasrDir)) {
+        throw "Packaged GUI is missing FunASR runtime directory: $funasrDir"
+    }
+    if (-not (Test-Path $modelscopeDir)) {
+        throw "Packaged GUI is missing ModelScope runtime directory: $modelscopeDir"
+    }
+}
+
 function Ensure-UrlToolSibling {
     if (-not (Test-Path (Join-Path $UrlToolPackageDir "FlowScribeURL.exe"))) {
         Write-Step "Build standalone URL tool"
@@ -142,6 +154,14 @@ function Test-OptionalParaformerPackaging {
 
     & $PythonCmd -c "import funasr, modelscope; print('funasr', getattr(funasr, '__version__', 'unknown')); print('modelscope', getattr(modelscope, '__version__', 'unknown'))"
     return ($LASTEXITCODE -eq 0)
+}
+
+function Assert-ParaformerPackagingSupport {
+    param([string]$PythonCmd)
+
+    if (-not (Test-OptionalParaformerPackaging -PythonCmd $PythonCmd)) {
+        throw "GUI packaging requires funasr and modelscope to be importable in the selected Python environment."
+    }
 }
 
 function Write-AppendedLogLines {
@@ -212,7 +232,7 @@ function Invoke-LoggedNativeCommand {
 Push-Location $ProjectRoot
 try {
     Write-Step "Check build dependencies"
-    & $DependencyChecker -Python $Python -DotNet $DotNet -CheckPython -CheckDotNet -CheckFfmpeg -CheckPyInstaller -CheckPySide6
+    & $DependencyChecker -Python $Python -DotNet $DotNet -CheckPython -CheckDotNet -CheckFfmpeg -CheckPyInstaller -CheckPySide6 -CheckParaformer
     if ($LASTEXITCODE -ne 0) {
         throw "Dependency check failed. Please resolve the issues above."
     }
@@ -276,20 +296,9 @@ try {
     }
 
     Write-Step "Build GUI one-folder executable"
-
-    $includeParaformer = $false
-    if ($IncludeParaformer) {
-        Write-Step "Check optional Paraformer packaging support"
-        $includeParaformer = Test-OptionalParaformerPackaging -PythonCmd $Python
-        if ($includeParaformer) {
-            Write-Host "  Paraformer dependencies are available; bundling optional FunASR support." -ForegroundColor Green
-        } else {
-            throw "Paraformer packaging was requested, but funasr/modelscope are not importable in the selected Python environment."
-        }
-    } else {
-        Write-Step "Skip optional Paraformer packaging"
-        Write-Host "  Building GUI without bundled FunASR/modelscope payloads. Pass -IncludeParaformer to opt in." -ForegroundColor Yellow
-    }
+    Write-Step "Check required Paraformer packaging support"
+    Assert-ParaformerPackagingSupport -PythonCmd $Python
+    Write-Host "  Paraformer dependencies are available; bundling FunASR and ModelScope runtime support." -ForegroundColor Green
 
     # Check if icon file exists
     $IconPath = Join-Path $ProjectRoot "icons\flowscribe.ico"
@@ -318,19 +327,14 @@ try {
         "--hidden-import", "PySide6.QtMultimediaWidgets",
         "--hidden-import", "PySide6.QtWidgets",
         "--hidden-import", "PySide6.QtSvg",
+        "--hidden-import", "funasr",
+        "--hidden-import", "modelscope",
         "--add-data", "icons;icons",
         "--add-data", "src\flowscribe\gui\themes;flowscribe\gui\themes",
-        "--add-data", "src\flowscribe\gui\assets;flowscribe\gui\assets"
+        "--add-data", "src\flowscribe\gui\assets;flowscribe\gui\assets",
+        "--collect-all", "funasr",
+        "--collect-all", "modelscope"
     )
-
-    if ($includeParaformer) {
-        $PyInstallerArgs += @(
-            "--hidden-import", "funasr",
-            "--hidden-import", "modelscope",
-            "--collect-all", "funasr",
-            "--collect-all", "modelscope"
-        )
-    }
 
     if ($IconArg.Count -gt 0) {
         $PyInstallerArgs += $IconArg
@@ -349,6 +353,9 @@ try {
     if ($pyInstallerExitCode -ne 0) {
         Write-Host "  Warning: PyInstaller returned exit code $pyInstallerExitCode, but the GUI executable was created successfully. Continuing packaging." -ForegroundColor Yellow
     }
+
+    Write-Step "Verify packaged Paraformer runtime"
+    Assert-PackagedParaformerRuntime -DestinationDir $PackageDir
 
     Write-Step "Copy WASAPI helper into GUI release folder"
     Copy-WasapiHelper -SourceDir $HelperStageDir -DestinationDir $PackageDir

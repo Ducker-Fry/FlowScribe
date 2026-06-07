@@ -129,5 +129,5 @@ def flowscribe_log_dir(env: dict[str, str] | None = None) -> Path:
 
 def _default_log_dir() -> Path:
     if bool(getattr(sys, "frozen", False)):
-        return Path(sys.executable).resolve().parent
+        return Path(sys.executable).resolve().parent / "logs"
     return Path(__file__).resolve().parents[3] / "logs"

@@ -26,7 +26,7 @@ def test_flowscribe_log_dir_uses_executable_logs_for_frozen_runs(monkeypatch) ->
     monkeypatch.setattr(runtime_logging.sys, "frozen", True, raising=False)
     monkeypatch.setattr(runtime_logging.sys, "executable", r"E:\Software\FlowScribeGUI\FlowScribeGUI.exe")
 
-    assert flowscribe_log_dir({}) == runtime_logging.Path(r"E:\Software\FlowScribeGUI")
+    assert flowscribe_log_dir({}) == runtime_logging.Path(r"E:\Software\FlowScribeGUI\logs")
 
 
 def test_install_null_standard_streams_replaces_missing_streams(monkeypatch) -> None:
