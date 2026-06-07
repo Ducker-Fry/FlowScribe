@@ -60,6 +60,7 @@ Documentation = "https://github.com/Ducker-Fry/FlowScribe#readme"
 [project.scripts]
 flowscribe = "flowscribe.cli.main:main"
 flowscribe-gui = "flowscribe.gui.qt_app:run_gui"
+flowscribe-url = "flowscribe.url_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

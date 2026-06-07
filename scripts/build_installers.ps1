@@ -165,11 +165,21 @@ function Test-PackagedCliInstallCommand {
     }
 }
 
+function Test-PackagedUrlToolExists {
+    param([string]$PackageDir)
+
+    return (Test-Path (Join-Path $PackageDir "FlowScribeURL.exe"))
+}
+
 function Ensure-ReleasePayloads {
     $cliDir = Join-Path $DistRoot "FlowScribe"
     $guiDir = Join-Path $DistRoot "FlowScribeGUI"
 
-    if (-not (Test-Path $cliDir) -or -not (Test-PackagedCliInstallCommand)) {
+    if (
+        -not (Test-Path $cliDir) -or
+        -not (Test-PackagedCliInstallCommand) -or
+        -not (Test-PackagedUrlToolExists -PackageDir $cliDir)
+    ) {
         Write-Step "Build fresh CLI release payload"
         & powershell -NoProfile -ExecutionPolicy Bypass -File $CliBuilder -Python $Python
         if ($LASTEXITCODE -ne 0) {
@@ -177,7 +187,7 @@ function Ensure-ReleasePayloads {
         }
     }
 
-    if (-not (Test-Path $guiDir)) {
+    if (-not (Test-Path $guiDir) -or -not (Test-PackagedUrlToolExists -PackageDir $guiDir)) {
         Write-Step "Build fresh GUI release payload"
         & powershell -NoProfile -ExecutionPolicy Bypass -File $GuiBuilder -Python $Python
         if ($LASTEXITCODE -ne 0) {

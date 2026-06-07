@@ -18,6 +18,8 @@ $ProjectRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $DistRoot = Join-Path $ProjectRoot "dist"
 $BuildRoot = Join-Path $ProjectRoot "build"
 $PackageDir = Join-Path $DistRoot $AppName
+$UrlBuilder = Join-Path $ProjectRoot "scripts\build_url_exe.ps1"
+$UrlToolPackageDir = Join-Path $DistRoot "FlowScribeURL"
 $RuntimeHook = Join-Path $ProjectRoot "scripts\pyinstaller_gui_runtime_hook.py"
 $HelperBuildScript = Join-Path $ProjectRoot "scripts\build_wasapi_helper.ps1"
 $HelperStageDir = Join-Path $ProjectRoot "build\wasapi-helper"
@@ -119,6 +121,20 @@ function Copy-WasapiHelper {
     if ($LASTEXITCODE -ne 0) {
         throw "Packaged WASAPI helper version smoke test failed."
     }
+}
+
+function Ensure-UrlToolSibling {
+    if (-not (Test-Path (Join-Path $UrlToolPackageDir "FlowScribeURL.exe"))) {
+        Write-Step "Build standalone URL tool"
+        & $UrlBuilder -Python $Python -SkipClean
+        if ($LASTEXITCODE -ne 0) {
+            throw "Standalone URL tool packaging failed."
+        }
+    }
+
+    $sourceExe = Join-Path $UrlToolPackageDir "FlowScribeURL.exe"
+    Copy-Item -LiteralPath $sourceExe -Destination (Join-Path $PackageDir "FlowScribeURL.exe") -Force
+    Write-Host "Copied FlowScribeURL.exe into $PackageDir"
 }
 
 function Test-OptionalParaformerPackaging {
@@ -340,6 +356,9 @@ try {
     Write-Step "Copy ffmpeg and ffprobe into GUI release folder"
     Copy-Tool -Name "ffmpeg" -DestinationDir $PackageDir
     Copy-Tool -Name "ffprobe" -DestinationDir $PackageDir
+
+    Write-Step "Copy standalone URL tool next to GUI executable"
+    Ensure-UrlToolSibling
 
     if ($IncludeBundledModels) {
         if (-not (Test-Path $ModelsSourceDir)) {

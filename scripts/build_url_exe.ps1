@@ -1,13 +1,12 @@
 param(
     [string]$Python = "python",
     [string]$VenvPath = ".venv-build",
-    [string]$AppName = "FlowScribe",
+    [string]$AppName = "FlowScribeURL",
     [switch]$SkipClean
 )
 
 $ErrorActionPreference = "Stop"
 
-# Set console output encoding to UTF-8 to fix Chinese character display
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
 
@@ -17,8 +16,7 @@ $PythonExe = Join-Path $VenvFullPath "Scripts\python.exe"
 $DistRoot = Join-Path $ProjectRoot "dist"
 $BuildRoot = Join-Path $ProjectRoot "build"
 $PackageDir = Join-Path $DistRoot $AppName
-$UrlBuilder = Join-Path $PSScriptRoot "build_url_exe.ps1"
-$UrlToolPackageDir = Join-Path $DistRoot "FlowScribeURL"
+$SingleExePath = Join-Path $DistRoot "$AppName.exe"
 $ReleaseReadme = Join-Path $PackageDir "README-USER.txt"
 $UserBase = Join-Path $ProjectRoot ".py-user-base"
 $DependencyChecker = Join-Path $PSScriptRoot "Check-BuildDependencies.ps1"
@@ -85,20 +83,6 @@ function Copy-Tool {
     throw "$Name was not found or could not run. Install a working ffmpeg build before packaging."
 }
 
-function Ensure-UrlToolSibling {
-    if (-not (Test-Path (Join-Path $UrlToolPackageDir "FlowScribeURL.exe"))) {
-        Write-Step "Build standalone URL tool"
-        & powershell -NoProfile -ExecutionPolicy Bypass -File $UrlBuilder -Python $Python -SkipClean
-        if ($LASTEXITCODE -ne 0) {
-            throw "Standalone URL tool packaging failed."
-        }
-    }
-
-    $sourceExe = Join-Path $UrlToolPackageDir "FlowScribeURL.exe"
-    Copy-Item -LiteralPath $sourceExe -Destination (Join-Path $PackageDir "FlowScribeURL.exe") -Force
-    Write-Host "Copied FlowScribeURL.exe into $PackageDir"
-}
-
 Push-Location $ProjectRoot
 try {
     Write-Step "Check build dependencies"
@@ -122,74 +106,51 @@ try {
     & $PythonExe -m pip install pyinstaller
 
     if (-not $SkipClean) {
-        Write-Step "Clean previous build artifacts"
-        if (Test-Path $DistRoot) {
-            Remove-Item -LiteralPath $DistRoot -Recurse -Force
+        Write-Step "Clean previous URL build artifacts"
+        if (Test-Path $PackageDir) {
+            Remove-Item -LiteralPath $PackageDir -Recurse -Force
         }
-        if (Test-Path $BuildRoot) {
-            Remove-Item -LiteralPath $BuildRoot -Recurse -Force
+        if (Test-Path $SingleExePath) {
+            Remove-Item -LiteralPath $SingleExePath -Force
+        }
+        $UrlBuildDir = Join-Path $BuildRoot $AppName
+        if (Test-Path $UrlBuildDir) {
+            Remove-Item -LiteralPath $UrlBuildDir -Recurse -Force
         }
     }
 
-    Write-Step "Build one-folder executable"
-    & $PythonExe -m PyInstaller `
-        --name $AppName `
-        --onedir `
-        --console `
-        --clean `
-        --noconfirm `
-        --collect-all faster_whisper `
-        --collect-all ctranslate2 `
-        --collect-all tokenizers `
-        --collect-all av `
-        --collect-all onnxruntime `
-        --hidden-import faster_whisper `
-        --hidden-import ctranslate2 `
-        --hidden-import tokenizers `
-        --hidden-import av `
-        --hidden-import onnxruntime `
-        --copy-metadata faster-whisper `
-        --copy-metadata ctranslate2 `
-        --copy-metadata tokenizers `
-        --copy-metadata av `
-        --copy-metadata onnxruntime `
-        "src\flowscribe\__main__.py"
+    Write-Step "Build standalone URL executable"
+    & $PythonExe -m PyInstaller --clean --noconfirm ".\FlowScribeURL.spec"
+
+    if (-not (Test-Path $SingleExePath)) {
+        throw "PyInstaller did not create $SingleExePath"
+    }
+
+    New-Item -ItemType Directory -Path $PackageDir -Force | Out-Null
+    Copy-Item -LiteralPath $SingleExePath -Destination (Join-Path $PackageDir "$AppName.exe") -Force
 
     Write-Step "Copy ffmpeg and ffprobe into release folder"
     Copy-Tool -Name "ffmpeg" -DestinationDir $PackageDir
     Copy-Tool -Name "ffprobe" -DestinationDir $PackageDir
 
-    Write-Step "Copy standalone URL tool next to CLI executable"
-    Ensure-UrlToolSibling
-
     Write-Step "Generate end-user README"
     @"
-FlowScribe Windows Portable
-===========================
+FlowScribeURL Windows Portable
+==============================
 
-This folder contains a portable FlowScribe CLI build for Windows.
+This folder contains the standalone FlowScribe URL acquisition tool.
 
-Quick check:
-  .\FlowScribe.exe doctor
+Quick checks:
+  .\FlowScribeURL.exe version
+  .\FlowScribeURL.exe inspect https://example.com/video
 
-Transcribe a local video:
-  .\FlowScribe.exe "D:\media\lecture.mp4" -o outputs --model small --preset zh
-
-Transcribe an English video:
-  .\FlowScribe.exe "D:\media\english.mp4" -o outputs --model small --language en
+Download remote audio:
+  .\FlowScribeURL.exe download https://example.com/video -o outputs\url-downloads
 
 Notes:
   - ffmpeg.exe and ffprobe.exe are included in this folder.
-  - FlowScribeURL.exe is included next to FlowScribe.exe for URL inspection/download.
-  - Whisper models are NOT bundled in the executable.
-  - The first transcription with a model may download files from Hugging Face.
-  - Use --model tiny only for quick smoke tests.
-  - Use --model small or medium for real transcription.
-  - Outputs are written to the folder passed with -o, defaulting to outputs.
-
-Legal boundary:
-  Use FlowScribe for personal learning, accessibility, research notes, and lawful media processing.
-  Do not use it to bypass DRM, crack applications, or redistribute copyrighted transcripts without permission.
+  - This tool does not run transcription.
+  - Use it to inspect URL strategy or download media for later processing.
 "@ | Set-Content -LiteralPath $ReleaseReadme -Encoding UTF8
 
     Write-Step "Done"
@@ -197,7 +158,7 @@ Legal boundary:
     Write-Host "Executable: $(Join-Path $PackageDir "$AppName.exe")" -ForegroundColor Green
     Write-Host ""
     Write-Host "Next test:"
-    Write-Host "  `"$PackageDir\$AppName.exe`" doctor"
+    Write-Host "  `"$PackageDir\$AppName.exe`" version"
 }
 finally {
     Pop-Location

@@ -26,6 +26,7 @@ from flowscribe.core.errors import (
 )
 from flowscribe.input.file_filter import SUPPORTED_MEDIA_EXTENSIONS
 from flowscribe.input.url_inspector import UrlInspector
+from flowscribe.input.url_tool_bridge import select_url_inspector_cls
 from flowscribe.media.inspector import LocalMediaInspector
 from flowscribe.output.time_format import format_timestamp
 from flowscribe.search.transcript_search import search_transcript_file
@@ -416,7 +417,7 @@ def run_serve(options) -> int:
 def run_inspect(options) -> int:
     try:
         if _is_http_url(options.source):
-            inspection = UrlInspector(
+            inspection = select_url_inspector_cls(UrlInspector)(
                 timeout_seconds=options.timeout_seconds,
                 network_family=options.network_family,
                 cookies_path=options.cookies,
@@ -835,7 +836,7 @@ def _resolve_cli_progressive_mode_for_url(options) -> tuple[bool, str | None]:
     if options.progressive_mode == "disabled":
         return False, "Using classic one-shot transcription by CLI flag."
     try:
-        inspection = UrlInspector(
+        inspection = select_url_inspector_cls(UrlInspector)(
             timeout_seconds=min(15, options.download_timeout_seconds),
             network_family=options.network_family,
             cookies_path=options.cookies,

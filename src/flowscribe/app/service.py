@@ -39,6 +39,7 @@ from flowscribe.pipeline.runtime_factory import (
 from flowscribe.pipeline.url_transcription import UrlTranscriptionPipeline
 from flowscribe.input.local_source import LocalFileSource
 from flowscribe.input.url_downloader import UrlAudioDownloader
+from flowscribe.input.url_tool_bridge import select_url_downloader_cls
 from flowscribe.providers.transcribe.registry import (
     ProviderTranscriptionSettings,
     is_native_engine_provider_name,
@@ -370,7 +371,7 @@ class TranscriptionService:
             ensure_not_canceled=self._ensure_not_canceled,
             source_progress_wrapper=_with_source_and_totals_for_pipeline,
             update_json_media_binding=self._update_json_media_binding,
-            downloader_cls=UrlAudioDownloader,
+            downloader_cls=select_url_downloader_cls(UrlAudioDownloader),
             pipeline_builder=_build_pipeline,
             subtitle_runner=self._run_subtitle_capability,
         ).run(
