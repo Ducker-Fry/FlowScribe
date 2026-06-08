@@ -9,6 +9,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from flowscribe.utils.runtime_layout import resolve_runtime_layout
+
 LOG_DIR_ENV = "FLOWSCRIBE_LOG_DIR"
 LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
@@ -128,6 +130,7 @@ def flowscribe_log_dir(env: dict[str, str] | None = None) -> Path:
 
 
 def _default_log_dir() -> Path:
-    if bool(getattr(sys, "frozen", False)):
-        return Path(sys.executable).resolve().parent / "logs"
-    return Path(__file__).resolve().parents[3] / "logs"
+    layout = resolve_runtime_layout()
+    if layout.frozen:
+        return layout.app_root / "logs"
+    return layout.source_root / "logs"

@@ -10,13 +10,18 @@ from pathlib import Path
 from flowscribe.core.errors import DownloadError
 from flowscribe.input.url_downloader import DownloadOptions, UrlAudioDownloader, UrlDownloadResult
 from flowscribe.input.url_inspector import UrlFormatInfo, UrlInspection, UrlInspector
+from flowscribe.utils.runtime_layout import resolve_runtime_layout
 from flowscribe.utils.subprocess import hidden_subprocess_kwargs
 
 
 def resolve_external_url_tool() -> Path | None:
-    candidate = Path(sys.executable).resolve().parent / _tool_name()
-    if candidate.exists():
-        return candidate
+    layout = resolve_runtime_layout()
+    for candidate in (
+        layout.core_dir / _tool_name(),
+        layout.app_root / _tool_name(),
+    ):
+        if candidate.exists():
+            return candidate
     return None
 
 

@@ -22,6 +22,7 @@ from flowscribe.core.models import (
 )
 from flowscribe.engine.pipe_client import FlowScribeEngineClient
 from flowscribe.engine.protocol import MessageKind
+from flowscribe.utils.runtime_layout import resolve_runtime_layout
 from flowscribe.utils.subprocess import hidden_subprocess_kwargs
 
 NATIVE_ENGINE_PROVIDER_NAME = "native-engine"
@@ -407,16 +408,18 @@ def resolve_engine_exe() -> Path:
             return path.resolve()
         raise TranscriptionError(f"FLOWSCRIBE_ENGINE_EXE does not point to a file: {env_path}")
 
-    root = Path(__file__).resolve().parents[3]
+    layout = resolve_runtime_layout()
     candidates = (
-        root / "native" / "flowscribe-engine" / "build" / "Release" / _engine_exe_name(),
-        root
+        layout.core_dir / _engine_exe_name(),
+        layout.app_root / _engine_exe_name(),
+        layout.source_root / "native" / "flowscribe-engine" / "build" / "Release" / _engine_exe_name(),
+        layout.source_root
         / "native"
         / "flowscribe-engine"
         / "build"
         / "RelWithDebInfo"
         / _engine_exe_name(),
-        root / "native" / "flowscribe-engine" / "build" / "Debug" / _engine_exe_name(),
+        layout.source_root / "native" / "flowscribe-engine" / "build" / "Debug" / _engine_exe_name(),
     )
     for candidate in candidates:
         if candidate.exists() and candidate.is_file():

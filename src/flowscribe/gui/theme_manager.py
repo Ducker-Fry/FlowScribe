@@ -7,7 +7,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
-THEME_DIR = Path(__file__).parent / "themes"
+from flowscribe.utils.runtime_layout import resolve_runtime_layout
+
+
+def _theme_dir() -> Path:
+    layout = resolve_runtime_layout()
+    candidates = (
+        layout.code_dir / "flowscribe" / "gui" / "themes",
+        layout.app_root / "flowscribe" / "gui" / "themes",
+        Path(__file__).parent / "themes",
+    )
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return Path(__file__).parent / "themes"
 
 
 def get_available_themes() -> tuple[str, ...]:
@@ -48,7 +61,7 @@ def load_theme_stylesheet(theme_name: str) -> str:
             f"Invalid theme '{theme_name}'. Available themes: {get_available_themes()}"
         )
 
-    theme_file = THEME_DIR / f"{theme_name}.qss"
+    theme_file = _theme_dir() / f"{theme_name}.qss"
     if not theme_file.exists():
         raise FileNotFoundError(f"Theme file not found: {theme_file}")
 

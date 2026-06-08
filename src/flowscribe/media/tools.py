@@ -3,17 +3,19 @@
 from __future__ import annotations
 
 import shutil
-import sys
 from pathlib import Path
+
+from flowscribe.utils.runtime_layout import resolve_runtime_layout
 
 
 def resolve_tool_path(name: str) -> str:
     """Resolve a bundled tool first, then fall back to PATH."""
 
     candidates = []
-    executable_dir = Path(sys.executable).resolve().parent
-    candidates.append(executable_dir / f"{name}.exe")
-    candidates.append(executable_dir / name)
+    layout = resolve_runtime_layout()
+    for root in (layout.core_dir, layout.app_root):
+        candidates.append(root / f"{name}.exe")
+        candidates.append(root / name)
 
     for candidate in candidates:
         if candidate.exists():

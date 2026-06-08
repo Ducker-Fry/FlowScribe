@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 
 from flowscribe import __version__
@@ -27,6 +28,13 @@ def run_gui(argv: list[str] | None = None) -> int:
     app.setApplicationName("FlowScribe")
     app.setApplicationVersion(__version__)
     LOGGER.debug("Starting GUI in %s mode.", log_mode)
+
+    auto_close_ms = _gui_auto_close_ms()
+    if auto_close_ms is not None:
+        from PySide6.QtCore import QTimer
+
+        QTimer.singleShot(auto_close_ms, app.quit)
+        LOGGER.info("GUI auto-close timer enabled for %s ms.", auto_close_ms)
 
     # Set application icon
     from flowscribe.gui.icons import get_app_icon
@@ -68,3 +76,14 @@ class FlowScribeMainWindow:
         from flowscribe.gui.new_main_window import NewMainWindow
 
         return NewMainWindow()
+
+
+def _gui_auto_close_ms() -> int | None:
+    raw_value = os.environ.get("FLOWSCRIBE_GUI_AUTOCLOSE_MS")
+    if raw_value is None or not raw_value.strip():
+        return None
+    try:
+        value = int(raw_value)
+    except ValueError:
+        return None
+    return value if value > 0 else None

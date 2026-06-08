@@ -6,12 +6,13 @@ Icons are based on Material Design Icons (Apache 2.0 license).
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtSvg import QSvgRenderer
+
+from flowscribe.utils.runtime_layout import resolve_runtime_layout
 
 
 def _get_icon_path() -> Path:
@@ -19,13 +20,15 @@ def _get_icon_path() -> Path:
 
     Handles both development (running from source) and production (PyInstaller bundle).
     """
-    if getattr(sys, "frozen", False):
-        # Running in PyInstaller bundle
-        base_path = Path(sys._MEIPASS)  # type: ignore
-        return base_path / "icons"
-    else:
-        # Running from source
-        return Path(__file__).parent.parent.parent.parent / "icons"
+    layout = resolve_runtime_layout()
+    candidates = (
+        layout.code_dir / "icons",
+        layout.app_root / "icons",
+    )
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return layout.app_root / "icons"
 
 
 # Path to application icon

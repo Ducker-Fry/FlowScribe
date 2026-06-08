@@ -35,8 +35,6 @@ PARAFORMER_FUNASR_PUNC_MODEL_ID = "iic/punc_ct-transformer_cn-en-common-vocab471
 
 def _default_models_root() -> Path:
     """Compatibility helper for tests and legacy callers."""
-    if bool(getattr(sys, "frozen", False)):
-        return Path(sys.executable).resolve().parent / "models"
     return resolve_resource_paths().models_dir
 
 
