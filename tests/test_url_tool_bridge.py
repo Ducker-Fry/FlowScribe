@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import io
 import json
 import subprocess
 import sys
+from types import SimpleNamespace
 from pathlib import Path
 
 from flowscribe.input.url_downloader import DownloadOptions
@@ -16,6 +18,30 @@ from flowscribe.input.url_tool_bridge import (
 
 def test_selectors_fall_back_without_external_tool(monkeypatch) -> None:
     monkeypatch.setattr("flowscribe.input.url_tool_bridge.resolve_external_url_tool", lambda: None)
+
+    assert select_url_downloader_cls().__name__ == "UrlAudioDownloader"
+    assert select_url_inspector_cls().__name__ == "UrlInspector"
+
+
+def test_selectors_prefer_in_process_url_runtime_for_layered_frozen_build(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    code_dir = tmp_path / "code"
+    (code_dir / "flowscribe").mkdir(parents=True)
+    monkeypatch.delenv("FLOWSCRIBE_PREFER_EXTERNAL_URL_TOOL", raising=False)
+    monkeypatch.setattr(
+        "flowscribe.input.url_tool_bridge.resolve_runtime_layout",
+        lambda: SimpleNamespace(
+            frozen=True,
+            layered=True,
+            code_dir=code_dir,
+        ),
+    )
+    monkeypatch.setattr(
+        "flowscribe.input.url_tool_bridge.resolve_external_url_tool",
+        lambda: tmp_path / ("FlowScribeURL.exe" if sys.platform == "win32" else "FlowScribeURL"),
+    )
 
     assert select_url_downloader_cls().__name__ == "UrlAudioDownloader"
     assert select_url_inspector_cls().__name__ == "UrlInspector"
@@ -106,3 +132,70 @@ def test_external_url_downloader_invokes_tool(monkeypatch, tmp_path: Path) -> No
     assert result.saved_media_path is not None
     assert "--media-kind" in captured["command"]
     assert "--format" in captured["command"]
+
+
+def test_external_url_downloader_streams_progress(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(
+        "flowscribe.input.url_tool_bridge.resolve_external_url_tool",
+        lambda: tmp_path / ("FlowScribeURL.exe" if sys.platform == "win32" else "FlowScribeURL"),
+    )
+
+    captured: dict[str, object] = {}
+    progress_messages: list[str] = []
+
+    class FakeProcess:
+        def __init__(self) -> None:
+            self.stdout = io.StringIO(
+                "\n".join(
+                    [
+                        json.dumps({"type": "progress", "message": "Inspecting remote media metadata..."}),
+                        json.dumps(
+                            {
+                                "ok": True,
+                                "source": "https://example.com/watch",
+                                "output_dir": str(tmp_path / "downloads"),
+                                "downloaded_audio_path": str(
+                                    tmp_path / "downloads" / "url-demo" / "remote-audio.m4a"
+                                ),
+                                "saved_media_path": None,
+                                "saved_media_kind": "audio",
+                                "cleanup_dir": str(tmp_path / "downloads" / "url-demo"),
+                            }
+                        ),
+                    ]
+                )
+            )
+            self.stderr = io.StringIO("")
+            self.returncode = 0
+
+        def poll(self):
+            return self.returncode
+
+        def wait(self, timeout=None):
+            return self.returncode
+
+        def terminate(self):
+            self.returncode = -1
+
+        def kill(self):
+            self.returncode = -9
+
+    def fake_popen(command, stdout, stderr, text, **kwargs):
+        captured["command"] = command
+        return FakeProcess()
+
+    monkeypatch.setattr("flowscribe.input.url_tool_bridge.subprocess.Popen", fake_popen)
+
+    downloader = ExternalUrlAudioDownloader(
+        download_dir=tmp_path / "downloads",
+        max_bytes=100 * 1024 * 1024,
+        max_duration_seconds=300,
+        timeout_seconds=15,
+        progress_callback=progress_messages.append,
+    )
+
+    result = downloader.download_audio("https://example.com/watch")
+
+    assert result.saved_media_kind == "audio"
+    assert progress_messages == ["Inspecting remote media metadata..."]
+    assert "--jsonl-progress" in captured["command"]
