@@ -17,6 +17,7 @@ from flowscribe.providers.transcribe.registry import (
     resolve_transcription_provider,
     supports_python_progressive_provider_name,
 )
+from flowscribe.providers.transcribe.stable_paraformer import StableParaformerTranscriber
 
 
 def test_default_provider_is_local_whisper_with_explicit_capabilities() -> None:
@@ -84,21 +85,20 @@ def test_resolve_transcription_provider_supports_paraformer_aliases() -> None:
     assert provider.capabilities.default_model_name == "paraformer-zh"
     assert provider.capabilities.supported_model_names == ("paraformer-zh",)
     assert provider.capabilities.supports_word_timestamps is False
-    assert isinstance(
-        provider.build_transcriber(
-            ProviderTranscriptionSettings(
-                model_name="paraformer-zh",
-                language="zh",
-                task="transcribe",
-                beam_size=5,
-                vad_filter=True,
-                initial_prompt=None,
-                preset="zh",
-                word_timestamps=False,
-            )
-        ),
-        ParaformerTranscriber,
+    transcriber = provider.build_transcriber(
+        ProviderTranscriptionSettings(
+            model_name="paraformer-zh",
+            language="zh",
+            task="transcribe",
+            beam_size=5,
+            vad_filter=True,
+            initial_prompt=None,
+            preset="zh",
+            word_timestamps=False,
+        )
     )
+    assert isinstance(transcriber, StableParaformerTranscriber)
+    assert isinstance(transcriber, ParaformerTranscriber)
 
 
 def test_build_pipeline_uses_provider_factory(monkeypatch, tmp_path: Path) -> None:

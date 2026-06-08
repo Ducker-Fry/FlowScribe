@@ -3,6 +3,7 @@ import threading
 
 import pytest
 
+from flowscribe.core.errors import TranscriptionError
 from flowscribe.core.models import MediaItem, OutputArtifacts, PreparedAudio, Transcript, TranscriptSegment
 from flowscribe.pipeline.transcription import LocalTranscriptionPipeline
 from flowscribe.pipeline.progressive import (
@@ -65,6 +66,21 @@ class FakePreparer:
             sample_rate=16000,
             duration_seconds=55.0,
         )
+
+
+class EmptyClipTranscriber:
+    def transcribe(self, audio: PreparedAudio, *, should_cancel=None) -> Transcript:  # pragma: no cover - compatibility only
+        return Transcript(source=audio.source, segments=())
+
+    def transcribe_clip(
+        self,
+        audio: PreparedAudio,
+        *,
+        start_seconds: float,
+        end_seconds: float,
+        should_cancel=None,
+    ) -> Transcript:
+        return Transcript(source=audio.source, segments=())
 
 
 class FakeArtifactWriter:
@@ -146,6 +162,29 @@ def test_pipeline_process_progressive_writes_merged_transcript(tmp_path: Path) -
     assert artifacts.txt_path.read_text(encoding="utf-8") == "first core\nboundary\nsecond core"
     assert state.transcript.text == "first core\nboundary\nsecond core"
     assert not (tmp_path / "work" / "sample" / "prepared.wav").exists()
+
+
+def test_pipeline_process_progressive_fails_instead_of_writing_empty_transcript(
+    tmp_path: Path,
+) -> None:
+    item = MediaItem(path=tmp_path / "sample.mp4")
+    pipeline = LocalTranscriptionPipeline(
+        media_preparer=FakePreparer(),
+        transcriber=EmptyClipTranscriber(),
+        artifact_writer=FakeArtifactWriter(),
+        work_dir=tmp_path / "work",
+        output_dir=tmp_path / "out",
+        keep_audio=False,
+    )
+
+    with pytest.raises(TranscriptionError, match="produced no text"):
+        pipeline.process_progressive(
+            item,
+            chunk_duration_seconds=30.0,
+            chunk_overlap_seconds=3.0,
+        )
+
+    assert not (tmp_path / "out" / "sample.txt").exists()
 
 
 def test_progressive_cache_persists_plan_results_and_partial_transcript(tmp_path: Path) -> None:

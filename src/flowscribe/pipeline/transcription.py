@@ -7,6 +7,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from flowscribe.core.errors import TranscriptionError
 from flowscribe.core.models import (
     MediaDurationInfo,
     MediaItem,
@@ -27,6 +28,8 @@ from flowscribe.pipeline.progressive import (
 )
 from flowscribe.core.ports import ArtifactWriter, MediaPreparer, Transcriber
 from flowscribe.media.audio_extractor import PreparedAudioCache
+
+_EMPTY_TRANSCRIPT_FAILURE_MIN_DURATION_SECONDS = 5.0
 
 
 class LocalTranscriptionPipeline:
@@ -104,6 +107,10 @@ class LocalTranscriptionPipeline:
                 transcript = self._deduplicator.deduplicate(transcript)
             if self._transcript_enricher is not None:
                 transcript = self._transcript_enricher(transcript, item)
+            _raise_if_unexpected_empty_transcript(
+                transcript,
+                duration_seconds=prepared_audio.duration_seconds,
+            )
             return transcript
         finally:
             if not self._keep_audio:
@@ -184,6 +191,10 @@ class LocalTranscriptionPipeline:
                     processed_duration_seconds=state.processed_duration_seconds,
                     cache_dir=None,
                 )
+            _raise_if_unexpected_empty_transcript(
+                state.transcript,
+                duration_seconds=state.duration_info.duration_seconds,
+            )
             return state
         finally:
             if not self._keep_audio:
@@ -227,3 +238,27 @@ def _transcriber_accepts_progress(transcriber: Transcriber) -> bool:
     except (TypeError, ValueError):
         return False
     return "progress" in signature.parameters
+
+
+def _raise_if_unexpected_empty_transcript(
+    transcript: Transcript,
+    *,
+    duration_seconds: float | None,
+) -> None:
+    if transcript.text.strip():
+        return
+    if (
+        duration_seconds is not None
+        and duration_seconds < _EMPTY_TRANSCRIPT_FAILURE_MIN_DURATION_SECONDS
+    ):
+        return
+
+    provider_name = None
+    if transcript.options is not None:
+        provider_name = transcript.options.provider_name
+    provider_label = provider_name or transcript.model_name or "unknown provider"
+    duration_label = "unknown duration" if duration_seconds is None else f"{duration_seconds:.1f}s"
+    raise TranscriptionError(
+        f"Transcription produced no text for {transcript.source.path} "
+        f"({duration_label}, {provider_label})."
+    )

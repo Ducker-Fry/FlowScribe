@@ -182,9 +182,9 @@ class ParaformerProvider:
         return self._CAPABILITIES
 
     def build_transcriber(self, settings: ProviderTranscriptionSettings) -> Transcriber:
-        from flowscribe.providers.transcribe.paraformer import ParaformerTranscriber
+        from flowscribe.providers.transcribe.stable_paraformer import StableParaformerTranscriber
 
-        return ParaformerTranscriber(
+        return StableParaformerTranscriber(
             model_name=settings.model_name or PARAFORMER_MODEL_NAME,
             language=settings.language,
             task=settings.task,
