@@ -277,6 +277,139 @@ def test_paraformer_transcribe_clip_subdivides_when_retry_still_hits_negative_di
     assert any("-part3.wav" in str(command[-1]) for command in commands)
 
 
+def test_paraformer_transcribe_clip_recursively_subdivides_until_small_windows_succeed(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _redirect_model_dirs(monkeypatch, tmp_path)
+    audio = _prepared_audio(tmp_path, duration_seconds=120.0)
+    _install_fake_paraformer_components(monkeypatch, tmp_path)
+    commands = []
+
+    def fake_run(command, **kwargs):
+        commands.append(command)
+        Path(command[-1]).write_bytes(b"clip")
+
+        class Result:
+            stdout = ""
+            stderr = ""
+
+        return Result()
+
+    def fake_probe(path: Path) -> float | None:
+        name = path.name
+        if "-part1-part1" in name or "-part1-part2" in name:
+            return 6.2
+        if "-part2" in name or "-part3" in name:
+            return 12.2
+        return 30.2
+
+    def fake_transcribe(self, clip_audio, *, should_cancel=None):
+        clip_name = Path(clip_audio.path).name
+        if "-part1-part" in clip_name:
+            return _transcript_for_audio(clip_audio, clip_name)
+        if "-part2" in clip_name or "-part3" in clip_name:
+            return _transcript_for_audio(clip_audio, clip_name)
+        raise TranscriptionError(
+            "Paraformer transcription failed for clip: Trying to create tensor "
+            "with negative dimension -1: [-1, 516]"
+        )
+
+    monkeypatch.setattr("flowscribe.providers.transcribe.paraformer.subprocess.run", fake_run)
+    monkeypatch.setattr(
+        ParaformerTranscriber,
+        "_probe_wave_duration_seconds",
+        staticmethod(fake_probe),
+    )
+    monkeypatch.setattr(ParaformerTranscriber, "transcribe", fake_transcribe)
+
+    transcript = ParaformerTranscriber(language="zh").transcribe_clip(
+        audio,
+        start_seconds=81.0,
+        end_seconds=111.0,
+    )
+
+    assert len(transcript.segments) == 4
+    assert transcript.segments[0].start_seconds == 0.0
+    assert transcript.segments[1].start_seconds == 6.0
+    assert transcript.segments[2].start_seconds == 12.0
+    assert transcript.segments[3].start_seconds == 24.0
+    assert any("-part1-part1" in str(command[-1]) for command in commands)
+    assert any("-part1-part2" in str(command[-1]) for command in commands)
+
+
+def test_paraformer_subdivided_tiny_bad_window_is_skipped_instead_of_failing(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _redirect_model_dirs(monkeypatch, tmp_path)
+    audio = _prepared_audio(tmp_path, duration_seconds=120.0)
+    _install_fake_paraformer_components(monkeypatch, tmp_path)
+
+    def fake_run(command, **kwargs):
+        Path(command[-1]).write_bytes(b"clip")
+
+        class Result:
+            stdout = ""
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr("flowscribe.providers.transcribe.paraformer.subprocess.run", fake_run)
+    monkeypatch.setattr(
+        ParaformerTranscriber,
+        "_probe_wave_duration_seconds",
+        staticmethod(lambda path: 6.2),
+    )
+    monkeypatch.setattr(
+        ParaformerTranscriber,
+        "_transcribe_clip_attempt",
+        lambda self, *args, **kwargs: (_ for _ in ()).throw(
+            TranscriptionError(
+                "Paraformer transcription failed for clip: Trying to create tensor "
+                "with negative dimension -1: [-1, 516]"
+            )
+        ),
+    )
+
+    transcript = ParaformerTranscriber(language="zh")._transcribe_clip_resilient(
+        audio,
+        start_seconds=39.0,
+        end_seconds=45.0,
+        subdivision_label="-part2-part1",
+        file_suffix="-part2-part1",
+    )
+
+    assert transcript.segments == ()
+    assert transcript.metadata["provider_result_type"] == "skipped_tiny_bad_clip"
+
+
+def test_paraformer_model_cache_is_reused_across_transcriber_instances(monkeypatch, tmp_path: Path) -> None:
+    _redirect_model_dirs(monkeypatch, tmp_path)
+    _install_fake_paraformer_components(monkeypatch, tmp_path)
+    monkeypatch.setattr(paraformer, "_SHARED_MODEL_CACHE", {})
+    models = []
+
+    class FakeAutoModel:
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = kwargs
+            models.append(self)
+
+    module = types.ModuleType("funasr")
+    module.AutoModel = FakeAutoModel
+    monkeypatch.setitem(sys.modules, "funasr", module)
+    monkeypatch.setattr(ParaformerTranscriber, "_resolve_device", staticmethod(lambda: "cpu"))
+
+    first = ParaformerTranscriber(language="zh")
+    second = ParaformerTranscriber(language="zh")
+
+    first_model = first._load_model()
+    second_model = second._load_model()
+
+    assert len(models) == 1
+    assert first_model is second_model
+
+
 def test_default_models_root_uses_executable_dir_for_frozen_build(monkeypatch) -> None:
     monkeypatch.setattr(paraformer.sys, "frozen", True, raising=False)
     monkeypatch.setattr(paraformer.sys, "executable", r"E:\Software\FlowScribeGUI\FlowScribeGUI.exe")

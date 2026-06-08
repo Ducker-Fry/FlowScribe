@@ -9,6 +9,7 @@ import sys
 import wave
 from collections.abc import Callable
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 from flowscribe.config.resources import resolve_resource_paths
@@ -57,6 +58,8 @@ DEFAULT_EXTERNAL_MODEL_CACHE_ROOT = Path(
     os.environ.get("FLOWSCRIBE_MODEL_CACHE_DIR") or _default_external_model_cache_root()
 )
 LOGGER = logging.getLogger(__name__)
+_SHARED_MODEL_CACHE: dict[tuple[str, str, str, str], Any] = {}
+_SHARED_MODEL_CACHE_LOCK = Lock()
 
 
 def ensure_funasr_runtime_importable() -> None:
@@ -108,6 +111,7 @@ class ParaformerTranscriber:
         self._model = None
         self._ffmpeg_executable = resolve_tool_path("ffmpeg")
         self._clip_fallback_window_seconds = 12.0
+        self._clip_min_fallback_window_seconds = 6.0
 
     def transcribe(
         self,
@@ -140,15 +144,52 @@ class ParaformerTranscriber:
         end_seconds: float,
         should_cancel: Callable[[], bool] | None = None,
     ) -> Transcript:
+        return self._transcribe_clip_resilient(
+            audio,
+            start_seconds=start_seconds,
+            end_seconds=end_seconds,
+            should_cancel=should_cancel,
+        )
+
+    def _transcribe_clip_resilient(
+        self,
+        audio: PreparedAudio,
+        *,
+        start_seconds: float,
+        end_seconds: float,
+        should_cancel: Callable[[], bool] | None = None,
+        subdivision_window_seconds: float | None = None,
+        subdivision_label: str = "",
+        accurate_seek: bool = False,
+        pad_silence_seconds: float = 0.0,
+        file_suffix: str = "",
+    ) -> Transcript:
+        clip_duration_seconds = max(0.0, end_seconds - start_seconds)
         try:
             return self._transcribe_clip_attempt(
                 audio,
                 start_seconds=start_seconds,
                 end_seconds=end_seconds,
                 should_cancel=should_cancel,
+                accurate_seek=accurate_seek,
+                pad_silence_seconds=pad_silence_seconds,
+                file_suffix=file_suffix,
             )
         except TranscriptionError as exc:
             if self._should_retry_clip_transcription(exc):
+                if (
+                    subdivision_label
+                    and clip_duration_seconds <= self._clip_min_fallback_window_seconds + 1e-6
+                ):
+                    LOGGER.warning(
+                        "Skipping irrecoverable tiny Paraformer sub-clip after known bad-window failure: "
+                        "source=%s start=%.3f end=%.3f reason=%s",
+                        audio.path,
+                        start_seconds,
+                        end_seconds,
+                        exc,
+                    )
+                    return self._empty_transcript(audio)
                 LOGGER.warning(
                     "Retrying Paraformer clip transcription with accurate seek and tail padding: "
                     "source=%s start=%.3f end=%.3f reason=%s",
@@ -165,7 +206,7 @@ class ParaformerTranscriber:
                         should_cancel=should_cancel,
                         accurate_seek=True,
                         pad_silence_seconds=0.2,
-                        file_suffix="-retry",
+                        file_suffix=f"{file_suffix}-retry" if file_suffix else "-retry",
                     )
                 except TranscriptionError as retry_exc:
                     exc = retry_exc
@@ -174,6 +215,8 @@ class ParaformerTranscriber:
                         start_seconds=start_seconds,
                         end_seconds=end_seconds,
                         should_cancel=should_cancel,
+                        subdivision_window_seconds=subdivision_window_seconds,
+                        subdivision_label=subdivision_label,
                     )
                     if fallback is not None:
                         return fallback
@@ -224,12 +267,29 @@ class ParaformerTranscriber:
                 bool(getattr(sys, "frozen", False)),
                 sys.executable,
             )
-            self._model = AutoModel(
-                model=str(model_path),
-                vad_model=str(vad_model_path),
-                punc_model=str(punc_model_path),
-                disable_update=True,
+
+            device = self._resolve_device()
+            cache_key = (
+                str(model_path),
+                str(vad_model_path),
+                str(punc_model_path),
+                device,
             )
+            with _SHARED_MODEL_CACHE_LOCK:
+                cached_model = _SHARED_MODEL_CACHE.get(cache_key)
+                if cached_model is None:
+                    LOGGER.info("Using device=%s for FunASR AutoModel", device)
+                    cached_model = AutoModel(
+                        model=str(model_path),
+                        vad_model=str(vad_model_path),
+                        punc_model=str(punc_model_path),
+                        disable_update=True,
+                        device=device,
+                    )
+                    _SHARED_MODEL_CACHE[cache_key] = cached_model
+                else:
+                    LOGGER.info("Reusing cached Paraformer model: device=%s", device)
+            self._model = cached_model
         return self._model
 
     def _generate_kwargs(self, audio: PreparedAudio) -> dict[str, Any]:
@@ -339,6 +399,26 @@ class ParaformerTranscriber:
             duration_seconds=actual_duration_seconds,
         )
 
+    def _empty_transcript(self, audio: PreparedAudio) -> Transcript:
+        return Transcript(
+            source=audio.source,
+            segments=(),
+            language=self._language or "zh",
+            model_name=self._model_name,
+            options=TranscriptionOptions(
+                model_name=self._model_name,
+                language=self._language,
+                task=self._task,
+                beam_size=self._beam_size,
+                vad_filter=self._vad_filter,
+                initial_prompt=self._initial_prompt,
+                preset=self._preset,
+                word_timestamps=self._word_timestamps,
+                provider_name=PARAFORMER_PROVIDER_NAME,
+            ),
+            metadata={"provider_result_type": "skipped_tiny_bad_clip"},
+        )
+
     def _build_transcript(
         self,
         audio: PreparedAudio,
@@ -379,9 +459,15 @@ class ParaformerTranscriber:
         start_seconds: float,
         end_seconds: float,
         should_cancel: Callable[[], bool] | None = None,
+        subdivision_window_seconds: float | None = None,
+        subdivision_label: str = "",
     ) -> Transcript | None:
         clip_duration_seconds = end_seconds - start_seconds
-        if clip_duration_seconds <= self._clip_fallback_window_seconds:
+        window_seconds = min(
+            clip_duration_seconds,
+            subdivision_window_seconds or self._clip_fallback_window_seconds,
+        )
+        if clip_duration_seconds <= self._clip_min_fallback_window_seconds + 1e-6:
             return None
 
         LOGGER.warning(
@@ -390,28 +476,42 @@ class ParaformerTranscriber:
             audio.path,
             start_seconds,
             end_seconds,
-            self._clip_fallback_window_seconds,
+            window_seconds,
         )
         transcripts: list[Transcript] = []
+        failed_parts = 0
         window_start = start_seconds
         part_index = 1
         while window_start < end_seconds - 1e-6:
             if should_cancel is not None and should_cancel():
                 raise CancellationError("Transcription canceled.")
-            window_end = min(end_seconds, window_start + self._clip_fallback_window_seconds)
+            window_end = min(end_seconds, window_start + window_seconds)
             try:
-                part = self._transcribe_clip_attempt(
+                part = self._transcribe_clip_resilient(
                     audio,
                     start_seconds=window_start,
                     end_seconds=window_end,
                     should_cancel=should_cancel,
+                    subdivision_window_seconds=max(
+                        self._clip_min_fallback_window_seconds,
+                        window_seconds / 2.0,
+                    ),
+                    subdivision_label=f"{subdivision_label}-part{part_index}",
                     accurate_seek=True,
                     pad_silence_seconds=0.2,
-                    file_suffix=f"-part{part_index}",
+                    file_suffix=f"{subdivision_label}-part{part_index}",
                 )
+                transcripts.append(self._offset_transcript(part, window_start - start_seconds))
             except TranscriptionError:
-                return None
-            transcripts.append(self._offset_transcript(part, window_start - start_seconds))
+                failed_parts += 1
+                LOGGER.warning(
+                    "Subdivided clip part failed, continuing with remaining parts: "
+                    "source=%s window=[%.3f, %.3f] failed=%d",
+                    audio.path,
+                    window_start,
+                    window_end,
+                    failed_parts,
+                )
             window_start = window_end
             part_index += 1
 
@@ -646,6 +746,22 @@ class ParaformerTranscriber:
             cache_key=first.cache_key,
             created_at=first.created_at,
         )
+
+    @staticmethod
+    def _resolve_device() -> str:
+        """Determine the best device for FunASR inference in the current environment.
+
+        Falls back to CPU when CUDA is unavailable or when torch detection fails
+        (e.g., in a PyInstaller-packaged build where CUDA DLLs may not be bundled).
+        """
+        try:
+            import torch
+            if torch.cuda.is_available():
+                return "cuda"
+            return "cpu"
+        except (ImportError, RuntimeError, OSError):
+            return "cpu"
+
 
 def _safe_timestamp(value: float) -> str:
     return f"{max(0.0, value):.3f}".replace(".", "p")
