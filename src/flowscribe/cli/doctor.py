@@ -14,6 +14,11 @@ from pathlib import Path
 from flowscribe.engine.pipe_client import FlowScribeEngineClient, pywintypes, win32file
 from flowscribe.media.tools import resolve_tool_path
 from flowscribe.model_catalog import resolve_faster_whisper_repo
+from flowscribe.model_manager import runtime_model_reference
+from flowscribe.providers.transcribe.paraformer import (
+    ensure_funasr_runtime_importable,
+    validate_paraformer_runtime,
+)
 from flowscribe.providers.transcribe.native_engine import resolve_engine_exe
 
 
@@ -48,6 +53,9 @@ def run_doctor(
         )
         if hello_smoke:
             checks.append(check_native_engine_hello_smoke())
+    elif provider_name == "paraformer":
+        checks.append(check_paraformer_import())
+        checks.append(check_paraformer_model_access(model_name))
     else:
         checks.append(check_faster_whisper_import())
         if skip_model_access:
@@ -116,6 +124,18 @@ def check_faster_whisper_import() -> DoctorCheck:
     return DoctorCheck("faster-whisper", True, f"importable, version {version}")
 
 
+def check_paraformer_import() -> DoctorCheck:
+    try:
+        ensure_funasr_runtime_importable()
+    except Exception as exc:
+        return DoctorCheck(
+            "FunASR",
+            False,
+            f"not importable: {exc}. Run `python -m pip install funasr modelscope`.",
+        )
+    return DoctorCheck("Paraformer runtime", True, "funasr AutoModel import is ready")
+
+
 def check_pywin32_import() -> DoctorCheck:
     if pywintypes is None or win32file is None:
         return DoctorCheck(
@@ -175,6 +195,15 @@ def check_model_download(model_name: str) -> DoctorCheck:
     if 200 <= status < 400:
         return DoctorCheck("Model access", True, f"{repo_id} is reachable")
     return DoctorCheck("Model access", False, f"{repo_id} returned HTTP {status}")
+
+
+def check_paraformer_model_access(model_name: str) -> DoctorCheck:
+    try:
+        runtime_model_reference("paraformer", model_name)
+        validate_paraformer_runtime(model_name, ensure_model_download=False)
+    except Exception as exc:
+        return DoctorCheck("Paraformer model access", False, str(exc))
+    return DoctorCheck("Paraformer model access", True, "Paraformer runtime and model package are ready")
 
 
 def check_native_engine_exe() -> DoctorCheck:

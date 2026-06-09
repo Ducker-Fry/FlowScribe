@@ -138,6 +138,12 @@ def build_parser() -> argparse.ArgumentParser:
         dest="json_output",
         help="Write download result as JSON.",
     )
+    download_parser.add_argument(
+        "--jsonl-progress",
+        action="store_true",
+        dest="jsonl_progress",
+        help=argparse.SUPPRESS,
+    )
 
     version_parser = subparsers.add_parser("version", help="Show FlowScribe URL tool version.")
     version_parser.add_argument("--json", action="store_true", dest="json_output", help=argparse.SUPPRESS)
@@ -198,6 +204,7 @@ def run_download(options) -> int:
         network_family=options.network_family,
         cookies_path=options.cookies,
         proxy=options.proxy,
+        progress_callback=(lambda message: _emit_progress_payload(message)) if options.jsonl_progress else None,
     )
     result = downloader.download_audio(
         options.url,
@@ -227,13 +234,29 @@ def run_download(options) -> int:
         "cleanup_dir": str(saved_path.parent),
     }
     if options.json_output:
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        print(
+            json.dumps(payload, ensure_ascii=False, indent=None if options.jsonl_progress else 2),
+            flush=options.jsonl_progress,
+        )
     else:
         print(f"Saved audio: {saved_path}")
         if bindable_path is not None and bindable_path != saved_path:
             print(f"Saved media: {bindable_path}")
         print(f"Media kind: {result.saved_media_kind}")
     return EXIT_OK
+
+
+def _emit_progress_payload(message: str) -> None:
+    print(
+        json.dumps(
+            {
+                "type": "progress",
+                "message": message,
+            },
+            ensure_ascii=False,
+        ),
+        flush=True,
+    )
 
 
 def _preserve_download(result, *, output_dir: Path) -> Path:

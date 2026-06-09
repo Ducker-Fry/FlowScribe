@@ -45,6 +45,7 @@ from flowscribe.providers.transcribe.registry import (
     is_native_engine_provider_name,
     resolve_transcription_provider,
     supports_python_progressive_provider_name,
+    validate_transcription_provider_runtime,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -56,7 +57,17 @@ _settings_from_job = settings_from_job
 
 def _build_pipeline(job: TranscriptionJob, settings):
     provider = resolve_transcription_provider(job.provider_name)
-    provider_settings = ProviderTranscriptionSettings(
+    provider_settings = _provider_settings_from_job(job, settings)
+    return build_pipeline_from_provider(
+        job,
+        settings,
+        provider=provider,
+        provider_settings=provider_settings,
+    )
+
+
+def _provider_settings_from_job(job: TranscriptionJob, settings) -> ProviderTranscriptionSettings:
+    return ProviderTranscriptionSettings(
         model_name=settings.model_name,
         language=settings.language,
         task=settings.task,
@@ -71,11 +82,12 @@ def _build_pipeline(job: TranscriptionJob, settings):
         progressive_max_workers=job.progressive_max_workers,
         native_threads=job.native_threads,
     )
-    return build_pipeline_from_provider(
-        job,
-        settings,
-        provider=provider,
-        provider_settings=provider_settings,
+
+
+def _validate_provider_runtime(job: TranscriptionJob, settings) -> None:
+    validate_transcription_provider_runtime(
+        job.provider_name,
+        _provider_settings_from_job(job, settings),
     )
 
 
@@ -228,6 +240,7 @@ class TranscriptionService:
         total: int,
     ) -> tuple[tuple[OutputArtifacts, ...], tuple[ErrorInfo, ...]]:
         settings = _settings_from_job(job, recursive=source.recursive)
+        _validate_provider_runtime(job, settings)
         pipeline = _build_pipeline(job, settings)
         input_source = LocalFileSource([Path(source.value)], recursive=settings.recursive)
         items = input_source.discover()
@@ -373,6 +386,7 @@ class TranscriptionService:
             update_json_media_binding=self._update_json_media_binding,
             downloader_cls=select_url_downloader_cls(UrlAudioDownloader),
             pipeline_builder=_build_pipeline,
+            provider_runtime_validator=_validate_provider_runtime,
             subtitle_runner=self._run_subtitle_capability,
         ).run(
             job=job,

@@ -12,6 +12,7 @@ from flowscribe.cli.args import (
     parse_time_value,
 )
 from flowscribe.cli.doctor import (
+    check_paraformer_import,
     check_native_model_path,
     check_output_dir,
     resolve_faster_whisper_repo,
@@ -79,6 +80,18 @@ def test_run_doctor_can_skip_model_access(monkeypatch, tmp_path: Path) -> None:
 
     assert exit_code == 0
     assert called["model_access"] is False
+
+
+def test_check_paraformer_import_reports_missing_runtime_symbol(monkeypatch) -> None:
+    def fail_import() -> None:
+        raise Exception("cannot import name 'AutoModel'")
+
+    monkeypatch.setattr("flowscribe.cli.doctor.ensure_funasr_runtime_importable", fail_import)
+
+    check = check_paraformer_import()
+
+    assert check.ok is False
+    assert "AutoModel" in check.message
 
 
 def test_parse_transcribe_subcommand_args() -> None:

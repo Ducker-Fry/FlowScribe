@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
+from flowscribe.core.errors import TranscriptionError
 from flowscribe.core.ports import Transcriber
+from flowscribe.model_manager import runtime_model_reference
 from flowscribe.providers.transcribe.local_whisper import LocalWhisperTranscriber
-from flowscribe.providers.transcribe.native_engine import NativeEngineTranscriber
+from flowscribe.providers.transcribe.native_engine import (
+    NativeEngineTranscriber,
+    resolve_engine_exe,
+)
 
 ProviderCostTier = Literal["free-local", "usage-based", "fixed-paid", "unknown"]
 ProviderLatencyTier = Literal["fast-local", "medium-local", "network-bound", "unknown"]
@@ -62,6 +68,9 @@ class TranscriptionProvider(Protocol):
     def build_transcriber(self, settings: ProviderTranscriptionSettings) -> Transcriber:
         """Create a transcriber for one request."""
 
+    def validate_runtime(self, settings: ProviderTranscriptionSettings) -> None:
+        """Raise a FlowScribeError when this provider cannot run in the current environment."""
+
 
 class LocalWhisperProvider:
     """Default local faster-whisper provider."""
@@ -109,6 +118,15 @@ class LocalWhisperProvider:
             word_timestamps=settings.word_timestamps,
         )
 
+    def validate_runtime(self, settings: ProviderTranscriptionSettings) -> None:
+        try:
+            __import__("faster_whisper")
+        except ImportError as exc:
+            raise TranscriptionError(
+                "faster-whisper is not installed. Run: python -m pip install faster-whisper"
+            ) from exc
+        runtime_model_reference("local-whisper", settings.model_name)
+
 
 class NativeEngineProvider:
     """Native whisper.cpp engine provider."""
@@ -153,6 +171,20 @@ class NativeEngineProvider:
             threads=settings.native_threads,
         )
 
+    def validate_runtime(self, settings: ProviderTranscriptionSettings) -> None:
+        resolve_engine_exe()
+        model_path = Path(settings.model_name).expanduser()
+        if not model_path.exists() or not model_path.is_file():
+            raise TranscriptionError(
+                "Native engine provider requires --model to be a local whisper.cpp ggml "
+                f".bin file path. Got: {settings.model_name!r}"
+            )
+        if model_path.suffix.lower() != ".bin":
+            raise TranscriptionError(
+                "Native engine provider requires a whisper.cpp ggml .bin model file. "
+                f"Got: {model_path}"
+            )
+
 
 class ParaformerProvider:
     """FunASR Paraformer provider for Chinese-first transcription."""
@@ -194,6 +226,11 @@ class ParaformerProvider:
             preset=settings.preset,
             word_timestamps=settings.word_timestamps,
         )
+
+    def validate_runtime(self, settings: ProviderTranscriptionSettings) -> None:
+        from flowscribe.providers.transcribe.paraformer import validate_paraformer_runtime
+
+        validate_paraformer_runtime(settings.model_name or PARAFORMER_MODEL_NAME)
 
 
 def default_transcription_provider() -> TranscriptionProvider:
@@ -240,3 +277,12 @@ def supports_python_progressive_provider_name(provider_name: str | None) -> bool
         "funasr",
         "paraformer-zh",
     }
+
+
+def validate_transcription_provider_runtime(
+    provider_name: str | None,
+    settings: ProviderTranscriptionSettings,
+) -> None:
+    """Raise early when a provider is selected but its local runtime is not usable."""
+
+    resolve_transcription_provider(provider_name).validate_runtime(settings)

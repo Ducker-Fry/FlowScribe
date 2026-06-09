@@ -18,6 +18,7 @@ def run_target(target: str, argv: list[str] | None = None) -> int:
     os.environ.setdefault(CODE_DIR_ENV, str(code_dir))
     _install_import_paths(core_dir=core_dir, code_dir=code_dir)
     _purge_bootstrap_stdlib_shadows()
+    _enable_site_package_shims()
 
     module_name, function_name = target.split(":", 1)
     module = importlib.import_module(module_name)
@@ -58,6 +59,25 @@ def _install_import_paths(*, core_dir: str, code_dir: str) -> None:
 
 
 def _purge_bootstrap_stdlib_shadows() -> None:
+    shadowed_packages = ("urllib", "http", "html", "xml", "email", "logging")
     for module_name in tuple(sys.modules):
-        if module_name == "urllib" or module_name.startswith("urllib."):
+        if any(
+            module_name == package_name or module_name.startswith(f"{package_name}.")
+            for package_name in shadowed_packages
+        ):
             sys.modules.pop(module_name, None)
+
+
+def _enable_site_package_shims() -> None:
+    """Re-enable setuptools/distutils shims after replacing sys.path.
+
+    The layered portable runtime bypasses normal site startup, so Python 3.12
+    no longer sees setuptools' distutils compatibility shim automatically.
+    FunASR model auto-registration still imports distutils-era modules, so we
+    import setuptools eagerly to restore the shim before business code loads.
+    """
+
+    try:
+        import setuptools  # noqa: F401
+    except Exception:
+        return

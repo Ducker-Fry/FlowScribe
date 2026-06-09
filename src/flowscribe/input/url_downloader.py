@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import math
 import shutil
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
-from flowscribe.core.errors import DownloadError
+from flowscribe.core.errors import CancellationError, DownloadError
 from flowscribe.input.cookies import resolve_cookies_path
 from flowscribe.input.file_filter import SUPPORTED_MEDIA_EXTENSIONS
 from flowscribe.input.proxy import proxy_environment, proxy_handler, yt_dlp_proxy_options
@@ -24,6 +26,7 @@ from flowscribe.utils.subprocess import hidden_subprocess_kwargs
 
 AUDIO_EXTENSIONS = {".aac", ".aiff", ".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav", ".wma"}
 VIDEO_EXTENSIONS = SUPPORTED_MEDIA_EXTENSIONS - AUDIO_EXTENSIONS
+LOGGER = logging.getLogger(__name__)
 
 
 UrlSavedMediaKind = Literal["audio", "video"]
@@ -60,6 +63,8 @@ class UrlAudioDownloader:
         proxy: str | None = None,
         ffmpeg_executable: str | None = None,
         ffprobe_executable: str | None = None,
+        progress_callback: Callable[[str], None] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> None:
         self._download_dir = download_dir
         self._max_bytes = max_bytes
@@ -70,6 +75,8 @@ class UrlAudioDownloader:
         self._proxy = proxy
         self._ffmpeg_executable = ffmpeg_executable or resolve_tool_path("ffmpeg")
         self._ffprobe_executable = ffprobe_executable or resolve_tool_path("ffprobe")
+        self._progress_callback = progress_callback
+        self._should_cancel = should_cancel
 
     def download_audio(
         self,
@@ -81,6 +88,8 @@ class UrlAudioDownloader:
         options = download_options or DownloadOptions()
         effective_media_kind = options.media_kind if download_options else saved_media_kind
 
+        self._report_progress(f"Preparing remote media acquisition for {url}")
+        self._ensure_not_canceled()
         validate_public_http_url(url, network_family=self._network_family)
         item_dir = self._download_dir / self._safe_id(url)
         if item_dir.exists():
@@ -118,6 +127,7 @@ class UrlAudioDownloader:
         )
 
     def _download_direct_audio(self, url: str, item_dir: Path, suffix: str) -> Path:
+        self._report_progress("Downloading direct remote audio stream...")
         request = Request(url, headers={"User-Agent": "FlowScribe/0.1"})
         path = item_dir / f"remote-audio{suffix}"
         try:
@@ -129,6 +139,7 @@ class UrlAudioDownloader:
                 downloaded = 0
                 with path.open("wb") as file:
                     while True:
+                        self._ensure_not_canceled()
                         chunk = response.read(1024 * 1024)
                         if not chunk:
                             break
@@ -143,10 +154,12 @@ class UrlAudioDownloader:
                 "Possible causes: network/proxy issue, blocked URL, expired URL, or unsupported redirect.\n"
                 "Try opening the URL in a browser or run `flowscribe inspect <url>` first."
             ) from exc
+        self._report_progress("Checking downloaded audio duration...")
         self._ensure_duration(path)
         return path
 
     def _extract_direct_video_audio(self, url: str, item_dir: Path) -> Path:
+        self._report_progress("Checking remote video duration...")
         self._ensure_duration(url)
         path = item_dir / "remote-audio.m4a"
         command = [
@@ -164,6 +177,8 @@ class UrlAudioDownloader:
             str(path),
         ]
         try:
+            self._ensure_not_canceled()
+            self._report_progress("Extracting audio from direct remote video...")
             process_timeout = self._max_duration_seconds + self._timeout_seconds
             subprocess.run(
                 command,
@@ -187,6 +202,7 @@ class UrlAudioDownloader:
                 "network/proxy issue, or protected media.\n"
                 "Run `flowscribe inspect <url>` to check the source before transcribing."
             ) from exc
+        self._report_progress("Validating extracted audio file...")
         self._ensure_size(path)
         self._ensure_duration(path)
         return path
@@ -202,8 +218,18 @@ class UrlAudioDownloader:
         try:
             from yt_dlp import YoutubeDL
             from yt_dlp.utils import DownloadError as YtDlpDownloadError
-        except ImportError as exc:
+        except ModuleNotFoundError as exc:
+            if exc.name != "yt_dlp":
+                raise DownloadError(
+                    "yt-dlp is present but failed to import one of its runtime dependencies.\n"
+                    f"Original error: {exc.__class__.__name__}: {exc}"
+                ) from exc
             raise DownloadError("yt-dlp is not installed. Run `python -m pip install -e .`.") from exc
+        except ImportError as exc:
+            raise DownloadError(
+                "yt-dlp is present but failed to initialize correctly.\n"
+                f"Original error: {exc.__class__.__name__}: {exc}"
+            ) from exc
 
         base_options = {
             "noplaylist": True,
@@ -220,6 +246,8 @@ class UrlAudioDownloader:
         if cookiefile:
             base_options["cookiefile"] = cookiefile
         try:
+            self._report_progress("Inspecting remote media metadata...")
+            self._ensure_not_canceled()
             with YoutubeDL(base_options) as ydl:
                 info = ydl.extract_info(url, download=False)
         except YtDlpDownloadError as exc:
@@ -243,11 +271,13 @@ class UrlAudioDownloader:
             saved_media_path = None
             actual_kind: UrlSavedMediaKind = "audio"
             if saved_media_kind == "video":
+                self._report_progress("Saving remote video file for media binding...")
                 saved_media_path = self._download_page_video(
                     url, item_dir, base_options, download_options
                 )
                 if saved_media_path is not None:
                     actual_kind = "video"
+            self._report_progress("Extracting audio from remote media stream...")
             audio_path = self._extract_page_stream_audio(stream_url, item_dir)
             if saved_media_path is None:
                 saved_media_path = audio_path
@@ -268,6 +298,8 @@ class UrlAudioDownloader:
             "progress_hooks": [self._yt_dlp_progress_hook],
         }
         try:
+            self._report_progress("Downloading remote audio with yt-dlp...")
+            self._ensure_not_canceled()
             with YoutubeDL(options) as ydl:
                 ydl.download([url])
         except YtDlpDownloadError as exc:
@@ -284,11 +316,13 @@ class UrlAudioDownloader:
         if not files:
             raise DownloadError("yt-dlp did not produce an audio file.")
         path = max(files, key=lambda candidate: candidate.stat().st_size)
+        self._report_progress("Validating downloaded remote audio...")
         self._ensure_size(path)
         self._ensure_duration(path)
         saved_media_path: Path | None = path
         actual_kind: UrlSavedMediaKind = "audio"
         if saved_media_kind == "video":
+            self._report_progress("Saving remote video file for media binding...")
             video_path = self._download_page_video(url, item_dir, base_options, download_options)
             if video_path is not None:
                 saved_media_path = video_path
@@ -305,11 +339,30 @@ class UrlAudioDownloader:
         try:
             from yt_dlp import YoutubeDL
             from yt_dlp.utils import DownloadError as YtDlpDownloadError
-        except ImportError:
+        except ModuleNotFoundError as exc:
             import warnings
+            if exc.name != "yt_dlp":
+                warnings.warn(
+                    "yt-dlp is present but failed to import one of its runtime dependencies. "
+                    f"Original error: {exc.__class__.__name__}: {exc}\n"
+                    "Video download will be skipped and audio extraction will continue.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                return None
             warnings.warn(
                 "yt-dlp is not installed. Cannot download video file. "
                 "Audio extraction will continue.",
+                UserWarning,
+                stacklevel=2,
+            )
+            return None
+        except ImportError as exc:
+            import warnings
+            warnings.warn(
+                "yt-dlp is present but failed to initialize correctly. "
+                f"Original error: {exc.__class__.__name__}: {exc}\n"
+                "Video download will be skipped and audio extraction will continue.",
                 UserWarning,
                 stacklevel=2,
             )
@@ -330,6 +383,8 @@ class UrlAudioDownloader:
             "progress_hooks": [self._yt_dlp_progress_hook],
         }
         try:
+            self._ensure_not_canceled()
+            self._report_progress("Downloading remote video file with yt-dlp...")
             with YoutubeDL(options) as ydl:
                 ydl.download([url])
         except YtDlpDownloadError as exc:
@@ -392,6 +447,8 @@ class UrlAudioDownloader:
             str(path),
         ]
         try:
+            self._ensure_not_canceled()
+            self._report_progress("Saving direct remote video file...")
             process_timeout = self._max_duration_seconds + self._timeout_seconds
             subprocess.run(
                 command,
@@ -448,8 +505,6 @@ class UrlAudioDownloader:
             )
             return None
         return path
-        self._ensure_size(path)
-        return path
 
     def _extract_page_stream_audio(self, stream_url: str, item_dir: Path) -> Path:
         path = item_dir / "remote-audio.m4a"
@@ -468,6 +523,8 @@ class UrlAudioDownloader:
             str(path),
         ]
         try:
+            self._ensure_not_canceled()
+            self._report_progress("Extracting audio stream with ffmpeg...")
             process_timeout = self._max_duration_seconds + self._timeout_seconds
             subprocess.run(
                 command,
@@ -492,11 +549,13 @@ class UrlAudioDownloader:
                 "Run `flowscribe inspect <url>` to review available formats. If the page requires login, "
                 "retry with `--cookies path\\to\\cookies.txt`."
             ) from exc
+        self._report_progress("Validating extracted remote audio...")
         self._ensure_size(path)
         self._ensure_duration(path)
         return path
 
     def _yt_dlp_progress_hook(self, status: dict) -> None:
+        self._ensure_not_canceled()
         downloaded = status.get("downloaded_bytes") or 0
         total = status.get("total_bytes") or status.get("total_bytes_estimate")
         if total and int(total) > self._max_bytes:
@@ -511,6 +570,7 @@ class UrlAudioDownloader:
             raise DownloadError("Downloaded audio exceeded the configured size limit.")
 
     def _ensure_duration(self, path_or_url: Path | str) -> None:
+        self._ensure_not_canceled()
         command = [
             self._ffprobe_executable,
             "-v",
@@ -543,6 +603,15 @@ class UrlAudioDownloader:
             return
         if float(duration_text) > self._max_duration_seconds:
             raise DownloadError("Remote media is longer than the configured duration limit.")
+
+    def _ensure_not_canceled(self) -> None:
+        if self._should_cancel is not None and self._should_cancel():
+            raise CancellationError("Remote media acquisition canceled.")
+
+    def _report_progress(self, message: str) -> None:
+        LOGGER.info("URL download stage: %s", message)
+        if self._progress_callback is not None:
+            self._progress_callback(message)
 
     @staticmethod
     def _safe_id(url: str) -> str:

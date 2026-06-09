@@ -37,6 +37,7 @@ class UrlTranscriptionPipeline:
         ensure_not_canceled: Callable[[Callable[[], bool]], None],
         source_progress_wrapper: Callable[[ProgressEvent, str, int, int], ProgressEvent],
         update_json_media_binding: Callable[[OutputArtifacts, Path, str], None],
+        provider_runtime_validator: Callable[[TranscriptionJob, object], None] | None = None,
         downloader_cls=UrlAudioDownloader,
         pipeline_builder=build_transcription_pipeline,
         subtitle_runner: Callable[..., object] | None = None,
@@ -47,6 +48,7 @@ class UrlTranscriptionPipeline:
         self._ensure_not_canceled = ensure_not_canceled
         self._source_progress_wrapper = source_progress_wrapper
         self._update_json_media_binding = update_json_media_binding
+        self._provider_runtime_validator = provider_runtime_validator
         self._downloader_cls = downloader_cls
         self._pipeline_builder = pipeline_builder
         self._subtitle_runner = subtitle_runner
@@ -95,6 +97,22 @@ class UrlTranscriptionPipeline:
                 ),
             )
 
+        if self._provider_runtime_validator is not None:
+            self._emit_progress(
+                progress,
+                should_cancel,
+                ProgressEvent(
+                    stage="validate",
+                    message="Preparing transcription engine (loading models)...",
+                    source=source.value,
+                    current=current,
+                    total=total,
+                    task_id=task_spec.task_id,
+                    capability="transcribe",
+                ),
+            )
+            self._provider_runtime_validator(job, settings)
+
         downloader = self._downloader_cls(
             download_dir=settings.work_dir / ".url-media",
             max_bytes=job.max_download_mb * 1024 * 1024,
@@ -103,6 +121,20 @@ class UrlTranscriptionPipeline:
             network_family=job.network_family,
             cookies_path=job.cookies_path,
             proxy=job.proxy,
+            progress_callback=lambda message: self._emit_progress(
+                progress,
+                should_cancel,
+                ProgressEvent(
+                    stage="download",
+                    message=message,
+                    source=source.value,
+                    current=current,
+                    total=total,
+                    task_id=task_spec.task_id,
+                    capability="transcribe",
+                ),
+            ),
+            should_cancel=should_cancel,
         )
 
         self._emit_progress(
@@ -168,6 +200,7 @@ class UrlTranscriptionPipeline:
                     resume=job.progressive_resume,
                     keep_progressive_cache=True,
                     max_workers=job.progressive_max_workers,
+                    max_failed_chunks=10,
                     plan_callback=lambda duration_info, chunk_plan: self._emit_progressive_plan(
                         progress,
                         should_cancel,

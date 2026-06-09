@@ -251,6 +251,39 @@ flowscribe gui
 - [打包说明](docs/packaging.md) (`English only for now`)
 - [Releases](https://github.com/Ducker-Fry/FlowScribe/releases)
 
+#### Build Portable Packages
+
+FlowScribe now builds one shared portable release root:
+
+```text
+dist\FlowScribePortable\
+```
+
+Canonical packaging commands:
+
+```powershell
+cd E:\Draft\FlowScribe
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_core_package.ps1 -Python python
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_code_package.ps1 -Python python
+```
+
+What they do:
+
+- `build_core_package.ps1` rebuilds `dist\FlowScribePortable\core` with Python runtime, third-party libraries, Qt, ffmpeg/ffprobe, helper executables, and thin GUI/CLI launchers.
+- `build_code_package.ps1` rebuilds `dist\FlowScribePortable\code` with FlowScribe-only `.pyc` business code and self-owned resources, and refreshes `dist\FlowScribePortable\docs`.
+
+Incremental rule of thumb:
+
+- if you only changed `src\flowscribe\...` or app-owned resources, rebuild `code`
+- if you changed dependencies, runtime packaging, launchers, Qt, ffmpeg, or helpers, rebuild `core`
+
+Portable launch entrypoints:
+
+```powershell
+.\dist\FlowScribePortable\run-cli.bat --help
+.\dist\FlowScribePortable\run-gui.bat
+```
+
 ## 本地服务与书签 / Local Service And Bookmarklet
 
 如果你希望从浏览器快速把页面 URL 丢进 FlowScribe，可以启动本地服务：

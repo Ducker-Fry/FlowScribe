@@ -16,6 +16,7 @@ from flowscribe.providers.transcribe.registry import (
     is_native_engine_provider_name,
     resolve_transcription_provider,
     supports_python_progressive_provider_name,
+    validate_transcription_provider_runtime,
 )
 from flowscribe.providers.transcribe.stable_paraformer import StableParaformerTranscriber
 
@@ -99,6 +100,33 @@ def test_resolve_transcription_provider_supports_paraformer_aliases() -> None:
     )
     assert isinstance(transcriber, StableParaformerTranscriber)
     assert isinstance(transcriber, ParaformerTranscriber)
+
+
+def test_validate_transcription_provider_runtime_delegates_to_provider(monkeypatch) -> None:
+    captured = {}
+
+    class FakeProvider:
+        def validate_runtime(self, settings: ProviderTranscriptionSettings) -> None:
+            captured["settings"] = settings
+
+    settings = ProviderTranscriptionSettings(
+        model_name="paraformer-zh",
+        language="zh",
+        task="transcribe",
+        beam_size=5,
+        vad_filter=True,
+        initial_prompt=None,
+        preset="zh",
+        word_timestamps=False,
+    )
+    monkeypatch.setattr(
+        "flowscribe.providers.transcribe.registry.resolve_transcription_provider",
+        lambda provider_name=None: FakeProvider(),
+    )
+
+    validate_transcription_provider_runtime("paraformer", settings)
+
+    assert captured["settings"] == settings
 
 
 def test_build_pipeline_uses_provider_factory(monkeypatch, tmp_path: Path) -> None:

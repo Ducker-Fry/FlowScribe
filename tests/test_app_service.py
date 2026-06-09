@@ -2,7 +2,7 @@ from pathlib import Path
 
 from flowscribe.tasks.models import SourceSpec, TranscriptionJob
 from flowscribe.app.service import TranscriptionService
-from flowscribe.core.errors import MediaPreparationError
+from flowscribe.core.errors import MediaPreparationError, TranscriptionError
 from flowscribe.core.models import (
     ChunkTranscriptionResult,
     MediaDurationInfo,
@@ -15,6 +15,7 @@ from flowscribe.core.models import (
     TranscriptionChunk,
     TranscriptionChunkPlan,
 )
+from flowscribe.tasks.models import CapabilityResult
 
 
 def test_transcription_service_returns_structured_error_for_capture_source(tmp_path: Path) -> None:
@@ -488,6 +489,8 @@ def test_transcription_service_does_not_use_python_progressive_for_native_provid
 ) -> None:
     media = tmp_path / "sample.mp4"
     media.write_bytes(b"media")
+    model = tmp_path / "ggml-base.en.bin"
+    model.write_bytes(b"model")
     artifact = OutputArtifacts(paths=(tmp_path / "out" / "sample.txt",))
     captured = {"classic": False}
 
@@ -514,6 +517,7 @@ def test_transcription_service_does_not_use_python_progressive_for_native_provid
         sources=(SourceSpec(kind="local", value=str(media)),),
         output_dir=tmp_path / "out",
         provider_name="native-engine",
+        model_name=str(model),
         progressive_enabled=True,
     )
 
@@ -695,3 +699,199 @@ def test_transcription_service_uses_more_conservative_default_overlap_for_chines
     TranscriptionService().run(job)
 
     assert captured["chunk_overlap_seconds"] == 4.0
+
+
+def test_transcription_service_fails_local_source_before_pipeline_when_provider_runtime_missing(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    media = tmp_path / "sample.mp4"
+    media.write_bytes(b"media")
+    captured = {"pipeline_built": False}
+
+    class FakeLocalFileSource:
+        def __init__(self, inputs, recursive: bool) -> None:
+            self.inputs = inputs
+            self.recursive = recursive
+
+        def discover(self):
+            return [MediaItem(path=media)]
+
+    def fail_validate(job, settings) -> None:
+        raise TranscriptionError("FunASR is not installed. Run: python -m pip install funasr modelscope")
+
+    def fake_build_pipeline(job, settings):
+        captured["pipeline_built"] = True
+        raise AssertionError("pipeline should not be built when provider validation fails")
+
+    monkeypatch.setattr("flowscribe.app.service.LocalFileSource", FakeLocalFileSource)
+    monkeypatch.setattr("flowscribe.app.service._validate_provider_runtime", fail_validate)
+    monkeypatch.setattr("flowscribe.app.service._build_pipeline", fake_build_pipeline)
+
+    job = TranscriptionJob(
+        sources=(SourceSpec(kind="local", value=str(media)),),
+        output_dir=tmp_path / "out",
+        provider_name="paraformer",
+    )
+
+    result = TranscriptionService().run(job)
+
+    assert result.ok is False
+    assert result.failed == 1
+    assert "FunASR is not installed" in result.errors[0].message
+    assert captured["pipeline_built"] is False
+
+
+def test_transcription_service_validates_provider_runtime_only_after_url_subtitle_fallback(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    artifact = OutputArtifacts(paths=(tmp_path / "out" / "remote-subtitle.json",))
+    captured = {"validated": False}
+
+    class FakeDownloader:
+        def __init__(self, **kwargs) -> None:
+            raise AssertionError("audio downloader should not run when subtitles succeed")
+
+    def fake_run_subtitle_capability(self, task_spec, progress, should_cancel, *, current: int, total: int):
+        return CapabilityResult(
+            task_id=task_spec.task_id,
+            capability="subtitle",
+            supported=True,
+            status="success",
+            artifacts=(artifact,),
+        )
+
+    def fail_validate(job, settings) -> None:
+        captured["validated"] = True
+        raise AssertionError("provider runtime should not be validated when subtitles already succeeded")
+
+    monkeypatch.setattr("flowscribe.app.service.UrlAudioDownloader", FakeDownloader)
+    monkeypatch.setattr(
+        "flowscribe.app.service.TranscriptionService._run_subtitle_capability",
+        fake_run_subtitle_capability,
+    )
+    monkeypatch.setattr("flowscribe.app.service._validate_provider_runtime", fail_validate)
+
+    job = TranscriptionJob(
+        sources=(SourceSpec(kind="url", value="https://example.com/video"),),
+        output_dir=tmp_path / "out",
+        provider_name="paraformer",
+        requested_capabilities=("subtitle", "transcribe"),
+    )
+
+    result = TranscriptionService().run(job)
+
+    assert result.ok is True
+    assert result.outputs == (artifact,)
+    assert captured["validated"] is False
+
+
+def test_transcription_service_fails_url_source_before_download_when_provider_runtime_missing(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    captured = {"validated": False, "downloaded": False}
+
+    class FakeDownloader:
+        def __init__(self, **kwargs) -> None:
+            captured["downloaded"] = True
+
+        def download_audio(self, url: str, *, saved_media_kind: str = "audio", download_options=None):
+            raise AssertionError("download should not start when provider validation fails")
+
+    def fake_run_subtitle_capability(self, task_spec, progress, should_cancel, *, current: int, total: int):
+        return CapabilityResult(
+            task_id=task_spec.task_id,
+            capability="subtitle",
+            supported=False,
+            status="unsupported",
+        )
+
+    def fail_validate(job, settings) -> None:
+        captured["validated"] = True
+        raise TranscriptionError("FunASR is not installed. Run: python -m pip install funasr modelscope")
+
+    monkeypatch.setattr("flowscribe.app.service.UrlAudioDownloader", FakeDownloader)
+    monkeypatch.setattr(
+        "flowscribe.app.service.TranscriptionService._run_subtitle_capability",
+        fake_run_subtitle_capability,
+    )
+    monkeypatch.setattr("flowscribe.app.service._validate_provider_runtime", fail_validate)
+
+    job = TranscriptionJob(
+        sources=(SourceSpec(kind="url", value="https://example.com/video"),),
+        output_dir=tmp_path / "out",
+        provider_name="paraformer",
+        requested_capabilities=("subtitle", "transcribe"),
+    )
+
+    result = TranscriptionService().run(job)
+
+    assert result.ok is False
+    assert result.failed == 1
+    assert "FunASR is not installed" in result.errors[0].message
+    assert captured["validated"] is True
+    assert captured["downloaded"] is False
+
+
+def test_transcription_service_emits_download_progress_after_url_subtitle_fallback(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    audio = tmp_path / "remote-audio.m4a"
+    audio.write_bytes(b"audio")
+    artifact = OutputArtifacts(paths=(tmp_path / "out" / "remote-audio.txt",))
+    captured: dict[str, object] = {}
+
+    class FakeDownload:
+        path = audio
+        cleanup_dir = tmp_path / "download"
+        saved_media_path = None
+        saved_media_kind = "audio"
+
+    class FakeDownloader:
+        def __init__(self, **kwargs) -> None:
+            captured["progress_callback"] = kwargs.get("progress_callback")
+            captured["should_cancel"] = kwargs.get("should_cancel")
+
+        def download_audio(self, url: str, *, saved_media_kind: str = "audio", download_options=None):
+            progress_callback = captured["progress_callback"]
+            assert callable(progress_callback)
+            progress_callback("Inspecting remote media metadata...")
+            progress_callback("Downloading remote audio with yt-dlp...")
+            return FakeDownload()
+
+    class FakePipeline:
+        def process(self, item: MediaItem, *, should_cancel=None) -> OutputArtifacts:
+            return artifact
+
+    def fake_run_subtitle_capability(self, task_spec, progress, should_cancel, *, current: int, total: int):
+        return CapabilityResult(
+            task_id=task_spec.task_id,
+            capability="subtitle",
+            supported=False,
+            status="unsupported",
+        )
+
+    monkeypatch.setattr("flowscribe.app.service.select_url_downloader_cls", lambda default_cls: FakeDownloader)
+    monkeypatch.setattr(
+        "flowscribe.app.service.TranscriptionService._run_subtitle_capability",
+        fake_run_subtitle_capability,
+    )
+    monkeypatch.setattr("flowscribe.app.service._build_pipeline", lambda job, settings: FakePipeline())
+
+    job = TranscriptionJob(
+        sources=(SourceSpec(kind="url", value="https://example.com/video"),),
+        output_dir=tmp_path / "out",
+        requested_capabilities=("subtitle", "transcribe"),
+    )
+    events = []
+
+    result = TranscriptionService().run(job, progress=events.append)
+
+    assert result.ok is True
+    messages = [event.message for event in events if event.stage in {"prepare", "download"}]
+    assert "No usable native subtitles found. Falling back to audio transcription." in messages
+    assert "Inspecting remote media metadata..." in messages
+    assert "Downloading remote audio with yt-dlp..." in messages

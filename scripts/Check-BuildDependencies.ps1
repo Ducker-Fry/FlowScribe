@@ -456,6 +456,30 @@ function Install-PythonPackage {
     }
 }
 
+function Get-ParaformerRuntimeSupport {
+    param([string]$PythonCmd)
+
+    $checkScript = "import importlib.metadata as metadata; import importlib.util as util; required=(('funasr','funasr'),('modelscope','modelscope'),('torch','torch')); versions=[]; [versions.append(f'{package_name}={metadata.version(package_name)}') if util.find_spec(import_name) is not None else (_ for _ in ()).throw(ModuleNotFoundError(import_name)) for package_name, import_name in required]; import torch, torchaudio, funasr, modelscope; print('; '.join(versions))"
+    $output = & $PythonCmd -c $checkScript 2>&1
+
+    if ($LASTEXITCODE -eq 0) {
+        return @{
+            Success = $true
+            Message = ($output | Select-Object -Last 1).ToString().Trim()
+        }
+    }
+
+    $message = ($output | Select-Object -Last 1)
+    if ([string]::IsNullOrWhiteSpace($message)) {
+        $message = "unknown reason"
+    }
+
+    return @{
+        Success = $false
+        Message = $message.ToString().Trim()
+    }
+}
+
 # Main dependency checks
 $allChecksPassed = $true
 
@@ -738,7 +762,8 @@ if ($CheckParaformer) {
     Write-Info "Checking Paraformer dependencies..."
     $paraformerPackages = @(
         @{ PackageName = "funasr"; ImportName = "funasr" },
-        @{ PackageName = "modelscope"; ImportName = "modelscope" }
+        @{ PackageName = "modelscope"; ImportName = "modelscope" },
+        @{ PackageName = "torch"; ImportName = "torch" }
     )
 
     foreach ($package in $paraformerPackages) {
@@ -763,6 +788,16 @@ if ($CheckParaformer) {
 
         Write-Info "Paraformer packaging is optional. Build scripts can continue without $($package.PackageName)."
         Write-Info "Install manually with: $Python -m pip install $($package.PackageName)"
+    }
+
+    $runtimeSupport = Get-ParaformerRuntimeSupport -PythonCmd $Python
+    if ($runtimeSupport.Success) {
+        Write-Success "Paraformer runtime import check passed for packaging ($($runtimeSupport.Message))"
+    }
+    else {
+        Write-Warning "Paraformer runtime import check failed: $($runtimeSupport.Message)"
+        Write-Info "Paraformer packaging is optional. Build scripts can continue, but packaged Paraformer runs may fail until funasr, modelscope, torch, and transitive audio/runtime dependencies are importable together."
+        Write-Info "Recommended verification: $Python -c `"import torch, funasr, modelscope`""
     }
 }
 

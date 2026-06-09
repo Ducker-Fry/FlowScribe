@@ -541,7 +541,8 @@ def parse_doctor_args(argv: list[str] | None = None) -> DoctorOptions:
         default="small",
         help=(
             "Model name or path to check. local-whisper accepts names like `small`; "
-            "native-engine requires a local whisper.cpp ggml .bin file path. Default: small"
+            "native-engine requires a local whisper.cpp ggml .bin file path; "
+            "paraformer accepts `paraformer-zh`. Default: small"
         ),
     )
     parser.add_argument(
