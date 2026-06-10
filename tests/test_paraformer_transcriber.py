@@ -2,6 +2,7 @@ import sys
 import types
 import builtins
 from pathlib import Path
+import wave
 
 import pytest
 
@@ -70,19 +71,6 @@ def test_paraformer_transcribe_clip_slices_audio_and_maps_local_timestamps(
     audio = _prepared_audio(tmp_path, duration_seconds=30.0)
     fake_models = _install_fake_funasr(monkeypatch, [{"text": "clip text"}])
     _install_fake_paraformer_components(monkeypatch, tmp_path)
-    commands = []
-
-    def fake_run(command, **kwargs):
-        commands.append(command)
-        Path(command[-1]).write_bytes(b"clip")
-
-        class Result:
-            stdout = ""
-            stderr = ""
-
-        return Result()
-
-    monkeypatch.setattr("flowscribe.providers.transcribe.paraformer.subprocess.run", fake_run)
     monkeypatch.setattr(
         ParaformerTranscriber,
         "_probe_wave_duration_seconds",
@@ -96,33 +84,14 @@ def test_paraformer_transcribe_clip_slices_audio_and_maps_local_timestamps(
     assert transcript.segments[0].start_seconds == 0.0
     assert transcript.segments[0].end_seconds == 5.5
     assert fake_models[0].generate_kwargs["input"].endswith(".wav")
-    assert commands[0][commands[0].index("-ss") + 1] == "10.000"
-    assert commands[0][commands[0].index("-t") + 1] == "5.500"
     assert not Path(fake_models[0].generate_kwargs["input"]).exists()
 
 
-def test_paraformer_clip_uses_hidden_subprocess_kwargs(monkeypatch, tmp_path: Path) -> None:
+def test_paraformer_clip_slicing_stays_in_process(monkeypatch, tmp_path: Path) -> None:
     _redirect_model_dirs(monkeypatch, tmp_path)
     audio = _prepared_audio(tmp_path, duration_seconds=30.0)
     _install_fake_funasr(monkeypatch, [{"text": "clip text"}])
     _install_fake_paraformer_components(monkeypatch, tmp_path)
-    calls = []
-
-    def fake_run(command, **kwargs):
-        calls.append(kwargs)
-        Path(command[-1]).write_bytes(b"clip")
-
-        class Result:
-            stdout = ""
-            stderr = ""
-
-        return Result()
-
-    monkeypatch.setattr("flowscribe.providers.transcribe.paraformer.subprocess.run", fake_run)
-    monkeypatch.setattr(
-        "flowscribe.providers.transcribe.paraformer.hidden_subprocess_kwargs",
-        lambda: {"creationflags": 123},
-    )
     monkeypatch.setattr(
         ParaformerTranscriber,
         "_probe_wave_duration_seconds",
@@ -135,7 +104,7 @@ def test_paraformer_clip_uses_hidden_subprocess_kwargs(monkeypatch, tmp_path: Pa
         end_seconds=15.5,
     )
 
-    assert calls[0]["creationflags"] == 123
+    assert not hasattr(paraformer, "subprocess")
 
 
 def test_paraformer_transcribe_clip_retries_negative_dimension_with_accurate_seek(
@@ -145,18 +114,7 @@ def test_paraformer_transcribe_clip_retries_negative_dimension_with_accurate_see
     _redirect_model_dirs(monkeypatch, tmp_path)
     audio = _prepared_audio(tmp_path, duration_seconds=30.0)
     _install_fake_paraformer_components(monkeypatch, tmp_path)
-    commands = []
     attempts = {"count": 0}
-
-    def fake_run(command, **kwargs):
-        commands.append(command)
-        Path(command[-1]).write_bytes(b"clip")
-
-        class Result:
-            stdout = ""
-            stderr = ""
-
-        return Result()
 
     def fake_probe(path: Path) -> float | None:
         return 60.2 if path.name.endswith("-retry.wav") else 60.0
@@ -170,7 +128,6 @@ def test_paraformer_transcribe_clip_retries_negative_dimension_with_accurate_see
             )
         return _transcript_for_audio(clip_audio, "retry succeeded")
 
-    monkeypatch.setattr("flowscribe.providers.transcribe.paraformer.subprocess.run", fake_run)
     monkeypatch.setattr(
         ParaformerTranscriber,
         "_probe_wave_duration_seconds",
@@ -186,29 +143,12 @@ def test_paraformer_transcribe_clip_retries_negative_dimension_with_accurate_see
 
     assert transcript.text == "retry succeeded"
     assert attempts["count"] == 2
-    assert commands[0][2:6] == ["-ss", "171.000", "-t", "60.000"]
-    assert commands[1][2:4] == ["-i", str(audio.path)]
-    assert "-af" in commands[1]
-    assert "apad=pad_dur=0.200" in commands[1]
-    assert commands[1][commands[1].index("-ss") + 1] == "171.000"
-    assert commands[1][commands[1].index("-t") + 1] == "60.200"
 
 
 def test_paraformer_extract_clip_rejects_empty_clip(monkeypatch, tmp_path: Path) -> None:
     _redirect_model_dirs(monkeypatch, tmp_path)
     audio = _prepared_audio(tmp_path, duration_seconds=30.0)
     _install_fake_paraformer_components(monkeypatch, tmp_path)
-
-    def fake_run(command, **kwargs):
-        Path(command[-1]).write_bytes(b"clip")
-
-        class Result:
-            stdout = ""
-            stderr = ""
-
-        return Result()
-
-    monkeypatch.setattr("flowscribe.providers.transcribe.paraformer.subprocess.run", fake_run)
     monkeypatch.setattr(
         ParaformerTranscriber,
         "_probe_wave_duration_seconds",
@@ -230,17 +170,6 @@ def test_paraformer_transcribe_clip_subdivides_when_retry_still_hits_negative_di
     _redirect_model_dirs(monkeypatch, tmp_path)
     audio = _prepared_audio(tmp_path, duration_seconds=120.0)
     _install_fake_paraformer_components(monkeypatch, tmp_path)
-    commands = []
-
-    def fake_run(command, **kwargs):
-        commands.append(command)
-        Path(command[-1]).write_bytes(b"clip")
-
-        class Result:
-            stdout = ""
-            stderr = ""
-
-        return Result()
 
     def fake_probe(path: Path) -> float | None:
         return 12.2
@@ -254,7 +183,6 @@ def test_paraformer_transcribe_clip_subdivides_when_retry_still_hits_negative_di
             )
         return _transcript_for_audio(clip_audio, clip_name)
 
-    monkeypatch.setattr("flowscribe.providers.transcribe.paraformer.subprocess.run", fake_run)
     monkeypatch.setattr(
         ParaformerTranscriber,
         "_probe_wave_duration_seconds",
@@ -272,9 +200,9 @@ def test_paraformer_transcribe_clip_subdivides_when_retry_still_hits_negative_di
     assert transcript.segments[0].start_seconds == 0.0
     assert transcript.segments[1].start_seconds == 12.0
     assert transcript.segments[2].start_seconds == 24.0
-    assert any("-part1.wav" in str(command[-1]) for command in commands)
-    assert any("-part2.wav" in str(command[-1]) for command in commands)
-    assert any("-part3.wav" in str(command[-1]) for command in commands)
+    assert "part1" in transcript.segments[0].text
+    assert "part2" in transcript.segments[1].text
+    assert "part3" in transcript.segments[2].text
 
 
 def test_paraformer_transcribe_clip_recursively_subdivides_until_small_windows_succeed(
@@ -284,17 +212,6 @@ def test_paraformer_transcribe_clip_recursively_subdivides_until_small_windows_s
     _redirect_model_dirs(monkeypatch, tmp_path)
     audio = _prepared_audio(tmp_path, duration_seconds=120.0)
     _install_fake_paraformer_components(monkeypatch, tmp_path)
-    commands = []
-
-    def fake_run(command, **kwargs):
-        commands.append(command)
-        Path(command[-1]).write_bytes(b"clip")
-
-        class Result:
-            stdout = ""
-            stderr = ""
-
-        return Result()
 
     def fake_probe(path: Path) -> float | None:
         name = path.name
@@ -315,7 +232,6 @@ def test_paraformer_transcribe_clip_recursively_subdivides_until_small_windows_s
             "with negative dimension -1: [-1, 516]"
         )
 
-    monkeypatch.setattr("flowscribe.providers.transcribe.paraformer.subprocess.run", fake_run)
     monkeypatch.setattr(
         ParaformerTranscriber,
         "_probe_wave_duration_seconds",
@@ -334,8 +250,8 @@ def test_paraformer_transcribe_clip_recursively_subdivides_until_small_windows_s
     assert transcript.segments[1].start_seconds == 6.0
     assert transcript.segments[2].start_seconds == 12.0
     assert transcript.segments[3].start_seconds == 24.0
-    assert any("-part1-part1" in str(command[-1]) for command in commands)
-    assert any("-part1-part2" in str(command[-1]) for command in commands)
+    assert "part1-part1" in transcript.segments[0].text
+    assert "part1-part2" in transcript.segments[1].text
 
 
 def test_paraformer_subdivided_tiny_bad_window_is_skipped_instead_of_failing(
@@ -345,17 +261,6 @@ def test_paraformer_subdivided_tiny_bad_window_is_skipped_instead_of_failing(
     _redirect_model_dirs(monkeypatch, tmp_path)
     audio = _prepared_audio(tmp_path, duration_seconds=120.0)
     _install_fake_paraformer_components(monkeypatch, tmp_path)
-
-    def fake_run(command, **kwargs):
-        Path(command[-1]).write_bytes(b"clip")
-
-        class Result:
-            stdout = ""
-            stderr = ""
-
-        return Result()
-
-    monkeypatch.setattr("flowscribe.providers.transcribe.paraformer.subprocess.run", fake_run)
     monkeypatch.setattr(
         ParaformerTranscriber,
         "_probe_wave_duration_seconds",
@@ -476,11 +381,17 @@ def test_validate_paraformer_runtime_reports_missing_automodel_export(monkeypatc
 
 def _prepared_audio(tmp_path: Path, *, duration_seconds: float | None = None) -> PreparedAudio:
     path = tmp_path / "sample.wav"
-    path.write_bytes(b"audio")
+    sample_rate = 16000
+    total_frames = int(round((duration_seconds or 1.0) * sample_rate))
+    with wave.open(str(path), "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(sample_rate)
+        handle.writeframes(b"\x00\x00" * total_frames)
     return PreparedAudio(
         source=MediaItem(path=tmp_path / "sample.mp4"),
         path=path,
-        sample_rate=16000,
+        sample_rate=sample_rate,
         duration_seconds=duration_seconds,
     )
 

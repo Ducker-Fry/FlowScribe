@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import logging
 import sys
 import wave
@@ -22,9 +21,8 @@ from flowscribe.core.models import (
     TranscriptWord,
     TranscriptionOptions,
 )
-from flowscribe.media.tools import resolve_tool_path
 from flowscribe.model_manager import paraformer_component_paths, runtime_model_reference
-from flowscribe.utils.subprocess import hidden_subprocess_kwargs, subprocess_trace_enabled
+from flowscribe.utils.subprocess import subprocess_trace_enabled
 
 PARAFORMER_PROVIDER_NAME = "paraformer"
 PARAFORMER_MODEL_NAME = "paraformer-zh"
@@ -109,7 +107,6 @@ class ParaformerTranscriber:
         self._preset = preset
         self._word_timestamps = word_timestamps
         self._model = None
-        self._ffmpeg_executable = resolve_tool_path("ffmpeg")
         self._clip_fallback_window_seconds = 12.0
         self._clip_min_fallback_window_seconds = 6.0
 
@@ -323,68 +320,42 @@ class ParaformerTranscriber:
         )
         duration_seconds = end_seconds - start_seconds
         output_duration_seconds = duration_seconds + max(0.0, pad_silence_seconds)
-        if accurate_seek or pad_silence_seconds > 0.0:
-            command = [
-                self._ffmpeg_executable,
-                "-y",
-                "-i",
-                str(audio.path),
-                "-ss",
-                f"{start_seconds:.3f}",
-                "-t",
-                f"{output_duration_seconds:.3f}",
-                "-vn",
-                "-ac",
-                "1",
-                "-ar",
-                str(audio.sample_rate),
-            ]
-            if pad_silence_seconds > 0.0:
-                command.extend(["-af", f"apad=pad_dur={pad_silence_seconds:.3f}"])
-            command.extend(
-                [
-                    "-acodec",
-                    "pcm_s16le",
-                    str(clip_path),
-                ]
-            )
-        else:
-            command = [
-                self._ffmpeg_executable,
-                "-y",
-                "-ss",
-                f"{start_seconds:.3f}",
-                "-t",
-                f"{duration_seconds:.3f}",
-                "-i",
-                str(audio.path),
-                "-vn",
-                "-ac",
-                "1",
-                "-ar",
-                str(audio.sample_rate),
-                "-acodec",
-                "pcm_s16le",
-                str(clip_path),
-            ]
-        hidden_kwargs = hidden_subprocess_kwargs()
         try:
             if subprocess_trace_enabled():
                 LOGGER.info(
-                    "Paraformer clip extraction: start=%.3fs end=%.3fs output=%.3fs command=%s hidden_kwargs=%s",
+                    "Paraformer clip extraction: start=%.3fs end=%.3fs output=%.3fs mode=python-wave accurate_seek=%s pad_silence=%.3fs",
                     start_seconds,
                     end_seconds,
                     output_duration_seconds,
-                    command,
-                    hidden_kwargs,
+                    accurate_seek,
+                    max(0.0, pad_silence_seconds),
                 )
-            subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                check=True,
-                **hidden_kwargs,
-            )
+            with wave.open(str(audio.path), "rb") as source_wave:
+                sample_width = source_wave.getsampwidth()
+                frame_rate = source_wave.getframerate()
+                channels = source_wave.getnchannels()
+                total_frames = source_wave.getnframes()
+
+                if frame_rate <= 0 or sample_width <= 0 or channels <= 0:
+                    raise TranscriptionError(
+                        f"Paraformer clip extraction encountered invalid WAV parameters: {audio.path}"
+                    )
+
+                start_frame = max(0, min(total_frames, int(round(start_seconds * frame_rate))))
+                end_frame = max(start_frame, min(total_frames, int(round(end_seconds * frame_rate))))
+                source_wave.setpos(start_frame)
+                audio_frames = source_wave.readframes(end_frame - start_frame)
+
+            pad_frames = int(round(max(0.0, pad_silence_seconds) * frame_rate))
+            if pad_frames > 0:
+                audio_frames += b"\x00" * (pad_frames * channels * sample_width)
+
+            with wave.open(str(clip_path), "wb") as clip_wave:
+                clip_wave.setnchannels(channels)
+                clip_wave.setsampwidth(sample_width)
+                clip_wave.setframerate(frame_rate)
+                clip_wave.writeframes(audio_frames)
+
             if subprocess_trace_enabled():
                 LOGGER.info(
                     "Paraformer clip extraction finished: start=%.3fs end=%.3fs clip=%s",
@@ -392,11 +363,10 @@ class ParaformerTranscriber:
                     end_seconds,
                     clip_path,
                 )
-        except FileNotFoundError as exc:
-            raise TranscriptionError("ffmpeg was not found. Install ffmpeg and add it to PATH.") from exc
-        except subprocess.CalledProcessError as exc:
-            message = exc.stderr.strip() or exc.stdout.strip() or str(exc)
-            raise TranscriptionError(f"ffmpeg failed while slicing Paraformer clip: {message}") from exc
+        except (OSError, wave.Error) as exc:
+            raise TranscriptionError(
+                f"Failed to slice Paraformer clip from prepared WAV {audio.path}: {exc}"
+            ) from exc
         actual_duration_seconds = self._probe_wave_duration_seconds(clip_path)
         if actual_duration_seconds is None or actual_duration_seconds <= 0.0:
             raise TranscriptionError(
