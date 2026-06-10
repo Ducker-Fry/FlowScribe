@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.metadata
+import logging
 import subprocess
 import sys
 import tempfile
@@ -20,6 +21,9 @@ from flowscribe.providers.transcribe.paraformer import (
     validate_paraformer_runtime,
 )
 from flowscribe.providers.transcribe.native_engine import resolve_engine_exe
+from flowscribe.utils.subprocess_trace_scope import trace_subprocess_scope
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -126,7 +130,8 @@ def check_faster_whisper_import() -> DoctorCheck:
 
 def check_paraformer_import() -> DoctorCheck:
     try:
-        ensure_funasr_runtime_importable()
+        with trace_subprocess_scope("doctor-paraformer-import", logger=LOGGER):
+            ensure_funasr_runtime_importable()
     except Exception as exc:
         return DoctorCheck(
             "FunASR",

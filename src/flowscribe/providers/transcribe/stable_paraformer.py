@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import logging
 import sys
+import wave
 from collections.abc import Callable
+from time import perf_counter
 from threading import Lock
 from typing import Any
+
+import numpy as np
 
 from flowscribe.core.errors import CancellationError, TranscriptionError
 from flowscribe.core.models import PreparedAudio, Transcript
@@ -15,6 +19,10 @@ from flowscribe.providers.transcribe.paraformer import (
     PARAFORMER_MODEL_NAME,
     ParaformerTranscriber,
     ensure_funasr_runtime_importable,
+)
+from flowscribe.utils.subprocess_trace_scope import (
+    trace_funasr_audio_loading_scope,
+    trace_subprocess_scope,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -58,7 +66,27 @@ class StableParaformerTranscriber(ParaformerTranscriber):
         )
         try:
             model = self._load_clip_model()
-            result = model.generate(**self._clip_generate_kwargs(clip_audio))
+            generate_label = (
+                "paraformer-generate "
+                f"chunk={start_seconds:.3f}-{end_seconds:.3f} clip={clip_audio.path.name}"
+            )
+            generate_kwargs = self._clip_generate_kwargs(clip_audio)
+            generate_started_at = perf_counter()
+            LOGGER.info("Paraformer clip generate starting: %s", generate_label)
+            LOGGER.info(
+                "Paraformer clip generate payload: input_type=%s input_shape=%s fs=%s",
+                type(generate_kwargs.get("input")).__name__,
+                getattr(generate_kwargs.get("input"), "shape", None),
+                generate_kwargs.get("fs"),
+            )
+            with trace_subprocess_scope(generate_label, logger=LOGGER):
+                with trace_funasr_audio_loading_scope(generate_label, logger=LOGGER):
+                    result = model.generate(**generate_kwargs)
+            LOGGER.info(
+                "Paraformer clip generate finished: %s elapsed=%.3fs",
+                generate_label,
+                perf_counter() - generate_started_at,
+            )
             if should_cancel is not None and should_cancel():
                 raise CancellationError("Transcription canceled.")
             return self._build_transcript(clip_audio, result, should_cancel=should_cancel)
@@ -74,7 +102,14 @@ class StableParaformerTranscriber(ParaformerTranscriber):
     def _load_clip_model(self):
         if self._clip_model is None:
             self._configure_external_model_cache()
-            ensure_funasr_runtime_importable()
+            import_started_at = perf_counter()
+            LOGGER.info("Paraformer clip model import starting.")
+            with trace_subprocess_scope("paraformer-import", logger=LOGGER):
+                ensure_funasr_runtime_importable()
+            LOGGER.info(
+                "Paraformer clip model import finished: elapsed=%.3fs",
+                perf_counter() - import_started_at,
+            )
             from funasr import AutoModel
 
             runtime_model_reference("paraformer", self._model_name or PARAFORMER_MODEL_NAME)
@@ -95,11 +130,17 @@ class StableParaformerTranscriber(ParaformerTranscriber):
                         bool(getattr(sys, "frozen", False)),
                         sys.executable,
                     )
-                    cached_model = AutoModel(
-                        model=str(model_path),
-                        punc_model=str(punc_model_path),
-                        disable_update=True,
-                        device=device,
+                    model_started_at = perf_counter()
+                    with trace_subprocess_scope("paraformer-automodel-init", logger=LOGGER):
+                        cached_model = AutoModel(
+                            model=str(model_path),
+                            punc_model=str(punc_model_path),
+                            disable_update=True,
+                            device=device,
+                        )
+                    LOGGER.info(
+                        "ASR-only Paraformer clip model initialized: elapsed=%.3fs",
+                        perf_counter() - model_started_at,
                     )
                     _ASR_ONLY_MODEL_CACHE[cache_key] = cached_model
                 else:
@@ -109,7 +150,8 @@ class StableParaformerTranscriber(ParaformerTranscriber):
 
     def _clip_generate_kwargs(self, audio: PreparedAudio) -> dict[str, Any]:
         kwargs: dict[str, Any] = {
-            "input": str(audio.path),
+            "input": self._load_clip_waveform(audio),
+            "fs": audio.sample_rate,
             "use_itn": True,
             "batch_size": 1,
             "disable_pbar": True,
@@ -117,3 +159,24 @@ class StableParaformerTranscriber(ParaformerTranscriber):
         if self._language:
             kwargs["language"] = self._language
         return kwargs
+
+    @staticmethod
+    def _load_clip_waveform(audio: PreparedAudio) -> np.ndarray:
+        try:
+            with wave.open(str(audio.path), "rb") as wav_file:
+                sample_width = wav_file.getsampwidth()
+                channels = wav_file.getnchannels()
+                frame_count = wav_file.getnframes()
+                frame_bytes = wav_file.readframes(frame_count)
+        except (OSError, wave.Error) as exc:
+            raise TranscriptionError(f"Failed to read Paraformer clip WAV {audio.path}: {exc}") from exc
+
+        if sample_width != 2:
+            raise TranscriptionError(
+                f"Paraformer clip WAV must be 16-bit PCM, got sample width {sample_width} for {audio.path}"
+            )
+
+        waveform = np.frombuffer(frame_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+        if channels > 1:
+            waveform = waveform.reshape(-1, channels).mean(axis=1)
+        return waveform
