@@ -40,3 +40,25 @@ def test_packaging_common_defines_recursive_incremental_directory_sync() -> None
     assert "FilesAdded" in script
     assert "FilesRemoved" in script
     assert "Remove-ProjectItemIfExists -Path $item.FullName -ProjectRoot $ProjectRoot" in script
+
+
+def test_code_package_validates_complete_paraformer_model_resources() -> None:
+    script = Path("scripts/build_code_package.py").read_text(encoding="utf-8")
+
+    assert "REQUIRED_BUNDLED_MODEL_FILES" in script
+    assert '"paraformer-zh"' in script
+    assert '"fsmn-vad"' in script
+    assert '"ct-punc"' in script
+    assert '"tokens.json"' in script
+    assert '"am.mvn"' in script
+    assert '"jieba.c.dict"' in script
+    assert '"jieba_usr_dict"' in script
+    assert "validate_bundled_models(models_root)" in script
+    assert "Bundled Paraformer model resources are incomplete" in script
+
+
+def test_code_package_does_not_delete_existing_models_when_not_rebundling() -> None:
+    script = Path("scripts/build_code_package.py").read_text(encoding="utf-8")
+
+    assert "elif models_root.exists()" not in script
+    assert "shutil.rmtree(models_root)" in script

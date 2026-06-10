@@ -24,7 +24,7 @@ from flowscribe.core.models import (
 )
 from flowscribe.media.tools import resolve_tool_path
 from flowscribe.model_manager import paraformer_component_paths, runtime_model_reference
-from flowscribe.utils.subprocess import hidden_subprocess_kwargs
+from flowscribe.utils.subprocess import hidden_subprocess_kwargs, subprocess_trace_enabled
 
 PARAFORMER_PROVIDER_NAME = "paraformer"
 PARAFORMER_MODEL_NAME = "paraformer-zh"
@@ -367,14 +367,31 @@ class ParaformerTranscriber:
                 "pcm_s16le",
                 str(clip_path),
             ]
+        hidden_kwargs = hidden_subprocess_kwargs()
         try:
+            if subprocess_trace_enabled():
+                LOGGER.info(
+                    "Paraformer clip extraction: start=%.3fs end=%.3fs output=%.3fs command=%s hidden_kwargs=%s",
+                    start_seconds,
+                    end_seconds,
+                    output_duration_seconds,
+                    command,
+                    hidden_kwargs,
+                )
             subprocess.run(
                 command,
                 capture_output=True,
                 text=True,
                 check=True,
-                **hidden_subprocess_kwargs(),
+                **hidden_kwargs,
             )
+            if subprocess_trace_enabled():
+                LOGGER.info(
+                    "Paraformer clip extraction finished: start=%.3fs end=%.3fs clip=%s",
+                    start_seconds,
+                    end_seconds,
+                    clip_path,
+                )
         except FileNotFoundError as exc:
             raise TranscriptionError("ffmpeg was not found. Install ffmpeg and add it to PATH.") from exc
         except subprocess.CalledProcessError as exc:

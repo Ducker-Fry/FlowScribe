@@ -3,6 +3,7 @@ param(
     [string]$AppName = "FlowScribeGUI",
     [string]$DotNet = "dotnet",
     [switch]$IncludeBundledModels,
+    [switch]$SkipBundledModels,
     [switch]$SkipHelperBuild,
     [switch]$SkipClean
 )
@@ -26,7 +27,13 @@ if ($LASTEXITCODE -ne 0) {
     throw "Portable core build failed."
 }
 
-& $CodeBuilder -Python $Python -IncludeBundledModels:$IncludeBundledModels
+$codeArgs = @{
+    Python = $Python
+}
+if (-not $SkipBundledModels) {
+    $codeArgs["IncludeBundledModels"] = $true
+}
+& $CodeBuilder @codeArgs
 if ($LASTEXITCODE -ne 0) {
     throw "Portable code build failed."
 }

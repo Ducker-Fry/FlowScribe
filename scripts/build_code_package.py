@@ -14,6 +14,28 @@ DEFAULT_RELEASE_ROOT = PROJECT_ROOT / "dist" / "FlowScribePortable"
 RESOURCE_SUFFIXES = {".qss", ".wav"}
 IGNORED_DIRECTORIES = {"__pycache__", "outputs"}
 IGNORED_FILE_SUFFIXES = {".pyc", ".json", ".txt", ".md", ".m4a"}
+REQUIRED_BUNDLED_MODEL_FILES = {
+    "paraformer-zh": (
+        "configuration.json",
+        "config.yaml",
+        "model.pt",
+        "tokens.json",
+        "am.mvn",
+    ),
+    "fsmn-vad": (
+        "configuration.json",
+        "config.yaml",
+        "model.pt",
+    ),
+    "ct-punc": (
+        "configuration.json",
+        "config.yaml",
+        "model.pt",
+        "tokens.json",
+        "jieba.c.dict",
+        "jieba_usr_dict",
+    ),
+}
 
 
 def build_code_payload(*, release_root: Path, include_bundled_models: bool) -> None:
@@ -45,8 +67,21 @@ def build_code_payload(*, release_root: Path, include_bundled_models: bool) -> N
             if models_root.exists():
                 shutil.rmtree(models_root)
             shutil.copytree(source_models_root, models_root)
-    elif models_root.exists():
-        shutil.rmtree(models_root)
+            validate_bundled_models(models_root)
+
+
+def validate_bundled_models(models_root: Path) -> None:
+    missing_paths = []
+    for model_name, required_files in REQUIRED_BUNDLED_MODEL_FILES.items():
+        model_root = models_root / model_name
+        for relative_file in required_files:
+            required_path = model_root / relative_file
+            if not required_path.is_file():
+                missing_paths.append(required_path.relative_to(models_root))
+
+    if missing_paths:
+        formatted = ", ".join(str(path) for path in missing_paths)
+        raise RuntimeError(f"Bundled Paraformer model resources are incomplete: {formatted}")
 
 
 def compile_package_tree(*, source_root: Path, destination_root: Path) -> None:

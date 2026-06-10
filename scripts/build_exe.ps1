@@ -2,6 +2,7 @@ param(
     [string]$Python = "python",
     [string]$VenvPath = ".venv-build",
     [string]$AppName = "FlowScribe",
+    [switch]$SkipBundledModels,
     [switch]$SkipClean
 )
 
@@ -24,7 +25,14 @@ if ($LASTEXITCODE -ne 0) {
     throw "Portable core build failed."
 }
 
-& $CodeBuilder -Python $Python -VenvPath $VenvPath
+$codeArgs = @{
+    Python = $Python
+    VenvPath = $VenvPath
+}
+if (-not $SkipBundledModels) {
+    $codeArgs["IncludeBundledModels"] = $true
+}
+& $CodeBuilder @codeArgs
 if ($LASTEXITCODE -ne 0) {
     throw "Portable code build failed."
 }
