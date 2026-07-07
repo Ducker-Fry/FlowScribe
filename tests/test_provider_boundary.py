@@ -21,6 +21,18 @@ from flowscribe.providers.transcribe.registry import (
 from flowscribe.providers.transcribe.stable_paraformer import StableParaformerTranscriber
 
 
+def test_package_level_transcribe_exports_include_paraformer_symbols() -> None:
+    from flowscribe.providers.transcribe import (
+        PARAFORMER_MODEL_NAME,
+        ParaformerProvider as PackageParaformerProvider,
+        ParaformerTranscriber as PackageParaformerTranscriber,
+    )
+
+    assert PARAFORMER_MODEL_NAME == "paraformer-zh"
+    assert PackageParaformerProvider is ParaformerProvider
+    assert PackageParaformerTranscriber is ParaformerTranscriber
+
+
 def test_default_provider_is_local_whisper_with_explicit_capabilities() -> None:
     provider = default_transcription_provider()
 
