@@ -6,8 +6,8 @@ Project guidance for Codex (Codex.ai/code) when working in this repository.
 
 FlowScribe is a local-first audio/video transcription toolkit for Windows. Provides a CLI (`flowscribe`) and PySide6 desktop GUI for transcribing local media and public URL audio, with transcript review, editing, search, and re-export.
 
-**Stack**: Python 3.10+ CLI + PySide6 GUI + .NET 8 WASAPI helper (system audio capture)  
-**Current release**: v0.2.7  
+**Stack**: Python 3.10+ CLI + PySide6 GUI + local provider layer (`faster-whisper`, `whisper.cpp`, `Paraformer`) + .NET 8 WASAPI helper  
+**Current release**: v0.3.3  
 **License**: MIT
 
 ## Quick Commands
@@ -41,34 +41,41 @@ git commit -m "Prepare v0.x.y"; git push; git tag v0.x.y; git push origin v0.x.y
 
 ## Package Layout
 
-```
+```text
 src/flowscribe/
-├── app/            Service layer — TranscriptionService, ProgressEvent, TranscriptionJob
-├── cli/main.py     Argparse dispatch (transcribe/url/inspect/search/serve)
-├── config/         Runtime settings, presets
-├── core/           Domain models, pipeline orchestration, progressive chunking, ports, errors
-│   └── progressive/  Modular progressive transcription (planner, merger, executor)
-├── gui/            PySide6 — new_main_window.py, qt_app.py (entry), state.py
-│   ├── dialogs/    Settings dialog, queue item settings dialog
-│   ├── views/      SingleTaskView, LibraryView, QueueView (QStackedWidget architecture)
-│   ├── utils/      Modular utility functions (formatting, state, library, artifacts)
-│   ├── windows/    Legacy MainWindow mixins (deprecated, kept for reference)
-│   ├── widgets/    Source list, custom UI components
-│   └── workers/    QThread workers (transcription, queue runner, bookmarklet server)
-├── input/          Local file discovery, URL download/inspection, URL security validation
-├── library/        Transcript library (JSON-backed persistent index)
-├── media/          ffmpeg extraction, WASAPI capture, audio cache
-├── nlp/            Chinese word alignment (jieba), simplified conversion (opencc)
-├── output/         Writers for txt/md/json/srt/vtt, path builder
-├── queue/          Batch queue system (models, store, importers, runner)
-├── search/         Full-text search over transcript JSON
-├── server/         HTTP server for Bookmarklet integration (bookmarklet_server.py, handlers.py)
-├── transcript/     Transcript editing, re-export from existing JSON
-└── transcription/  Provider abstraction + LocalWhisperTranscriber (faster-whisper)
-tests/              41 test files matching source modules
-scripts/            build_exe.ps1, build_gui_exe.ps1, build_wasapi_helper.ps1
+├── app/            App-facing service layer and schema exports
+├── capabilities/   Stable capability contracts and routing layer
+├── cli/            Argparse entrypoints, doctor, parsers, validators
+├── config/         Runtime settings, resources, install/runtime config
+├── core/           Domain models, ports, errors, progressive orchestration
+│   └── progressive/  Planner, merger, executor
+├── engine/         Named-pipe protocol client models/helpers
+├── gui/            PySide6 desktop app
+│   ├── dialogs/    Settings, model manager, queue item, transcript view dialogs
+│   ├── services/   Queue, library, runtime, and window coordination
+│   ├── views/      SingleTaskView, LibraryView, QueueView
+│   ├── widgets/    Source list and queue UI widgets
+│   ├── windows/    Legacy mixins kept for compatibility/reference
+│   └── workers/    QThread workers for transcription, queue, and server flows
+├── input/          Local discovery, URL tools, cookies/proxy/security
+├── library/        Transcript library store and query helpers
+├── media/          ffmpeg probing/extraction and WASAPI helper integration
+├── nlp/            Chinese segmentation and script conversion
+├── output/         Writers for txt/md/json/srt/vtt
+├── pipeline/       Local/url transcription pipelines and runtime factory
+├── providers/      Public provider boundary and concrete backends
+├── search/         Full-text transcript search
+├── server/         Bookmarklet and task HTTP server
+├── tasks/          Stable task protocol, queue models/store/importers
+├── transcript/     Transcript editing and re-export
+├── transcription/  Compatibility shims around provider modules
+├── queue/          Compatibility shims around task queue modules
+└── utils/          Subprocess and runtime logging helpers
+tests/              87 test modules covering CLI, app, providers, GUI, server, queue, and packaging
+scripts/            build/package/smoke/benchmark helpers
 tools/              wasapi-capture-helper/ (.NET 8 C# WASAPI loopback capture)
-docs/               Developer handoff, dev-state, packaging, release-automation, roadmap, ui-refactor docs
+native/             flowscribe-engine/ (local C++ whisper.cpp-based engine)
+docs/               Developer handoff, dev-state, packaging, roadmap, installation, architecture
 ```
 
 ## Core Architecture
@@ -76,31 +83,28 @@ docs/               Developer handoff, dev-state, packaging, release-automation,
 Layered pipeline: `InputSource → MediaPreparer → Transcriber → ArtifactWriter`
 
 Key files by layer:
-- **`core/`** — domain models, `LocalTranscriptionPipeline` orchestrator, progressive chunking, deduplication, `ports.py` (protocols), `errors.py` (error hierarchy)
-- **`core/progressive/`** — modular progressive transcription: `planner.py` (chunk planning), `merger.py` (merge policy), `executor.py` (execution & cache)
-- **`core/deduplication.py`** — `TranscriptDeduplicator` (post-processing duplicate removal at chunk boundaries)
-- **`app/service.py`** — `TranscriptionService.run(job)` entry point, wires pipeline, emits progress
-- **`gui/new_main_window.py`** — `NewMainWindow(QMainWindow)` (375 lines), simplified QStackedWidget architecture
-- **`gui/views/`** — Standalone views: `SingleTaskView` (350 lines), `LibraryView` (230 lines), `QueueView` (450 lines)
-- **`gui/dialogs/`** — `SettingsDialog` (240 lines), `QueueItemSettingsDialog`
-- **`gui/utils/`** — modular utility functions: `formatting.py`, `state.py`, `library.py`, `artifacts.py`
-- **`gui/qt_app.py`** — `run_gui()` entry point, `FlowScribeMainWindow` compat wrapper
-- **`gui/workers/transcription_worker.py`** — `TranscriptionWorker` (QThread wrapper)
-- **`gui/workers/queue_runner.py`** — `QueueRunner` (sequential batch processor)
-- **`gui/workers/bookmarklet_server_worker.py`** — `BookmarkletServerWorker` (QThread wrapper for HTTP server)
-- **`gui/widgets/source_list_widget.py`** — `SourceListWidget` (drag-drop media list)
-- **`queue/models.py`** — `QueueItem`, `QueueItemSettings`, `BatchOutputStrategy`
-- **`queue/store.py`** — `BatchQueueStore` (JSON persistence at `{AppData}/FlowScribe/batch-queue.json`)
-- **`queue/importers.py`** — URL parsing, .txt/.csv/.xlsx import, deduplication
-- **`server/bookmarklet_server.py`** — `BookmarkletServer` (HTTP server for browser integration)
-- **`server/handlers.py`** — `AddUrlHandler` (request processing, queue integration)
-- **`cli/main.py`** — argparser dispatch to service
-- **`input/url_downloader.py`** — `UrlAudioDownloader.download_audio()` (yt-dlp/ffmpeg)
-- **`input/url_security.py`** — `validate_public_http_url()` (blocks private IPs, allows Teredo IPv6)
-- **`media/audio_extractor.py`** — `FfmpegAudioExtractor`, `PreparedAudioCache`
-- **`transcription/providers.py`** — `LocalWhisperTranscriber` (faster-whisper wrapper)
+- **`core/`** — domain models, ports, errors, progressive orchestration, deduplication
+- **`core/progressive/`** — modular progressive transcription planner/merger/executor
+- **`app/service.py`** — `TranscriptionService.run(job)` app-facing entry point
+- **`tasks/models.py`** — stable task/job/progress protocol objects
+- **`tasks/queue_models.py`** — `QueueItem`, `QueueItemSettings`, queue item identity/output rules
+- **`tasks/queue_store.py`** — `BatchQueueStore` persistence at `{AppData}/FlowScribe/batch-queue.json`
+- **`tasks/queue_importers.py`** — URL parsing and `.txt` / `.csv` / `.xlsx` import helpers
+- **`providers/transcribe/registry.py`** — provider resolution and capability metadata
+- **`providers/transcribe/local_whisper.py`** — default `faster-whisper` backend
+- **`providers/transcribe/native_engine.py`** — local `whisper.cpp` named-pipe backend
+- **`providers/transcribe/stable_paraformer.py`** — Chinese-first Paraformer backend
+- **`pipeline/transcription.py`** / **`pipeline/url_transcription.py`** — local and URL pipeline wiring
+- **`gui/new_main_window.py`** — `NewMainWindow(QMainWindow)` toolbar + stacked-view shell
+- **`gui/views/`** — `SingleTaskView`, `LibraryView`, `QueueView`
+- **`gui/dialogs/`** — settings, model manager, queue item, transcript view dialogs
+- **`gui/services/runtime_service.py`** — queue/server runtime helpers
+- **`gui/workers/queue_runner.py`** — GUI queue worker
+- **`server/bookmarklet_server.py`** — bookmarklet/task HTTP server
+- **`server/agent_api.py`** — task payload parsing and SSE helpers
+- **`transcription/`** and **`queue/`** — compatibility shims; prefer `providers/` and `tasks/` for new code
 
-Detailed class table → [CLAUDE_CLASSES.md](CLAUDE_CLASSES.md) (read on demand)
+Primary public API surface → `docs/developer-handoff.md`
 
 ## Key Workflows
 
@@ -137,20 +141,20 @@ NewMainWindow (QMainWindow)
 - **Queue file watcher**: Auto-refresh when queue changes externally
 
 **Migration from v0.2.x**:
-- Old `MainWindow` (1198 lines) → New `NewMainWindow` (375 lines)
-- Embedded settings → `SettingsDialog` (240 lines)
-- Views dialog tabs → Standalone views (SingleTaskView 350, LibraryView 230, QueueView 450 lines)
-- Queue URL-only → Queue supports local files + URLs
+- Legacy `MainWindow` mixin structure remains for compatibility/reference
+- Main GUI flow now centers on `NewMainWindow` + standalone views
+- Embedded settings moved to `SettingsDialog`
+- Queue evolved from URL-only intake to local files + URLs
 
 ## Batch Queue System
 
 **Architecture**: Sequential processor with persistent JSON queue, auto-retry, and drag-reorder UI.
 
 **Key components**:
-- `QueueItem` — frozen dataclass with source (local or URL), settings snapshot, output strategy, status, retry count
+- `QueueItem` — frozen dataclass with source, settings snapshot, status, retries, optional title/transcript metadata
 - `BatchQueueStore` — JSON persistence at `{AppData}/FlowScribe/batch-queue.json`, full-rewrite on mutation
 - `QueueRunner` — QObject on QThread, dequeues items one by one, calls `TranscriptionService.run()` per item
-- `QueueView` — UI with local file + URL support, file import (.txt/.csv/.xlsx), drag-reorder list
+- `QueueView` — UI with local file + URL support, file import (`.txt` / `.csv` / `.xlsx`), drag-reorder list
 
 **Features**:
 - **Local file support**: Add local media files directly to queue (v0.3.0+)
@@ -168,14 +172,14 @@ NewMainWindow (QMainWindow)
 **Important notes**:
 - Language "auto" → `None` for faster-whisper compatibility
 - Preset "none" → `None` for faster-whisper compatibility
-- Output formats read from `self.format_checks` dict in MainWindow
+- Output formats are collected from `format_checks` maps in the settings dialogs
 - Default to JSON if no formats selected
 - IPv6 Teredo addresses (2001::/32) allowed in URL validation
 - Progressive overlap tolerance: 3.0s (increased from 1.5s to handle long audio timestamp drift)
 - Progressive timestamp auto-fix: enabled by default to correct Whisper timestamp anomalies in long audio
 - CPU optimization: auto-detects CPU-only systems and enables int8 quantization for 15-25% speed boost
 - **Transcript deduplication**: enabled by default, removes duplicate segments at chunk boundaries after transcription completes (not during chunk merging)
-- **Queue display**: `QueueItem.display_label` prioritizes `title` field over URL; `QueueView._format_item_display` uses `display_label` for consistent title-based display
+- **Queue display**: `QueueItem.display_label` prioritizes `title` over raw URL; `QueueView._format_item_display()` uses `display_label` consistently
 
 ## Performance Metrics
 
@@ -205,8 +209,8 @@ NewMainWindow (QMainWindow)
 **CRITICAL: AI writes tests, user executes complex tests. AI MUST NOT run tests with large I/O or output.**
 
 - pytest with `testpaths = ["tests"]`; Ruff lint (line-length 100)
-- Mock-based testing for service, URL downloader, progressive executor, queue system, deduplication
-- 44 test files covering core, queue, GUI utilities, dialogs, and integration scenarios
+- Mock-based testing for service, URL downloader, progressive executor, queue system, providers, GUI, and packaging flows
+- 87 test modules covering CLI, app, queue, GUI utilities, dialogs, providers, server, and packaging scenarios
 - Run focused: `python -m pytest tests/test_file.py`
 - Queue tests: `tests/test_queue_models.py`, `tests/test_queue_store.py`, `tests/test_queue_importers.py`, `tests/test_queue_display_title.py`, `tests/test_bookmarklet_title_integration.py`
 - Deduplication tests: `tests/test_deduplication.py`, `tests/test_deduplication_integration.py`
@@ -332,7 +336,7 @@ NewMainWindow (QMainWindow)
 - Read only the specific files needed for the task — avoid exploratory reads
 - Use `offset` and `limit` parameters for large files (read relevant sections only)
 - Never re-read a file just edited — trust the Edit/Write tool succeeded
-- Check CLAUDE_CLASSES.md reference table before reading implementation files
+- Check `docs/developer-handoff.md` before diving into implementation files when you need the current public surface
 
 **Testing Strategy**:
 - **AI writes test files, user executes complex tests** — AI creates/modifies test files, provides execution commands, user runs and shares results
@@ -397,14 +401,14 @@ NewMainWindow (QMainWindow)
 
 ## Code Organization Guidelines
 
-**CRITICAL: Maximum 500 lines per file. MUST split files that exceed this limit.**
+**CRITICAL: Prefer files at or below 500 lines. Some legacy GUI files still exceed this and should be split opportunistically.**
 
 **File Size Limits**: To maintain readability and avoid context overflow:
-- **Maximum file size**: 500 lines per file (STRICT LIMIT - NO EXCEPTIONS)
+- **Maximum target for new files**: 500 lines per file
 - **Target file size**: 200-300 lines per file (recommended)
 - **When creating new files**: MUST check line count before writing
-- **When modifying files**: If a file exceeds 500 lines after changes, MUST split it into focused modules
-- **Before any Write operation**: Count lines in new content, refuse to write if > 500 lines
+- **When modifying files**: If a file already exceeds 500 lines, avoid growing it substantially and split the touched area when the task naturally supports extraction
+- **Before any Write operation**: Count lines in new content and avoid introducing oversized new modules
 
 **Refactoring Strategy**:
 - Use **Mixin pattern** for large classes (see `gui/main_window.py` → `gui/windows/*.py`)
@@ -417,6 +421,9 @@ NewMainWindow (QMainWindow)
 - `core/progressive.py`: 973 lines → 40 lines (3 modules in `core/progressive/`)
 - `gui/utils.py`: 929 lines → 154 lines (4 modules in `gui/utils/`)
 - Removed: `media/system_audio_capture_legacy.py` (323 lines, unused)
+
+**Current over-limit modules**:
+- `gui/new_main_window.py`, `gui/views/single_task_view.py`, and `gui/views/queue_view.py` are still above the preferred limit and are valid future extraction targets
 
 **Writing New Code**:
 - Start with focused, single-responsibility modules
