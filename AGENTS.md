@@ -39,6 +39,22 @@ python -m flowscribe serve  # Start Bookmarklet server
 git commit -m "Prepare v0.x.y"; git push; git tag v0.x.y; git push origin v0.x.y
 ```
 
+## Codegraph
+
+Use the workspace-local codegraph before broad exploration or multi-file reads.
+
+```powershell
+python scripts/build_codegraph.py
+python scripts/query_codegraph.py search TranscriptionService
+python scripts/query_codegraph.py show flowscribe.app.service.TranscriptionService
+python scripts/query_codegraph.py neighbors flowscribe.providers.transcribe.registry.ParaformerProvider
+```
+
+Generated artifacts:
+
+- `.codex/codegraph/index.json`
+- `.codex/codegraph/summary.md`
+
 ## Package Layout
 
 ```text
@@ -333,10 +349,12 @@ NewMainWindow (QMainWindow)
 **File Reading**:
 - Use `Grep` to locate code patterns before reading files (e.g., `Grep pattern="class TranscriptionService" type="py"`)
 - Use `Glob` to find files by pattern instead of reading directories (e.g., `Glob pattern="**/test_*.py"`)
+- Use the local codegraph summary/query tools before broad exploration or when you need a symbol map
 - Read only the specific files needed for the task — avoid exploratory reads
 - Use `offset` and `limit` parameters for large files (read relevant sections only)
 - Never re-read a file just edited — trust the Edit/Write tool succeeded
 - Check `docs/developer-handoff.md` before diving into implementation files when you need the current public surface
+- Check `.codex/codegraph/summary.md` or run `python scripts/query_codegraph.py ...` before opening many files
 
 **Testing Strategy**:
 - **AI writes test files, user executes complex tests** — AI creates/modifies test files, provides execution commands, user runs and shares results
