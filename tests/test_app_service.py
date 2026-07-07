@@ -476,11 +476,20 @@ def test_transcription_service_emits_progressive_chunk_updates(monkeypatch, tmp_
     )
     assert prepare_event.total_duration_seconds == 120.0
     assert prepare_event.chunk_count == 2
+    assert prepare_event.raw_metadata["progressive"]["mode"] == "python-progressive"
     assert transcribe_event.processed_duration_seconds == 30.0
     assert transcribe_event.total_duration_seconds == 120.0
     assert transcribe_event.chunk_index == 1
     assert transcribe_event.chunk_count == 2
     assert transcribe_event.segments[0].text == "hello"
+    assert transcribe_event.raw_metadata["progressive"]["backend"] == "python"
+    summary_event = next(
+        event
+        for event in events
+        if event.stage == "transcribe"
+        and event.message.startswith("Progressive transcription complete")
+    )
+    assert summary_event.raw_metadata["progressive"]["completed_chunks"] == 1
 
 
 def test_transcription_service_does_not_use_python_progressive_for_native_provider(
@@ -525,6 +534,52 @@ def test_transcription_service_does_not_use_python_progressive_for_native_provid
 
     assert result.ok is True
     assert captured["classic"] is True
+
+
+def test_transcription_service_native_progressive_resume_note_is_explicit(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    media = tmp_path / "sample.mp4"
+    media.write_bytes(b"media")
+    model = tmp_path / "ggml-base.en.bin"
+    model.write_bytes(b"model")
+    artifact = OutputArtifacts(paths=(tmp_path / "out" / "sample.txt",))
+
+    class FakeLocalFileSource:
+        def __init__(self, inputs, recursive: bool) -> None:
+            self.inputs = inputs
+            self.recursive = recursive
+
+        def discover(self):
+            return [MediaItem(path=media)]
+
+    class FakePipeline:
+        def process(self, item: MediaItem, *, should_cancel=None) -> OutputArtifacts:
+            return artifact
+
+    monkeypatch.setattr("flowscribe.app.service.LocalFileSource", FakeLocalFileSource)
+    monkeypatch.setattr("flowscribe.app.service._build_pipeline", lambda job, settings: FakePipeline())
+
+    events = []
+    job = TranscriptionJob(
+        sources=(SourceSpec(kind="local", value=str(media)),),
+        output_dir=tmp_path / "out",
+        provider_name="native-engine",
+        model_name=str(model),
+        progressive_enabled=True,
+        progressive_resume=True,
+    )
+
+    result = TranscriptionService().run(job, progress=events.append)
+
+    assert result.ok is True
+    note_event = next(
+        event
+        for event in events
+        if "Resume unsupported on native-engine; continuing without resume." in event.message
+    )
+    assert note_event.stage == "prepare"
 
 
 def test_transcription_service_uses_python_progressive_for_paraformer_provider(

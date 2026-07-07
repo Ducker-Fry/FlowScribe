@@ -182,6 +182,7 @@ class TranscriptionJob:
     cookies_path: Path | None = None
     proxy: str | None = None
     progressive_enabled: bool = True
+    progressive_auto_enabled: bool = False
     progressive_resume: bool = True
     progressive_chunk_seconds: float = 30.0
     progressive_chunk_overlap_seconds: float = 3.0

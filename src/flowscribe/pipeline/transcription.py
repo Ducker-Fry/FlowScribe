@@ -4,9 +4,14 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+from flowscribe.app.progressive_policy import (
+    ProgressiveExecutionPolicy,
+    build_progressive_metadata,
+)
 from flowscribe.core.errors import TranscriptionError
 from flowscribe.core.models import (
     MediaDurationInfo,
@@ -169,6 +174,8 @@ class LocalTranscriptionPipeline:
                     transcript=transcript,
                     processed_duration_seconds=state.processed_duration_seconds,
                     cache_dir=state.cache_dir,
+                    resumed_chunks=state.resumed_chunks,
+                    effective_parallel_chunks=state.effective_parallel_chunks,
                 )
             elif self._transcript_enricher is not None:
                 state = ProgressiveTranscriptionState(
@@ -179,6 +186,8 @@ class LocalTranscriptionPipeline:
                     transcript=transcript,
                     processed_duration_seconds=state.processed_duration_seconds,
                     cache_dir=state.cache_dir,
+                    resumed_chunks=state.resumed_chunks,
+                    effective_parallel_chunks=state.effective_parallel_chunks,
                 )
             if not keep_progressive_cache:
                 cache_store.clear()
@@ -190,7 +199,50 @@ class LocalTranscriptionPipeline:
                     transcript=state.transcript,
                     processed_duration_seconds=state.processed_duration_seconds,
                     cache_dir=None,
+                    resumed_chunks=state.resumed_chunks,
+                    effective_parallel_chunks=state.effective_parallel_chunks,
                 )
+            progressive_policy = ProgressiveExecutionPolicy(
+                mode="python-progressive",
+                progressive_requested=resume,
+                progressive_enabled=True,
+                auto_enabled=False,
+                backend="python",
+                resume_requested=resume,
+                resume_supported=True,
+                resume_effective=resume,
+                cache_supported=True,
+                chunk_seconds=chunk_duration_seconds,
+                overlap_seconds=chunk_overlap_seconds,
+                max_workers=max_workers,
+                notes=(),
+            )
+            transcript = replace(
+                state.transcript,
+                metadata={
+                    **state.transcript.metadata,
+                    "progressive": build_progressive_metadata(
+                        progressive_policy,
+                        cache_dir_present=state.cache_dir is not None,
+                        chunk_count=len(state.chunk_plan.chunks),
+                        completed_chunks=state.completed_chunks,
+                        failed_chunks=state.failed_chunks,
+                        effective_parallel_chunks=state.effective_parallel_chunks,
+                        resume_used=state.resumed_chunks > 0,
+                    ),
+                },
+            )
+            state = ProgressiveTranscriptionState(
+                source=state.source,
+                duration_info=state.duration_info,
+                chunk_plan=state.chunk_plan,
+                chunk_results=state.chunk_results,
+                transcript=transcript,
+                processed_duration_seconds=state.processed_duration_seconds,
+                cache_dir=state.cache_dir,
+                resumed_chunks=state.resumed_chunks,
+                effective_parallel_chunks=state.effective_parallel_chunks,
+            )
             _raise_if_unexpected_empty_transcript(
                 state.transcript,
                 duration_seconds=state.duration_info.duration_seconds,

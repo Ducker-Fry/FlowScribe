@@ -161,6 +161,21 @@ def test_pipeline_process_progressive_writes_merged_transcript(tmp_path: Path) -
     assert artifacts.txt_path is not None
     assert artifacts.txt_path.read_text(encoding="utf-8") == "first core\nboundary\nsecond core"
     assert state.transcript.text == "first core\nboundary\nsecond core"
+    assert state.transcript.metadata["progressive"] == {
+        "backend": "python",
+        "mode": "python-progressive",
+        "resume_requested": False,
+        "resume_supported": True,
+        "resume_used": False,
+        "cache_supported": True,
+        "cache_dir_present": True,
+        "chunk_count": 2,
+        "completed_chunks": 2,
+        "failed_chunks": 0,
+        "effective_parallel_chunks": 1,
+        "chunk_seconds": 30.0,
+        "overlap_seconds": 3.0,
+    }
     assert not (tmp_path / "work" / "sample" / "prepared.wav").exists()
 
 
@@ -262,6 +277,24 @@ def test_progressive_executor_resume_skips_completed_chunks(tmp_path: Path) -> N
 
     assert resumed_transcriber.calls == []
     assert resumed_state.transcript.text == "first core\nboundary\nsecond core"
+
+
+def test_pipeline_process_progressive_reports_resume_used_in_metadata(tmp_path: Path) -> None:
+    item = MediaItem(path=tmp_path / "sample.mp4")
+    pipeline = LocalTranscriptionPipeline(
+        media_preparer=FakePreparer(),
+        transcriber=FakeClipTranscriber(),
+        artifact_writer=FakeArtifactWriter(),
+        work_dir=tmp_path / "work",
+        output_dir=tmp_path / "out",
+        keep_audio=False,
+    )
+
+    pipeline.process_progressive(item, resume=False)
+    _, resumed_state = pipeline.process_progressive(item, resume=True)
+
+    assert resumed_state.transcript.metadata["progressive"]["resume_requested"] is True
+    assert resumed_state.transcript.metadata["progressive"]["resume_used"] is True
 
 
 def test_pipeline_can_clear_progressive_cache(tmp_path: Path) -> None:

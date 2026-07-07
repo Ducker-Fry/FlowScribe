@@ -57,6 +57,7 @@ def build_transcription_pipeline(job: TranscriptionJob, settings: AppSettings) -
         preset=settings.preset,
         word_timestamps=settings.word_timestamps,
         progressive_enabled=job.progressive_enabled,
+        progressive_resume_requested=job.progressive_resume,
         progressive_chunk_seconds=job.progressive_chunk_seconds,
         progressive_chunk_overlap_seconds=job.progressive_chunk_overlap_seconds,
         progressive_max_workers=job.progressive_max_workers,

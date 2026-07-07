@@ -52,6 +52,7 @@ class ProviderTranscriptionSettings:
     preset: str | None
     word_timestamps: bool
     progressive_enabled: bool = True
+    progressive_resume_requested: bool = False
     progressive_chunk_seconds: float = 30.0
     progressive_chunk_overlap_seconds: float = 3.0
     progressive_max_workers: int = 1
@@ -165,6 +166,7 @@ class NativeEngineProvider:
             preset=settings.preset,
             word_timestamps=settings.word_timestamps,
             progressive_enabled=settings.progressive_enabled,
+            progressive_resume_requested=settings.progressive_resume_requested,
             progressive_chunk_seconds=settings.progressive_chunk_seconds,
             progressive_chunk_overlap_seconds=settings.progressive_chunk_overlap_seconds,
             progressive_max_workers=settings.progressive_max_workers,

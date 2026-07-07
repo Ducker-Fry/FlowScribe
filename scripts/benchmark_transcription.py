@@ -50,6 +50,7 @@ class BenchmarkRunResult:
     stages: dict[str, float]
     transcript_path: str | None
     native_chunked: dict[str, Any] | None = None
+    progressive_summary: dict[str, Any] | None = None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -282,6 +283,7 @@ def run_sample(
             stages={"download": 0.0, "prepare_audio": 0.0, "transcribe": 0.0, "write_outputs": 0.0},
             transcript_path=None,
             native_chunked=None,
+            progressive_summary=None,
         )
 
     sample_output_dir = output_root / sample.id / provider_name / run_kind
@@ -320,6 +322,7 @@ def run_sample(
             stages=stages,
             transcript_path=transcript_path or None,
             native_chunked=measured.get("native_chunked"),
+            progressive_summary=measured.get("progressive_summary"),
         )
     except Exception as exc:
         return BenchmarkRunResult(
@@ -337,6 +340,7 @@ def run_sample(
             stages=stages,
             transcript_path=transcript_path,
             native_chunked=None,
+            progressive_summary=None,
         )
 
 
@@ -382,7 +386,7 @@ def build_job(
         beam_size=beam_size,
         native_threads=native_threads if provider_name == "native-engine" else None,
         output_formats=("json",),
-        progressive_enabled=bool(progressive_enabled and provider_name == "native-engine"),
+        progressive_enabled=bool(progressive_enabled),
         progressive_chunk_seconds=chunk_seconds,
         progressive_chunk_overlap_seconds=overlap_seconds,
         progressive_max_workers=max_workers,
@@ -436,12 +440,16 @@ def measure_stages(job: TranscriptionJob) -> dict[str, Any]:
         stages["write_outputs"] = time.perf_counter() - started
         transcript_path = str(artifacts.json_path or artifacts.txt_path or "")
         native_chunked = None
-        if transcript_path and job.provider_name == "native-engine":
-            native_chunked = read_native_chunked_metadata(Path(transcript_path))
+        progressive_summary = None
+        if transcript_path:
+            progressive_summary = read_progressive_metadata(Path(transcript_path))
+            if job.provider_name == "native-engine":
+                native_chunked = read_native_chunked_metadata(Path(transcript_path))
         return {
             "stages": stages,
             "transcript_path": transcript_path or None,
             "native_chunked": native_chunked,
+            "progressive_summary": progressive_summary,
         }
     finally:
         prepared.path.unlink(missing_ok=True)
@@ -475,6 +483,46 @@ def read_native_chunked_metadata(path: Path) -> dict[str, Any] | None:
     }
 
 
+def read_progressive_metadata(path: Path) -> dict[str, Any] | None:
+    if path.suffix.lower() != ".json" or not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    metadata = payload.get("metadata")
+    if isinstance(metadata, dict):
+        progressive = metadata.get("progressive")
+        if isinstance(progressive, dict):
+            return {
+                "progressive_backend": progressive.get("backend"),
+                "progressive_mode": progressive.get("mode"),
+                "resume_requested": progressive.get("resume_requested"),
+                "resume_supported": progressive.get("resume_supported"),
+                "resume_used": progressive.get("resume_used"),
+                "cache_supported": progressive.get("cache_supported"),
+                "chunk_count": progressive.get("chunk_count"),
+                "effective_parallel_chunks": progressive.get("effective_parallel_chunks"),
+                "chunk_seconds": progressive.get("chunk_seconds"),
+                "overlap_seconds": progressive.get("overlap_seconds"),
+            }
+    native_chunked = read_native_chunked_metadata(path)
+    if native_chunked is None:
+        return None
+    return {
+        "progressive_backend": "native-engine" if native_chunked.get("chunked_enabled") else None,
+        "progressive_mode": "native-engine-progressive" if native_chunked.get("chunked_enabled") else None,
+        "resume_requested": False,
+        "resume_supported": False,
+        "resume_used": False,
+        "cache_supported": False,
+        "chunk_count": native_chunked.get("chunk_count"),
+        "effective_parallel_chunks": native_chunked.get("effective_parallel_chunks"),
+        "chunk_seconds": native_chunked.get("chunk_seconds"),
+        "overlap_seconds": native_chunked.get("overlap_seconds"),
+    }
+
+
 def render_report(
     environment: dict[str, Any],
     results: list[BenchmarkRunResult],
@@ -505,7 +553,12 @@ def render_report(
         status = "skipped" if result.skipped else ("ok" if result.success else "failed")
         notes = result.skip_reason or result.error or ""
         total = "" if result.total_elapsed_seconds is None else f"{result.total_elapsed_seconds:.3f}"
-        chunked = result.native_chunked or {}
+        chunked = result.progressive_summary or result.native_chunked or {}
+        if result.progressive_summary:
+            backend = result.progressive_summary.get("progressive_backend")
+            mode = result.progressive_summary.get("progressive_mode")
+            if backend and mode:
+                notes = f"{notes}; {backend}/{mode}" if notes else f"{backend}/{mode}"
         lines.append(
             "| {sample} | {provider} | {run} | {status} | {total} | {download:.3f} | {prepare:.3f} | {transcribe:.3f} | {write:.3f} | {chunks} | {runtimes} | {parallel} | {threads} | {notes} |".format(
                 sample=result.sample_id,
@@ -518,9 +571,9 @@ def render_report(
                 transcribe=result.stages["transcribe"],
                 write=result.stages["write_outputs"],
                 chunks=chunked.get("chunk_count", ""),
-                runtimes=chunked.get("runtime_count", ""),
+                runtimes=(result.native_chunked or {}).get("runtime_count", ""),
                 parallel=chunked.get("effective_parallel_chunks", ""),
-                threads=chunked.get("chunk_threads", ""),
+                threads=(result.native_chunked or {}).get("chunk_threads", ""),
                 notes=notes.replace("|", "/"),
             )
         )

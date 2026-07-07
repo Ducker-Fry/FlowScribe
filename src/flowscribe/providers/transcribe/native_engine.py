@@ -11,6 +11,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from flowscribe.app.progressive_policy import (
+    ProgressiveExecutionPolicy,
+    build_progressive_metadata,
+)
 from flowscribe.tasks.models import ProgressEvent
 from flowscribe.core.errors import CancellationError, TranscriptionError
 from flowscribe.core.models import (
@@ -41,6 +45,7 @@ class NativeEngineTranscriber:
         preset: str | None = None,
         word_timestamps: bool = False,
         progressive_enabled: bool = True,
+        progressive_resume_requested: bool = False,
         progressive_chunk_seconds: float = 30.0,
         progressive_chunk_overlap_seconds: float = 3.0,
         progressive_max_workers: int = 1,
@@ -59,6 +64,7 @@ class NativeEngineTranscriber:
         self._preset = preset
         self._word_timestamps = word_timestamps
         self._progressive_enabled = progressive_enabled
+        self._progressive_resume_requested = progressive_resume_requested
         self._progressive_chunk_seconds = progressive_chunk_seconds
         self._progressive_chunk_overlap_seconds = progressive_chunk_overlap_seconds
         self._progressive_max_workers = progressive_max_workers
@@ -271,7 +277,11 @@ class NativeEngineTranscriber:
             language=self._language,
             model_name=str(model_path),
             options=options,
-            metadata={
+            metadata=self._native_transcript_metadata(payload),
+        )
+
+    def _native_transcript_metadata(self, payload: dict[str, Any]) -> dict[str, object]:
+        metadata: dict[str, object] = {
                 "chunked_enabled": bool(payload.get("chunked_enabled", False)),
                 "chunk_count": int(payload.get("chunk_count", 0) or 0),
                 "runtime_count": int(payload.get("runtime_count", 0) or 0),
@@ -282,8 +292,35 @@ class NativeEngineTranscriber:
                 "chunk_seconds": float(payload.get("chunk_seconds", 0.0) or 0.0),
                 "overlap_seconds": float(payload.get("overlap_seconds", 0.0) or 0.0),
                 "chunk_metrics": tuple(payload.get("chunk_metrics", ()) or ()),
-            },
-        )
+            }
+        if self._progressive_enabled:
+            policy = ProgressiveExecutionPolicy(
+                mode="native-engine-progressive",
+                progressive_requested=self._progressive_enabled,
+                progressive_enabled=True,
+                auto_enabled=False,
+                backend="native-engine",
+                resume_requested=self._progressive_resume_requested,
+                resume_supported=False,
+                resume_effective=False,
+                cache_supported=False,
+                chunk_seconds=float(payload.get("chunk_seconds", self._progressive_chunk_seconds) or 0.0),
+                overlap_seconds=float(
+                    payload.get("overlap_seconds", self._progressive_chunk_overlap_seconds) or 0.0
+                ),
+                max_workers=self._progressive_max_workers,
+                notes=(),
+            )
+            metadata["progressive"] = build_progressive_metadata(
+                policy,
+                cache_dir_present=False,
+                chunk_count=_optional_int(payload.get("chunk_count")),
+                completed_chunks=_optional_int(payload.get("chunk_count")),
+                failed_chunks=0,
+                effective_parallel_chunks=_optional_int(payload.get("effective_parallel_chunks")),
+                resume_used=False,
+            )
+        return metadata
 
     def _progress_event_from_native(
         self,
@@ -343,6 +380,38 @@ class NativeEngineTranscriber:
             message = f"Native engine status: {status}{progress_text}."
             stage = "transcribe"
 
+        progressive_metadata = None
+        if self._progressive_enabled:
+            policy = ProgressiveExecutionPolicy(
+                mode="native-engine-progressive",
+                progressive_requested=self._progressive_enabled,
+                progressive_enabled=True,
+                auto_enabled=False,
+                backend="native-engine",
+                resume_requested=self._progressive_resume_requested,
+                resume_supported=False,
+                resume_effective=False,
+                cache_supported=False,
+                chunk_seconds=float(
+                    payload.get("chunk_seconds", self._progressive_chunk_seconds) or self._progressive_chunk_seconds
+                ),
+                overlap_seconds=float(
+                    payload.get("overlap_seconds", self._progressive_chunk_overlap_seconds)
+                    or self._progressive_chunk_overlap_seconds
+                ),
+                max_workers=self._progressive_max_workers,
+                notes=(),
+            )
+            progressive_metadata = build_progressive_metadata(
+                policy,
+                cache_dir_present=False,
+                chunk_count=chunk_count,
+                completed_chunks=completed_chunks,
+                failed_chunks=0,
+                effective_parallel_chunks=_optional_int(payload.get("effective_parallel_chunks")),
+                resume_used=False,
+            )
+
         return ProgressEvent(
             stage=stage,
             message=message,
@@ -352,6 +421,7 @@ class NativeEngineTranscriber:
             chunk_count=chunk_count,
             completed_chunks=completed_chunks,
             segments=segments,
+            raw_metadata={} if progressive_metadata is None else {"progressive": progressive_metadata},
         )
 
     def _build_segment(self, payload: dict[str, Any]) -> TranscriptSegment:
@@ -408,18 +478,43 @@ def resolve_engine_exe() -> Path:
             return path.resolve()
         raise TranscriptionError(f"FLOWSCRIBE_ENGINE_EXE does not point to a file: {env_path}")
 
+    module_path = Path(__file__).resolve()
+    module_source_root = next(
+        (
+            parent
+            for parent in module_path.parents
+            if (parent / "native" / "flowscribe-engine").exists()
+        ),
+        None,
+    )
     layout = resolve_runtime_layout()
     candidates = (
-        layout.core_dir / _engine_exe_name(),
-        layout.app_root / _engine_exe_name(),
-        layout.source_root / "native" / "flowscribe-engine" / "build" / "Release" / _engine_exe_name(),
-        layout.source_root
-        / "native"
-        / "flowscribe-engine"
-        / "build"
-        / "RelWithDebInfo"
-        / _engine_exe_name(),
-        layout.source_root / "native" / "flowscribe-engine" / "build" / "Debug" / _engine_exe_name(),
+        (
+            ()
+            if module_source_root is None
+            else (
+                module_source_root / "native" / "flowscribe-engine" / "build" / "Release" / _engine_exe_name(),
+                module_source_root
+                / "native"
+                / "flowscribe-engine"
+                / "build"
+                / "RelWithDebInfo"
+                / _engine_exe_name(),
+                module_source_root / "native" / "flowscribe-engine" / "build" / "Debug" / _engine_exe_name(),
+            )
+        )
+        + (
+            layout.core_dir / _engine_exe_name(),
+            layout.app_root / _engine_exe_name(),
+            layout.source_root / "native" / "flowscribe-engine" / "build" / "Release" / _engine_exe_name(),
+            layout.source_root
+            / "native"
+            / "flowscribe-engine"
+            / "build"
+            / "RelWithDebInfo"
+            / _engine_exe_name(),
+            layout.source_root / "native" / "flowscribe-engine" / "build" / "Debug" / _engine_exe_name(),
+        )
     )
     for candidate in candidates:
         if candidate.exists() and candidate.is_file():

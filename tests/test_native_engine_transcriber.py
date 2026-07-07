@@ -216,6 +216,21 @@ def test_native_transcriber_maps_result_and_uses_protocol_payload(tmp_path: Path
             "threads": 8,
         },
     )
+    assert transcript.metadata["progressive"] == {
+        "backend": "native-engine",
+        "mode": "native-engine-progressive",
+        "resume_requested": False,
+        "resume_supported": False,
+        "resume_used": False,
+        "cache_supported": False,
+        "cache_dir_present": False,
+        "chunk_count": 2,
+        "completed_chunks": 2,
+        "failed_chunks": 0,
+        "effective_parallel_chunks": 2,
+        "chunk_seconds": 42.0,
+        "overlap_seconds": 4.0,
+    }
     assert client.closed
     assert process.terminated
 
@@ -273,6 +288,7 @@ def test_native_transcriber_emits_chunk_progress_events(tmp_path: Path) -> None:
     ]
     assert chunk_events[0].stage == "prepare"
     assert chunk_events[0].chunk_count == 3
+    assert chunk_events[0].raw_metadata["progressive"]["mode"] == "native-engine-progressive"
     assert chunk_events[1].stage == "transcribe"
     assert chunk_events[1].chunk_index == 1
     assert chunk_events[1].completed_chunks == 1
@@ -281,6 +297,7 @@ def test_native_transcriber_emits_chunk_progress_events(tmp_path: Path) -> None:
     assert chunk_events[1].segments[0].text == "hello from chunk"
     assert chunk_events[1].segments[0].start_seconds == 0.0
     assert chunk_events[1].segments[0].end_seconds == 2.0
+    assert chunk_events[1].raw_metadata["progressive"]["backend"] == "native-engine"
 
 
 def test_native_transcriber_submits_absolute_audio_path(tmp_path: Path) -> None:

@@ -22,6 +22,14 @@ from flowscribe.tasks.models import (
     TranscriptionJob,
     TranscriptionResult,
 )
+from flowscribe.app.progressive_policy import (
+    ProgressiveExecutionPolicy,
+    build_progressive_metadata,
+    job_with_progressive_policy,
+    progressive_completion_note,
+    progressive_failure_note,
+    resolve_runtime_progressive_policy,
+)
 from flowscribe.core.errors import CancellationError, FlowScribeError
 from flowscribe.core.models import (
     MediaDurationInfo,
@@ -30,7 +38,6 @@ from flowscribe.core.models import (
     ProgressiveTranscriptionUpdate,
     TranscriptionChunkPlan,
 )
-from flowscribe.pipeline.progressive import tuned_chunk_overlap_seconds
 from flowscribe.pipeline.runtime_factory import (
     build_pipeline_from_provider,
     process_with_optional_progress,
@@ -42,9 +49,7 @@ from flowscribe.input.url_downloader import UrlAudioDownloader
 from flowscribe.input.url_tool_bridge import select_url_downloader_cls
 from flowscribe.providers.transcribe.registry import (
     ProviderTranscriptionSettings,
-    is_native_engine_provider_name,
     resolve_transcription_provider,
-    supports_python_progressive_provider_name,
     validate_transcription_provider_runtime,
 )
 
@@ -77,6 +82,7 @@ def _provider_settings_from_job(job: TranscriptionJob, settings) -> ProviderTran
         preset=settings.preset,
         word_timestamps=settings.word_timestamps,
         progressive_enabled=job.progressive_enabled,
+        progressive_resume_requested=job.progressive_resume,
         progressive_chunk_seconds=job.progressive_chunk_seconds,
         progressive_chunk_overlap_seconds=job.progressive_chunk_overlap_seconds,
         progressive_max_workers=job.progressive_max_workers,
@@ -239,9 +245,11 @@ class TranscriptionService:
         current: int,
         total: int,
     ) -> tuple[tuple[OutputArtifacts, ...], tuple[ErrorInfo, ...]]:
-        settings = _settings_from_job(job, recursive=source.recursive)
-        _validate_provider_runtime(job, settings)
-        pipeline = _build_pipeline(job, settings)
+        policy = resolve_runtime_progressive_policy(job)
+        execution_job = job_with_progressive_policy(job, policy)
+        settings = _settings_from_job(execution_job, recursive=source.recursive)
+        _validate_provider_runtime(execution_job, settings)
+        pipeline = _build_pipeline(execution_job, settings)
         input_source = LocalFileSource([Path(source.value)], recursive=settings.recursive)
         items = input_source.discover()
         outputs: list[OutputArtifacts] = []
@@ -260,6 +268,15 @@ class TranscriptionService:
                 capability="transcribe",
             )
         )
+        self._emit_policy_notes(
+            progress,
+            should_cancel,
+            policy=policy,
+            source=source.value,
+            current=current,
+            total=total,
+            task_id=task_spec.task_id,
+        )
         for item_index, item in enumerate(items, start=1):
             self._ensure_not_canceled(should_cancel)
             self._emit_progress(
@@ -276,58 +293,109 @@ class TranscriptionService:
                 )
             )
             try:
-                if (
-                    job.progressive_enabled
-                    and supports_python_progressive_provider_name(job.provider_name)
-                    and hasattr(pipeline, "process_progressive")
-                ):
+                if policy.mode == "python-progressive" and hasattr(pipeline, "process_progressive"):
+                    run_state = {"resume_used": False}
                     run_started_at = time.perf_counter()
-                    artifacts, _ = pipeline.process_progressive(
+                    artifacts, state = pipeline.process_progressive(
                         item,
-                        chunk_duration_seconds=job.progressive_chunk_seconds,
-                        chunk_overlap_seconds=tuned_chunk_overlap_seconds(
-                            requested_overlap_seconds=job.progressive_chunk_overlap_seconds,
-                            language=job.language,
-                            preset=job.preset,
-                        ),
-                        resume=job.progressive_resume,
+                        chunk_duration_seconds=policy.chunk_seconds,
+                        chunk_overlap_seconds=policy.overlap_seconds,
+                        resume=policy.resume_effective,
                         keep_progressive_cache=True,
-                        max_workers=job.progressive_max_workers,
+                        max_workers=policy.max_workers,
                         plan_callback=lambda duration_info, chunk_plan: self._emit_progressive_plan(
                             progress,
                             should_cancel,
+                            policy=policy,
                             item=item,
                             duration_info=duration_info,
                             chunk_plan=chunk_plan,
+                            task_id=task_spec.task_id,
+                            current=item_index,
+                            total=len(items),
                         ),
                         update_callback=lambda update: self._emit_progressive_update(
                             progress,
                             should_cancel,
+                            policy=policy,
                             item=item,
                             update=update,
                             run_started_at=run_started_at,
+                            task_id=task_spec.task_id,
+                            current=item_index,
+                            total=len(items),
+                            run_state=run_state,
                         ),
                         should_cancel=should_cancel,
                     )
-                else:
+                    self._emit_progressive_summary(
+                        progress,
+                        should_cancel,
+                        policy=policy,
+                        source=str(item.path),
+                        task_id=task_spec.task_id,
+                        current=item_index,
+                        total=len(items),
+                        chunk_count=len(state.chunk_plan.chunks),
+                        completed_chunks=state.completed_chunks,
+                        failed_chunks=state.failed_chunks,
+                        effective_parallel_chunks=state.effective_parallel_chunks,
+                        total_duration_seconds=state.duration_info.duration_seconds,
+                        processed_duration_seconds=state.processed_duration_seconds,
+                        cache_dir_present=state.cache_dir is not None,
+                        resume_used=run_state["resume_used"],
+                    )
+                elif policy.mode == "native-engine-progressive":
+                    run_state = {
+                        "resume_used": False,
+                        "chunk_count": None,
+                        "completed_chunks": None,
+                        "failed_chunks": None,
+                        "effective_parallel_chunks": None,
+                        "processed_duration_seconds": None,
+                        "total_duration_seconds": None,
+                    }
                     artifacts = _process_with_optional_progress(
                         pipeline,
                         item,
                         should_cancel=should_cancel,
-                        progress=(
-                            lambda event: self._emit_progress(
-                                progress,
-                                should_cancel,
+                        progress=lambda event: self._emit_progress(
+                            progress,
+                            should_cancel,
+                            self._capture_progressive_native_event(
                                 _with_source_and_totals(
                                     event,
                                     source=str(item.path),
                                     current=item_index,
                                     total=len(items),
                                 ),
-                            )
-                        )
-                        if is_native_engine_provider_name(job.provider_name)
-                        else None,
+                                run_state=run_state,
+                            ),
+                        ),
+                    )
+                    self._emit_progressive_summary(
+                        progress,
+                        should_cancel,
+                        policy=policy,
+                        source=str(item.path),
+                        task_id=task_spec.task_id,
+                        current=item_index,
+                        total=len(items),
+                        chunk_count=run_state["chunk_count"],
+                        completed_chunks=run_state["completed_chunks"],
+                        failed_chunks=run_state["failed_chunks"],
+                        effective_parallel_chunks=run_state["effective_parallel_chunks"],
+                        total_duration_seconds=run_state["total_duration_seconds"],
+                        processed_duration_seconds=run_state["processed_duration_seconds"],
+                        cache_dir_present=False,
+                        resume_used=False,
+                    )
+                else:
+                    artifacts = _process_with_optional_progress(
+                        pipeline,
+                        item,
+                        should_cancel=should_cancel,
+                        progress=None,
                     )
                 self._update_json_artifacts(
                     artifacts=artifacts,
@@ -337,6 +405,20 @@ class TranscriptionService:
             except FlowScribeError as exc:
                 LOGGER.exception("Local media item failed: %s", item.path)
                 errors.append(_error_from_exception(exc, source=str(item.path)))
+                if policy.mode != "classic":
+                    self._emit_progress(
+                        progress,
+                        should_cancel,
+                        ProgressEvent(
+                            stage="prepare",
+                            message=progressive_failure_note(policy),
+                            source=str(item.path),
+                            current=item_index,
+                            total=len(items),
+                            task_id=task_spec.task_id,
+                            capability="transcribe",
+                        ),
+                    )
                 self._emit_progress(
                     progress,
                     should_cancel,
@@ -377,10 +459,14 @@ class TranscriptionService:
         current: int,
         total: int,
     ) -> OutputArtifacts:
+        policy = resolve_runtime_progressive_policy(job)
         return UrlTranscriptionPipeline(
             emit_progress=self._emit_progress,
+            emit_policy_notes=self._emit_policy_notes,
             emit_progressive_plan=self._emit_progressive_plan,
             emit_progressive_update=self._emit_progressive_update,
+            emit_progressive_summary=self._emit_progressive_summary,
+            capture_progressive_native_event=self._capture_progressive_native_event,
             ensure_not_canceled=self._ensure_not_canceled,
             source_progress_wrapper=_with_source_and_totals_for_pipeline,
             update_json_media_binding=self._update_json_media_binding,
@@ -390,6 +476,7 @@ class TranscriptionService:
             subtitle_runner=self._run_subtitle_capability,
         ).run(
             job=job,
+            policy=policy,
             task_spec=task_spec,
             source=source,
             progress=progress,
@@ -495,9 +582,13 @@ class TranscriptionService:
         progress: ProgressCallback,
         should_cancel: Callable[[], bool],
         *,
+        policy: ProgressiveExecutionPolicy,
         item: MediaItem,
         duration_info: MediaDurationInfo,
         chunk_plan: TranscriptionChunkPlan,
+        task_id: str | None,
+        current: int,
+        total: int,
     ) -> None:
         duration_seconds = duration_info.duration_seconds
         if duration_seconds is None:
@@ -514,9 +605,23 @@ class TranscriptionService:
                 stage="prepare",
                 message=message,
                 source=str(item.path),
+                current=current,
+                total=total,
+                task_id=task_id,
                 total_duration_seconds=duration_seconds,
                 chunk_count=len(chunk_plan.chunks),
                 capability="transcribe",
+                raw_metadata={
+                    "progressive": build_progressive_metadata(
+                        policy,
+                        cache_dir_present=False,
+                        chunk_count=len(chunk_plan.chunks),
+                        completed_chunks=0,
+                        failed_chunks=0,
+                        effective_parallel_chunks=policy.max_workers if policy.max_workers > 0 else 1,
+                        resume_used=False,
+                    ),
+                },
             ),
         )
 
@@ -525,15 +630,23 @@ class TranscriptionService:
         progress: ProgressCallback,
         should_cancel: Callable[[], bool],
         *,
+        policy: ProgressiveExecutionPolicy,
         item: MediaItem,
         update: ProgressiveTranscriptionUpdate,
         run_started_at: float,
+        task_id: str | None,
+        current: int,
+        total: int,
+        run_state: dict[str, object] | None = None,
     ) -> None:
         processed_seconds = update.state.processed_duration_seconds
         total_seconds = update.state.duration_info.duration_seconds
         elapsed_wall_seconds = max(0.001, time.perf_counter() - run_started_at)
         realtime_factor = None
         eta_seconds = None
+        resume_used = bool((run_state or {}).get("resume_used", False) or update.resumed)
+        if run_state is not None:
+            run_state["resume_used"] = resume_used
         if processed_seconds > 0:
             realtime_factor = processed_seconds / elapsed_wall_seconds
             if total_seconds is not None and realtime_factor > 0:
@@ -556,6 +669,9 @@ class TranscriptionService:
                     resumed=update.resumed,
                 ),
                 source=str(item.path),
+                current=current,
+                total=total,
+                task_id=task_id,
                 processed_duration_seconds=processed_seconds,
                 total_duration_seconds=total_seconds,
                 eta_seconds=eta_seconds,
@@ -567,8 +683,120 @@ class TranscriptionService:
                 segments=update.appended_segments,
                 resumed=update.resumed,
                 capability="transcribe",
+                raw_metadata={
+                    "progressive": build_progressive_metadata(
+                        policy,
+                        cache_dir_present=update.state.cache_dir is not None,
+                        chunk_count=len(update.state.chunk_plan.chunks),
+                        completed_chunks=update.state.completed_chunks,
+                        failed_chunks=update.state.failed_chunks,
+                        effective_parallel_chunks=update.state.effective_parallel_chunks,
+                        resume_used=resume_used,
+                    ),
+                },
             ),
         )
+
+    def _emit_progressive_summary(
+        self,
+        progress: ProgressCallback,
+        should_cancel: Callable[[], bool],
+        *,
+        policy: ProgressiveExecutionPolicy,
+        source: str,
+        task_id: str | None,
+        current: int,
+        total: int,
+        chunk_count: int | None,
+        completed_chunks: int | None,
+        failed_chunks: int | None,
+        effective_parallel_chunks: int | None,
+        total_duration_seconds: float | None,
+        processed_duration_seconds: float | None,
+        cache_dir_present: bool,
+        resume_used: bool,
+    ) -> None:
+        if policy.mode == "classic":
+            return
+        source_name = Path(source).name if source else "source"
+        self._emit_progress(
+            progress,
+            should_cancel,
+            ProgressEvent(
+                stage="transcribe",
+                message=progressive_completion_note(
+                    policy,
+                    source_name=source_name,
+                    completed_chunks=completed_chunks,
+                    chunk_count=chunk_count,
+                    resume_used=resume_used,
+                ),
+                source=source,
+                current=current,
+                total=total,
+                task_id=task_id,
+                processed_duration_seconds=processed_duration_seconds,
+                total_duration_seconds=total_duration_seconds,
+                completed_chunks=completed_chunks,
+                failed_chunks=failed_chunks,
+                chunk_count=chunk_count,
+                capability="transcribe",
+                raw_metadata={
+                    "progressive": build_progressive_metadata(
+                        policy,
+                        cache_dir_present=cache_dir_present,
+                        chunk_count=chunk_count,
+                        completed_chunks=completed_chunks,
+                        failed_chunks=failed_chunks,
+                        effective_parallel_chunks=effective_parallel_chunks,
+                        resume_used=resume_used,
+                    ),
+                },
+            ),
+        )
+
+    def _emit_policy_notes(
+        self,
+        progress: ProgressCallback,
+        should_cancel: Callable[[], bool],
+        *,
+        policy: ProgressiveExecutionPolicy,
+        source: str,
+        current: int,
+        total: int,
+        task_id: str | None,
+    ) -> None:
+        for note in policy.notes:
+            self._emit_progress(
+                progress,
+                should_cancel,
+                ProgressEvent(
+                    stage="prepare",
+                    message=note,
+                    source=source,
+                    current=current,
+                    total=total,
+                    task_id=task_id,
+                    capability="transcribe",
+                ),
+            )
+
+    def _capture_progressive_native_event(
+        self,
+        event: ProgressEvent,
+        *,
+        run_state: dict[str, object],
+    ) -> ProgressEvent:
+        progressive = event.raw_metadata.get("progressive") if isinstance(event.raw_metadata, dict) else None
+        if isinstance(progressive, dict):
+            run_state["chunk_count"] = progressive.get("chunk_count")
+            run_state["completed_chunks"] = progressive.get("completed_chunks")
+            run_state["failed_chunks"] = progressive.get("failed_chunks")
+            run_state["effective_parallel_chunks"] = progressive.get("effective_parallel_chunks")
+            run_state["resume_used"] = bool(progressive.get("resume_used", False))
+        run_state["processed_duration_seconds"] = event.processed_duration_seconds
+        run_state["total_duration_seconds"] = event.total_duration_seconds
+        return event
 
     def _update_json_media_binding(
         self,

@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
+from flowscribe.app.progressive_policy import resolve_cli_progressive_policy
 from flowscribe.tasks.models import ProgressEvent, SourceSpec, TranscriptionJob
 from flowscribe.app.service import TranscriptionService
 from flowscribe.cli.args import parse_args
@@ -543,10 +544,8 @@ def _search_payload(options, hits) -> dict:
 
 
 def _job_from_transcribe_options(options) -> TranscriptionJob:
-    progressive_enabled, progressive_note = _resolve_cli_progressive_mode_for_transcribe(options)
-    if progressive_note and not options.non_interactive and not options.json_output:
-        print(progressive_note)
     provider_name, model_name = _resolve_cli_provider_and_model(options)
+    policy = _resolve_cli_progressive_mode_for_transcribe(options, provider_name=provider_name)
     return TranscriptionJob(
         sources=tuple(
             SourceSpec(kind="local", value=str(input_path), recursive=options.recursive)
@@ -569,7 +568,8 @@ def _job_from_transcribe_options(options) -> TranscriptionJob:
         output_formats=options.output_formats,
         overwrite=options.overwrite,
         keep_audio=options.keep_audio,
-        progressive_enabled=progressive_enabled,
+        progressive_enabled=policy.progressive_enabled,
+        progressive_auto_enabled=policy.auto_enabled,
         progressive_resume=options.progressive_resume,
         progressive_chunk_seconds=options.progressive_chunk_seconds,
         progressive_chunk_overlap_seconds=options.progressive_chunk_overlap_seconds,
@@ -582,15 +582,12 @@ def _job_from_transcribe_options(options) -> TranscriptionJob:
 def _job_from_url_options(options) -> TranscriptionJob:
     from flowscribe.tasks.models import DownloadOptions
 
-    progressive_enabled, progressive_note = _resolve_cli_progressive_mode_for_url(options)
-    if progressive_note and not options.non_interactive and not options.json_output:
-        print(progressive_note)
-
     download_opts = DownloadOptions(
         quality=options.download_quality,
         prefer_format=options.download_format,
     )
     provider_name, model_name = _resolve_cli_provider_and_model(options)
+    policy = _resolve_cli_progressive_mode_for_url(options, provider_name=provider_name)
 
     source = SourceSpec(
         kind="url",
@@ -625,7 +622,8 @@ def _job_from_url_options(options) -> TranscriptionJob:
         network_family=options.network_family,
         cookies_path=options.cookies,
         proxy=options.proxy,
-        progressive_enabled=progressive_enabled,
+        progressive_enabled=policy.progressive_enabled,
+        progressive_auto_enabled=policy.auto_enabled,
         progressive_resume=options.progressive_resume,
         progressive_chunk_seconds=options.progressive_chunk_seconds,
         progressive_chunk_overlap_seconds=options.progressive_chunk_overlap_seconds,
@@ -673,19 +671,29 @@ def _cli_progress_line(event: ProgressEvent) -> str:
     if event.capability == "subtitle" and event.message:
         return event.message
     if event.processed_duration_seconds is not None:
+        progressive = _progressive_metadata_from_event(event)
         parts = [event.message]
         if event.total_duration_seconds is not None:
             parts.append(
                 f"Progress {format_timestamp(event.processed_duration_seconds)} / "
                 f"{format_timestamp(event.total_duration_seconds)}"
             )
-        if event.chunk_index is not None and event.chunk_count is not None:
-            parts.append(f"Chunk {event.chunk_index}/{event.chunk_count}")
+        chunk_index = event.chunk_index
+        chunk_count = event.chunk_count
+        if chunk_index is not None and chunk_count is not None:
+            parts.append(f"Chunk {chunk_index}/{chunk_count}")
+        elif progressive.get("completed_chunks") is not None and progressive.get("chunk_count") is not None:
+            parts.append(
+                f"Chunks {progressive['completed_chunks']}/{progressive['chunk_count']}"
+            )
+        backend = progressive.get("backend")
+        if backend in {"python", "native-engine"}:
+            parts.append(f"Backend {backend}")
         if event.realtime_factor is not None:
             parts.append(f"Speed {event.realtime_factor:.1f}x")
         if event.eta_seconds is not None:
             parts.append(f"ETA {format_timestamp(event.eta_seconds)}")
-        if event.resumed:
+        if bool(progressive.get("resume_used")) or event.resumed:
             parts.append("resumed")
         return " | ".join(parts)
     return event.message
@@ -806,54 +814,73 @@ def _print_url_strategy_summary(result) -> None:
             print("Strategy: fell back to audio transcription.")
 
 
-def _resolve_cli_progressive_mode_for_transcribe(options) -> tuple[bool, str | None]:
-    if options.progressive_mode == "enabled":
-        return True, "Progressive transcription enabled by CLI flag."
-    if options.progressive_mode == "disabled":
-        return False, "Using classic one-shot transcription by CLI flag."
-    if options.recursive or len(options.inputs) != 1:
-        return False, "Using classic one-shot transcription for batch/local multi-source CLI runs."
-
+def _resolve_cli_progressive_mode_for_transcribe(options, *, provider_name: str):
+    duration_seconds = None
     input_path = options.inputs[0]
-    if not input_path.is_file():
-        return False, None
-    try:
-        inspection = LocalMediaInspector(timeout_seconds=10).inspect(input_path)
-    except FlowScribeError:
-        return False, None
-    if inspection.duration_seconds is not None and inspection.duration_seconds >= CLI_PROGRESSIVE_AUTO_THRESHOLD_SECONDS:
-        return True, (
-            "Auto-enabled progressive transcription for long local media "
-            f"({format_timestamp(inspection.duration_seconds)} >= "
-            f"{format_timestamp(CLI_PROGRESSIVE_AUTO_THRESHOLD_SECONDS)})."
-        )
-    return False, None
-
-
-def _resolve_cli_progressive_mode_for_url(options) -> tuple[bool, str | None]:
-    if options.progressive_mode == "enabled":
-        return True, "Progressive transcription enabled by CLI flag."
-    if options.progressive_mode == "disabled":
-        return False, "Using classic one-shot transcription by CLI flag."
-    try:
-        inspection = select_url_inspector_cls(UrlInspector)(
-            timeout_seconds=min(15, options.download_timeout_seconds),
-            network_family=options.network_family,
-            cookies_path=options.cookies,
-            proxy=options.proxy,
-        ).inspect(options.url)
-    except FlowScribeError:
-        return False, None
     if (
-        inspection.duration_seconds is not None
-        and inspection.duration_seconds >= CLI_PROGRESSIVE_AUTO_THRESHOLD_SECONDS
+        options.progressive_mode == "auto"
+        and not options.recursive
+        and len(options.inputs) == 1
+        and input_path.is_file()
     ):
-        return True, (
-            "Auto-enabled progressive transcription for long URL media "
-            f"({format_timestamp(inspection.duration_seconds)} >= "
-            f"{format_timestamp(CLI_PROGRESSIVE_AUTO_THRESHOLD_SECONDS)})."
-        )
-    return False, None
+        try:
+            inspection = LocalMediaInspector(timeout_seconds=10).inspect(input_path)
+            duration_seconds = inspection.duration_seconds
+        except FlowScribeError:
+            duration_seconds = None
+    return resolve_cli_progressive_policy(
+        provider_name=provider_name,
+        progressive_mode=options.progressive_mode,
+        progressive_resume=options.progressive_resume,
+        chunk_seconds=options.progressive_chunk_seconds,
+        overlap_seconds=options.progressive_chunk_overlap_seconds,
+        max_workers=options.progressive_max_workers,
+        language=options.language,
+        preset=options.preset,
+        source_kind="local",
+        source_count=len(options.inputs),
+        recursive=options.recursive,
+        duration_seconds=duration_seconds,
+        auto_threshold_seconds=CLI_PROGRESSIVE_AUTO_THRESHOLD_SECONDS,
+    )
+
+
+def _resolve_cli_progressive_mode_for_url(options, *, provider_name: str):
+    duration_seconds = None
+    if options.progressive_mode == "auto":
+        try:
+            inspection = select_url_inspector_cls(UrlInspector)(
+                timeout_seconds=min(15, options.download_timeout_seconds),
+                network_family=options.network_family,
+                cookies_path=options.cookies,
+                proxy=options.proxy,
+            ).inspect(options.url)
+            duration_seconds = inspection.duration_seconds
+        except FlowScribeError:
+            duration_seconds = None
+    return resolve_cli_progressive_policy(
+        provider_name=provider_name,
+        progressive_mode=options.progressive_mode,
+        progressive_resume=options.progressive_resume,
+        chunk_seconds=options.progressive_chunk_seconds,
+        overlap_seconds=options.progressive_chunk_overlap_seconds,
+        max_workers=options.progressive_max_workers,
+        language=options.language,
+        preset=options.preset,
+        source_kind="url",
+        duration_seconds=duration_seconds,
+        auto_threshold_seconds=CLI_PROGRESSIVE_AUTO_THRESHOLD_SECONDS,
+    )
+
+
+def _progressive_metadata_from_event(event: ProgressEvent) -> dict:
+    raw_metadata = event.raw_metadata
+    if not isinstance(raw_metadata, dict):
+        return {}
+    progressive = raw_metadata.get("progressive")
+    if not isinstance(progressive, dict):
+        return {}
+    return progressive
 
 
 def _is_http_url(value: str) -> bool:

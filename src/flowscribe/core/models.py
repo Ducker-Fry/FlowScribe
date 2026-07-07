@@ -212,6 +212,8 @@ class ProgressiveTranscriptionState:
     transcript: Transcript
     processed_duration_seconds: float
     cache_dir: Path | None = None
+    resumed_chunks: int = 0
+    effective_parallel_chunks: int | None = None
 
     @property
     def completed_chunks(self) -> int:
