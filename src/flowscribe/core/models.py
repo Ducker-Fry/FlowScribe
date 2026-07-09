@@ -98,6 +98,8 @@ class OutputArtifacts:
     transcription_strategy: str | None = None
     subtitle_source_kind: str | None = None
     subtitle_language: str | None = None
+    source_locator: str | None = None
+    original_filename: str | None = None
 
     @property
     def txt_path(self) -> Path | None:

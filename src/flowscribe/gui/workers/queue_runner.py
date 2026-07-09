@@ -7,8 +7,8 @@ import logging
 
 from PySide6.QtCore import QObject, Signal, Slot
 
+from flowscribe.execution.factory import build_execution_backend
 from flowscribe.tasks.models import ProgressEvent
-from flowscribe.app.service import TranscriptionService
 from flowscribe.tasks.queue_models import QueueItem
 from flowscribe.tasks.queue_store import BatchQueueStore
 
@@ -25,9 +25,10 @@ class QueueRunner(QObject):
     queue_finished = Signal()
     queue_progress = Signal(int, int)
 
-    def __init__(self, store: BatchQueueStore) -> None:
+    def __init__(self, store: BatchQueueStore, execution_backend_factory=None) -> None:
         super().__init__()
         self._store = store
+        self._execution_backend_factory = execution_backend_factory
         self._cancel_all = False
         self._cancel_current = False
         self._current_run_output = ""
@@ -66,7 +67,8 @@ class QueueRunner(QObject):
             job.output_formats,
         )
         try:
-            result = TranscriptionService().run(
+            backend = self._build_backend(item)
+            result = backend.run(
                 job,
                 progress=self._handle_progress,
                 should_cancel=lambda: self._cancel_current or self._cancel_all,
@@ -132,6 +134,18 @@ class QueueRunner(QObject):
         if event.message:
             self._current_run_output += event.message + "\n"
         self.item_progress.emit(event)
+
+    def _build_backend(self, item: QueueItem):
+        if self._execution_backend_factory is not None:
+            return self._execution_backend_factory(item)
+        settings = item.settings
+        return build_execution_backend(
+            execution_mode=settings.execution_mode,
+            server_target=settings.server_target,
+            remote_token=settings.remote_token,
+            remote_poll_seconds=settings.remote_poll_seconds,
+            download_artifacts=settings.download_artifacts,
+        )
 
     @Slot()
     def request_cancel_all(self) -> None:

@@ -315,6 +315,8 @@ class UrlTranscriptionPipeline:
                 source_value=source.value,
                 auto_bind_media=source.auto_bind_media,
                 transcription_strategy="audio-transcription",
+                source_locator=source.resolved_locator,
+                original_filename=Path(source.value).name if Path(source.value).name else None,
             )
 
             if preserved_media_path is not None and source.auto_bind_media:

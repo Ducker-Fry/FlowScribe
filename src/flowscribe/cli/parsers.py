@@ -11,6 +11,7 @@ from .options import (
     InstallCommandOptions,
     InspectOptions,
     ModelCommandOptions,
+    RemoteCommandOptions,
     SearchOptions,
     ServeOptions,
     SimpleCommandOptions,
@@ -69,6 +70,48 @@ def add_progressive_options(parser: argparse.ArgumentParser) -> None:
         dest="progressive_max_workers",
         default=1,
         help="Maximum progressive chunk workers. Use 0 for auto. Default: 1",
+    )
+
+
+def add_remote_execution_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--execution",
+        choices=["local", "remote"],
+        default="local",
+        dest="execution_mode",
+        help="Execution mode. Use remote to submit work to a FlowScribe server. Default: local",
+    )
+    parser.add_argument(
+        "--server",
+        dest="server_target",
+        default=None,
+        help="Remote server profile name or base URL when --execution remote is used.",
+    )
+    parser.add_argument(
+        "--remote-token",
+        default=None,
+        help="Optional bearer token override for remote execution.",
+    )
+    parser.add_argument(
+        "--remote-poll-seconds",
+        type=positive_float,
+        default=1.0,
+        help="Polling interval for remote task status and event refresh. Default: 1.0",
+    )
+    artifact_group = parser.add_mutually_exclusive_group()
+    artifact_group.add_argument(
+        "--download-artifacts",
+        action="store_true",
+        dest="download_artifacts",
+        default=None,
+        help="Download remote result artifacts to the local output directory.",
+    )
+    artifact_group.add_argument(
+        "--no-download-artifacts",
+        action="store_false",
+        dest="download_artifacts",
+        default=None,
+        help="Skip downloading remote result artifacts after task completion.",
     )
 
 
@@ -216,6 +259,7 @@ def add_transcription_options(parser: argparse.ArgumentParser) -> None:
         default=None,
         help="Explicit checkpoint id for an existing progressive task.",
     )
+    add_remote_execution_options(parser)
     add_progressive_options(parser)
 
 
@@ -379,6 +423,7 @@ def parse_transcribe_args(argv: list[str] | None = None, *, prog: str = "flowscr
         default=None,
         help="Explicit checkpoint id for an existing progressive task.",
     )
+    add_remote_execution_options(parser)
     add_progressive_options(parser)
     namespace = parser.parse_args(argv)
     return CliOptions(
@@ -406,6 +451,11 @@ def parse_transcribe_args(argv: list[str] | None = None, *, prog: str = "flowscr
         progressive_chunk_overlap_seconds=namespace.progressive_chunk_overlap_seconds,
         progressive_resume=namespace.progressive_resume,
         progressive_max_workers=namespace.progressive_max_workers,
+        execution_mode=namespace.execution_mode,
+        server_target=namespace.server_target,
+        remote_token=namespace.remote_token,
+        remote_poll_seconds=namespace.remote_poll_seconds,
+        download_artifacts=namespace.download_artifacts,
         json_output=namespace.json_output,
         event_stream=namespace.event_stream,
         non_interactive=namespace.non_interactive,
@@ -505,6 +555,11 @@ def parse_url_args(argv: list[str] | None = None) -> UrlOptions:
         progressive_chunk_overlap_seconds=namespace.progressive_chunk_overlap_seconds,
         progressive_resume=namespace.progressive_resume,
         progressive_max_workers=namespace.progressive_max_workers,
+        execution_mode=namespace.execution_mode,
+        server_target=namespace.server_target,
+        remote_token=namespace.remote_token,
+        remote_poll_seconds=namespace.remote_poll_seconds,
+        download_artifacts=namespace.download_artifacts,
         download_quality=namespace.download_quality,
         download_format=namespace.download_format,
         json_output=namespace.json_output,
@@ -717,6 +772,11 @@ def parse_serve_args(argv: list[str] | None = None) -> ServeOptions:
         default=None,
         help="Default language code (e.g., zh, en). Default: auto-detect",
     )
+    parser.add_argument(
+        "--api-token",
+        default=None,
+        help="Optional bearer token required for /v1 remote task and artifact APIs.",
+    )
     namespace = parser.parse_args(argv)
 
     # Default queue store path
@@ -746,6 +806,47 @@ def parse_serve_args(argv: list[str] | None = None) -> ServeOptions:
         output_formats=output_formats,
         model_name=namespace.model_name,
         language=namespace.language,
+        api_token=namespace.api_token,
+    )
+
+
+def parse_remote_args(argv: list[str] | None = None) -> RemoteCommandOptions:
+    parser = argparse.ArgumentParser(
+        prog="flowscribe remote",
+        description="Manage FlowScribe remote server profiles for CLI execution.",
+    )
+    parser.add_argument("--json", action="store_true", dest="json_output", help="Write JSON output.")
+    subparsers = parser.add_subparsers(dest="subcommand", required=True)
+
+    add_parser = subparsers.add_parser("add-server", help="Add or update a remote server profile.")
+    add_parser.add_argument("name", help="Stable profile name.")
+    add_parser.add_argument("--url", required=True, dest="base_url", help="Base URL such as http://127.0.0.1:8765")
+    add_parser.add_argument("--token", default=None, help="Optional bearer token.")
+    add_parser.add_argument("--disable", action="store_false", dest="enabled", default=True, help="Store the profile as disabled.")
+    add_parser.add_argument("--no-verify-tls", action="store_false", dest="verify_tls", default=True, help="Disable TLS certificate verification.")
+    add_parser.add_argument("--timeout", type=positive_float, dest="timeout_seconds", default=30.0, help="Default request timeout in seconds. Default: 30")
+    artifact_group = add_parser.add_mutually_exclusive_group()
+    artifact_group.add_argument("--download-artifacts", action="store_true", dest="download_artifacts_by_default", default=True, help="Download remote artifacts by default.")
+    artifact_group.add_argument("--no-download-artifacts", action="store_false", dest="download_artifacts_by_default", default=True, help="Do not download remote artifacts by default.")
+
+    subparsers.add_parser("list-servers", help="List configured remote server profiles.")
+    show_parser = subparsers.add_parser("show-server", help="Show one configured remote server profile.")
+    show_parser.add_argument("name", help="Profile name.")
+    remove_parser = subparsers.add_parser("remove-server", help="Remove a configured remote server profile.")
+    remove_parser.add_argument("name", help="Profile name.")
+
+    namespace = parser.parse_args(argv)
+    return RemoteCommandOptions(
+        command="remote",
+        subcommand=namespace.subcommand,
+        name=getattr(namespace, "name", None),
+        base_url=getattr(namespace, "base_url", None),
+        token=getattr(namespace, "token", None),
+        enabled=getattr(namespace, "enabled", True),
+        verify_tls=getattr(namespace, "verify_tls", True),
+        timeout_seconds=getattr(namespace, "timeout_seconds", 30.0),
+        download_artifacts_by_default=getattr(namespace, "download_artifacts_by_default", True),
+        json_output=namespace.json_output,
     )
 
 

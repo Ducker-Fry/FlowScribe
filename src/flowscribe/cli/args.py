@@ -11,6 +11,7 @@ from .options import (
     InspectOptions,
     ModelCommandOptions,
     ProgressiveMode,
+    RemoteCommandOptions,
     SearchOptions,
     ServeOptions,
     SimpleCommandOptions,
@@ -23,6 +24,7 @@ from .parsers import (
     parse_install_args,
     parse_inspect_args,
     parse_model_args,
+    parse_remote_args,
     parse_search_args,
     parse_serve_args,
     parse_simple_command_args,
@@ -45,6 +47,7 @@ __all__ = [
     "InspectOptions",
     "ModelCommandOptions",
     "ProgressiveMode",
+    "RemoteCommandOptions",
     "SearchOptions",
     "ServeOptions",
     "SimpleCommandOptions",
@@ -58,6 +61,7 @@ __all__ = [
     "parse_install_args",
     "parse_inspect_args",
     "parse_model_args",
+    "parse_remote_args",
     "parse_output_formats",
     "parse_search_args",
     "parse_serve_args",
@@ -72,7 +76,7 @@ __all__ = [
 
 def parse_args(
     argv: list[str] | None = None,
-) -> CliOptions | DoctorOptions | SearchOptions | InspectOptions | UrlOptions | ServeOptions | SimpleCommandOptions | ModelCommandOptions | InstallCommandOptions:
+) -> CliOptions | DoctorOptions | SearchOptions | InspectOptions | UrlOptions | ServeOptions | SimpleCommandOptions | ModelCommandOptions | InstallCommandOptions | RemoteCommandOptions:
     argv = sys.argv[1:] if argv is None else argv
     if not argv:
         return parse_transcribe_args(argv)
@@ -94,6 +98,8 @@ def parse_args(
         return parse_model_args(argv[1:])
     if command == "install":
         return parse_install_args(argv[1:])
+    if command == "remote":
+        return parse_remote_args(argv[1:])
     if command in {"version", "formats", "models", "capture", "gui"}:
         return parse_simple_command_args(command, argv[1:])
     return parse_transcribe_args(argv)

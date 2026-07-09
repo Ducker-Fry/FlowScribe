@@ -10,8 +10,9 @@ from pathlib import Path
 from typing import Any, Literal
 
 from flowscribe.app.service import TranscriptionService
-from flowscribe.cli.main import _result_payload
-from flowscribe.tasks.models import ProgressEvent, SourceSpec, TranscriptionJob
+from flowscribe.cli.payloads import result_payload
+from flowscribe.server.task_payloads import job_to_payload, task_job_from_payload
+from flowscribe.tasks.models import ProgressEvent, TranscriptionJob
 
 AgentTaskStatus = Literal["accepted", "running", "completed", "failed", "canceled"]
 AGENT_TASK_STORE_VERSION = 1
@@ -34,10 +35,11 @@ class AgentTaskRecord:
 class AgentTaskStore:
     """JSON-backed task registry for agent-facing HTTP APIs."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, blob_resolver=None) -> None:
         self._path = path.expanduser().resolve()
         self._lock = threading.Lock()
         self._tasks: dict[str, AgentTaskRecord] = {}
+        self._blob_resolver = blob_resolver
         self._load()
         self._recover_incomplete_tasks()
 
@@ -53,7 +55,7 @@ class AgentTaskStore:
                 "value": spec.source.value,
                 "locator": spec.source.resolved_locator,
             },
-            job_payload=_job_to_payload(job),
+            job_payload=job_to_payload(job),
             task_spec={
                 "task_id": spec.task_id,
                 "resume_token": spec.resume_token,
@@ -90,10 +92,23 @@ class AgentTaskStore:
                 return None
             return record.result
 
+    def get_artifact(self, artifact_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            for record in self._tasks.values():
+                if not isinstance(record.result, dict):
+                    continue
+                for output in record.result.get("outputs", []):
+                    if not isinstance(output, dict):
+                        continue
+                    for artifact in output.get("artifacts", []):
+                        if isinstance(artifact, dict) and artifact.get("artifact_id") == artifact_id:
+                            return artifact
+        return None
+
     def _run_task(self, task_id: str) -> None:
         with self._lock:
             record = self._tasks[task_id]
-            job = _job_from_payload(record.job_payload)
+            job = task_job_from_payload(record.job_payload, blob_resolver=self._blob_resolver)
             self._tasks[task_id] = AgentTaskRecord(
                 **{
                     **asdict(record),
@@ -119,6 +134,8 @@ class AgentTaskStore:
         try:
             result = TranscriptionService().run(job, progress=progress)
             status: AgentTaskStatus = "canceled" if result.canceled else ("failed" if result.errors else "completed")
+            payload = result_payload(result)
+            _attach_artifact_manifests(task_id, payload)
             with self._lock:
                 current = self._tasks[task_id]
                 self._tasks[task_id] = AgentTaskRecord(
@@ -126,7 +143,7 @@ class AgentTaskStore:
                         **asdict(current),
                         "status": status,
                         "updated_at": _utc_now(),
-                        "result": _result_payload(result),
+                        "result": payload,
                     }
                 )
                 self._save()
@@ -190,75 +207,6 @@ class AgentTaskStore:
             changed = True
         if changed:
             self._save()
-
-
-def task_job_from_payload(payload: dict[str, Any]) -> TranscriptionJob:
-    source_payload = payload.get("source")
-    if not isinstance(source_payload, dict):
-        raise ValueError("source must be an object")
-    source_kind = str(source_payload.get("kind") or "").strip()
-    source_value = str(source_payload.get("value") or "").strip()
-    if source_kind not in {"local", "url"}:
-        raise ValueError("source.kind must be local or url")
-    if not source_value:
-        raise ValueError("source.value is required")
-    output_payload = payload.get("output", {})
-    if not isinstance(output_payload, dict):
-        raise ValueError("output must be an object")
-    output_dir = Path(output_payload.get("output_dir") or "outputs")
-    output_formats = tuple(output_payload.get("formats") or ("json",))
-    if not output_formats:
-        output_formats = ("json",)
-    source = SourceSpec(kind=source_kind, value=source_value)
-    return TranscriptionJob(
-        sources=(source,),
-        task_id=payload.get("task_id"),
-        output_dir=output_dir,
-        output_formats=output_formats,
-        provider_name=payload.get("provider_name") or "local-whisper",
-        model_name=payload.get("model_name") or "small",
-        language=payload.get("language"),
-        preset=payload.get("preset"),
-        timestamps=bool(payload.get("timestamps", True)),
-        word_timestamps=bool(payload.get("word_timestamps", False)),
-        overwrite=bool(output_payload.get("overwrite", False)),
-        progressive_enabled=bool(payload.get("progressive", False)),
-        progressive_resume=bool(payload.get("progressive_resume", False)),
-        resume_token=payload.get("resume_token"),
-        checkpoint_id=payload.get("checkpoint_id"),
-        requested_capabilities=("subtitle", "transcribe") if source_kind == "url" else ("transcribe",),
-    )
-
-
-def _job_to_payload(job: TranscriptionJob) -> dict[str, Any]:
-    source = job.sources[0]
-    return {
-        "task_id": job.task_id,
-        "source": {
-            "kind": source.kind,
-            "value": source.value,
-        },
-        "output": {
-            "output_dir": str(job.output_dir),
-            "formats": list(job.output_formats),
-            "overwrite": job.overwrite,
-        },
-        "provider_name": job.provider_name,
-        "model_name": job.model_name,
-        "language": job.language,
-        "preset": job.preset,
-        "timestamps": job.timestamps,
-        "word_timestamps": job.word_timestamps,
-        "progressive": job.progressive_enabled,
-        "progressive_resume": job.progressive_resume,
-        "resume_token": job.resume_token,
-        "checkpoint_id": job.checkpoint_id,
-    }
-
-
-def _job_from_payload(payload: dict[str, Any]) -> TranscriptionJob:
-    return task_job_from_payload(payload)
-
 
 def _task_summary(record: AgentTaskRecord) -> dict[str, Any]:
     result = record.result
@@ -327,3 +275,32 @@ def agent_task_store_path_for(queue_store_path: Path) -> Path:
 
 def _utc_now() -> str:
     return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def _attach_artifact_manifests(task_id: str, payload: dict[str, Any]) -> None:
+    outputs = payload.get("outputs", [])
+    if not isinstance(outputs, list):
+        return
+    for output_index, output in enumerate(outputs):
+        if not isinstance(output, dict):
+            continue
+        paths = output.get("paths", [])
+        if not isinstance(paths, list):
+            continue
+        artifacts: list[dict[str, Any]] = []
+        for path_index, raw_path in enumerate(paths):
+            if not isinstance(raw_path, str):
+                continue
+            file_path = Path(raw_path)
+            artifact_id = f"{task_id}-{output_index}-{path_index}"
+            artifacts.append(
+                {
+                    "artifact_id": artifact_id,
+                    "filename": file_path.name,
+                    "format": file_path.suffix.removeprefix(".").lower(),
+                    "download_path": f"/v1/artifacts/{artifact_id}",
+                    "size_bytes": file_path.stat().st_size if file_path.exists() else None,
+                    "path": str(file_path),
+                }
+            )
+        output["artifacts"] = artifacts

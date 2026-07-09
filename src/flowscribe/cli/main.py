@@ -6,7 +6,6 @@ import json
 import logging
 import sys
 from dataclasses import asdict
-from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -15,6 +14,7 @@ from flowscribe.tasks.models import ProgressEvent, SourceSpec, TranscriptionJob
 from flowscribe.app.service import TranscriptionService
 from flowscribe.cli.args import parse_args
 from flowscribe.cli.doctor import run_doctor
+from flowscribe.cli.payloads import event_payload as _shared_event_payload, result_payload as _shared_result_payload
 from flowscribe import __version__
 from flowscribe.core.errors import (
     CancellationError,
@@ -29,6 +29,14 @@ from flowscribe.input.file_filter import SUPPORTED_MEDIA_EXTENSIONS
 from flowscribe.input.url_inspector import UrlInspector
 from flowscribe.input.url_tool_bridge import select_url_inspector_cls
 from flowscribe.media.inspector import LocalMediaInspector
+from flowscribe.execution.factory import build_execution_backend
+from flowscribe.execution.remote_config import (
+    RemoteServerProfile,
+    get_remote_server_profile,
+    load_remote_server_profiles,
+    remove_remote_server_profile,
+    upsert_remote_server_profile,
+)
 from flowscribe.output.time_format import format_timestamp
 from flowscribe.search.transcript_search import search_transcript_file
 from flowscribe.model_manager import (
@@ -82,6 +90,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_model_command(options)
     if options.command == "install":
         return run_install_command(options)
+    if options.command == "remote":
+        return run_remote_command(options)
     if options.command == "version":
         print(f"FlowScribe {__version__}")
         print(f"Python {sys.version.split()[0]}")
@@ -308,8 +318,13 @@ def run_model_command(options) -> int:
 
 
 def run_transcribe(options) -> int:
-    job = _job_from_transcribe_options(options)
-    result = TranscriptionService().run(job, progress=_build_cli_progress_handler(options))
+    try:
+        job = _job_from_transcribe_options(options)
+        backend = _build_execution_backend(options)
+        result = backend.run(job, progress=_build_cli_progress_handler(options))
+    except FlowScribeError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
 
     if options.json_output:
         print(json.dumps(_result_payload(result), ensure_ascii=False, indent=2))
@@ -325,8 +340,13 @@ def run_transcribe(options) -> int:
 
 
 def run_url(options) -> int:
-    job = _job_from_url_options(options)
-    result = TranscriptionService().run(job, progress=_build_cli_progress_handler(options))
+    try:
+        job = _job_from_url_options(options)
+        backend = _build_execution_backend(options)
+        result = backend.run(job, progress=_build_cli_progress_handler(options))
+    except FlowScribeError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
     if options.json_output:
         print(json.dumps(_result_payload(result), ensure_ascii=False, indent=2))
     elif not options.non_interactive:
@@ -372,10 +392,13 @@ def run_serve(options) -> int:
     print(f"  GET  http://{options.host}:{options.port}/bookmarklet.js - Get bookmarklet script")
     print("")
     print("Agent Task API:")
+    print(f"  POST http://{options.host}:{options.port}/v1/uploads                - Upload local media for remote execution")
     print(f"  POST http://{options.host}:{options.port}/v1/tasks                  - Submit single task")
     print(f"  GET  http://{options.host}:{options.port}/v1/tasks/{{task_id}}      - Get task status")
     print(f"  GET  http://{options.host}:{options.port}/v1/tasks/{{task_id}}/events - Stream task events")
     print(f"  GET  http://{options.host}:{options.port}/v1/tasks/{{task_id}}/result - Get final result")
+    print(f"  GET  http://{options.host}:{options.port}/v1/artifacts/{{artifact_id}} - Download output artifact")
+    print(f"  GET  http://{options.host}:{options.port}/v1/server                - Inspect remote capabilities")
     print("")
     print("Task Persistence:")
     print("  Agent task history is stored in agent-tasks.json next to the queue store.")
@@ -397,6 +420,7 @@ def run_serve(options) -> int:
             default_output_formats=options.output_formats,
             default_model_name=options.model_name,
             default_language=options.language,
+            api_token=options.api_token,
         )
         server.start()
         return 0
@@ -514,6 +538,74 @@ def run_search(options) -> int:
         if index < len(hits):
             print("")
     return 0
+
+
+def run_remote_command(options) -> int:
+    if options.subcommand == "add-server":
+        profile = RemoteServerProfile(
+            name=options.name,
+            base_url=options.base_url,
+            token=options.token,
+            enabled=options.enabled,
+            verify_tls=options.verify_tls,
+            timeout_seconds=options.timeout_seconds,
+            download_artifacts_by_default=options.download_artifacts_by_default,
+        )
+        upsert_remote_server_profile(profile)
+        payload = {
+            "ok": True,
+            "profile": _remote_profile_payload(profile),
+        }
+        if options.json_output:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            print(f"Saved remote server profile: {profile.name} -> {profile.base_url}")
+        return 0
+
+    if options.subcommand == "list-servers":
+        profiles = load_remote_server_profiles()
+        payload = [_remote_profile_payload(profile) for profile in profiles]
+        if options.json_output:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            if not profiles:
+                print("No remote server profiles configured.")
+            for profile in profiles:
+                status = "enabled" if profile.enabled else "disabled"
+                print(f"- {profile.name} ({status}) -> {profile.base_url}")
+        return 0
+
+    if options.subcommand == "show-server":
+        profile = get_remote_server_profile(options.name)
+        if profile is None:
+            print(f"Remote server profile not found: {options.name}", file=sys.stderr)
+            return 1
+        payload = _remote_profile_payload(profile)
+        if options.json_output:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            print(f"Name: {profile.name}")
+            print(f"URL: {profile.base_url}")
+            print(f"Enabled: {'yes' if profile.enabled else 'no'}")
+            print(f"Verify TLS: {'yes' if profile.verify_tls else 'no'}")
+            print(f"Timeout: {profile.timeout_seconds}")
+            print(
+                f"Download artifacts: {'yes' if profile.download_artifacts_by_default else 'no'}"
+            )
+        return 0
+
+    if options.subcommand == "remove-server":
+        removed = remove_remote_server_profile(options.name)
+        if options.json_output:
+            print(json.dumps({"ok": removed, "name": options.name}, ensure_ascii=False, indent=2))
+        elif removed:
+            print(f"Removed remote server profile: {options.name}")
+        else:
+            print(f"Remote server profile not found: {options.name}", file=sys.stderr)
+        return 0 if removed else 1
+
+    print(f"Unsupported remote subcommand: {options.subcommand}", file=sys.stderr)
+    return 2
 
 
 def _search_payload(options, hits) -> dict:
@@ -644,6 +736,29 @@ def _resolve_cli_provider_and_model(options) -> tuple[str, str]:
     return provider_name, model_name
 
 
+def _build_execution_backend(options):
+    return build_execution_backend(
+        execution_mode=getattr(options, "execution_mode", "local"),
+        server_target=getattr(options, "server_target", None),
+        remote_token=getattr(options, "remote_token", None),
+        remote_poll_seconds=getattr(options, "remote_poll_seconds", 1.0),
+        download_artifacts=getattr(options, "download_artifacts", None),
+        service_factory=lambda: TranscriptionService(),
+    )
+
+
+def _remote_profile_payload(profile: RemoteServerProfile) -> dict:
+    return {
+        "name": profile.name,
+        "base_url": profile.base_url,
+        "has_token": bool(profile.token),
+        "enabled": profile.enabled,
+        "verify_tls": profile.verify_tls,
+        "timeout_seconds": profile.timeout_seconds,
+        "download_artifacts_by_default": profile.download_artifacts_by_default,
+    }
+
+
 def _print_cli_progress(event: ProgressEvent) -> None:
     if event.stage == "complete":
         return
@@ -700,77 +815,11 @@ def _cli_progress_line(event: ProgressEvent) -> str:
 
 
 def _event_payload(event: ProgressEvent) -> dict:
-    return {
-        "event_type": event.event_type or "progress",
-        "timestamp": event.timestamp or datetime.utcnow().isoformat(timespec="milliseconds") + "Z",
-        "sequence": event.sequence,
-        "task_id": event.task_id,
-        "stage": event.stage,
-        "message": event.message,
-        "source": event.source,
-        "current": event.current,
-        "total": event.total,
-        "path": str(event.path) if event.path is not None else None,
-        "processed_duration_seconds": event.processed_duration_seconds,
-        "total_duration_seconds": event.total_duration_seconds,
-        "eta_seconds": event.eta_seconds,
-        "realtime_factor": event.realtime_factor,
-        "chunk_index": event.chunk_index,
-        "chunk_count": event.chunk_count,
-        "completed_chunks": event.completed_chunks,
-        "failed_chunks": event.failed_chunks,
-        "resumed": event.resumed,
-        "capability": event.capability,
-        "percent": event.percent,
-        "raw_metadata": dict(event.raw_metadata),
-    }
+    return _shared_event_payload(event)
 
 
 def _result_payload(result) -> dict:
-    return {
-        "ok": result.ok,
-        "canceled": result.canceled,
-        "succeeded": result.succeeded,
-        "failed": result.failed,
-        "elapsed_seconds": result.elapsed_seconds,
-        "tasks": [
-            {
-                "task_id": spec.task_id,
-                "resume_token": spec.resume_token,
-                "checkpoint_id": spec.checkpoint_id,
-                "cache_key": spec.cache_key,
-                "source": {
-                    "kind": spec.source.kind,
-                    "value": spec.source.value,
-                    "locator": spec.source.resolved_locator,
-                },
-            }
-            for spec in result.task_specs
-        ],
-        "outputs": [
-            {
-                "paths": [str(path) for path in output.paths],
-                "json_path": str(output.json_path) if output.json_path is not None else None,
-                "media_path": str(output.media_path) if output.media_path is not None else None,
-                "media_kind": output.media_kind,
-                "requested_media_kind": output.requested_media_kind,
-                "source_kind": output.source_kind,
-                "source_value": output.source_value,
-                "transcription_strategy": output.transcription_strategy,
-                "subtitle_language": output.subtitle_language,
-            }
-            for output in result.outputs
-        ],
-        "errors": [
-            {
-                "code": error.code,
-                "message": error.message,
-                "source": error.source,
-                "recoverable": error.recoverable,
-            }
-            for error in result.errors
-        ],
-    }
+    return _shared_result_payload(result)
 
 
 def _exit_code_for_result(result) -> int:

@@ -12,8 +12,8 @@ from typing import Literal
 
 from flowscribe.core.models import OutputArtifacts, TranscriptSegment
 
-SourceKind = Literal["local", "url", "capture"]
-ExtendedSourceKind = Literal["local", "url", "capture", "transcript"]
+SourceKind = Literal["local", "url", "capture", "remote_blob"]
+ExtendedSourceKind = Literal["local", "url", "capture", "remote_blob", "transcript"]
 UrlMediaKind = Literal["audio", "video"]
 DownloadQuality = Literal["best", "high", "medium", "low"]
 ProgressStage = Literal[

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from flowscribe.server.agent_api import AgentTaskStore, agent_task_store_path_for
+from flowscribe.server.storage import UploadBlobStore
 from flowscribe.tasks.models import SourceSpec
 from flowscribe.input.url_security import validate_public_http_url
 from flowscribe.tasks.queue_models import (
@@ -41,14 +42,20 @@ class AddUrlHandler:
         default_output_formats: tuple[str, ...] = ("json",),
         default_model_name: str = "small",
         default_language: str | None = None,
+        api_token: str | None = None,
     ) -> None:
         self.queue_store_path = queue_store_path
         self.store = BatchQueueStore(queue_store_path)
-        self.task_store = AgentTaskStore(agent_task_store_path_for(queue_store_path))
+        self.upload_store = UploadBlobStore(queue_store_path.with_name("remote-blobs"))
+        self.task_store = AgentTaskStore(
+            agent_task_store_path_for(queue_store_path),
+            blob_resolver=self.upload_store.resolve,
+        )
         self.default_output_dir = default_output_dir or (Path.home() / "Documents" / "FlowScribe")
         self.default_output_formats = default_output_formats
         self.default_model_name = default_model_name
         self.default_language = default_language
+        self.api_token = api_token
 
     def get_status(self) -> dict[str, Any]:
         """Get server and queue status."""
