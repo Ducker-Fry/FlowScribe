@@ -53,6 +53,11 @@ def _default_settings() -> dict:
         "network_family": "auto",
         "proxy": None,
         "cookies_path": None,
+        "execution_mode": "local",
+        "server_target": None,
+        "remote_token": None,
+        "remote_poll_seconds": 1.0,
+        "download_artifacts": True,
         "progressive_enabled": True,
         "progressive_resume": True,
         "progressive_chunk_seconds": 30.0,
@@ -152,6 +157,7 @@ class NewMainWindow(QMainWindow, NewMainWindowQueueMixin, NewMainWindowServerMix
         self._queue_view.clear_completed_requested.connect(self._on_clear_completed)
         self._queue_view.reorder_requested.connect(self._on_reorder_queue)
         self._queue_view.edit_item_settings_requested.connect(self._on_edit_item_settings)
+        self._queue_view.execution_settings_changed.connect(self._on_queue_execution_settings_changed)
         self._queue_view.server_start_requested.connect(self._on_server_start)
         self._queue_view.server_stop_requested.connect(self._on_server_stop)
 
@@ -179,6 +185,9 @@ class NewMainWindow(QMainWindow, NewMainWindowQueueMixin, NewMainWindowServerMix
         self._queue_view.update_settings(settings)
         self._refresh_icons()
         self.statusBar().showMessage("Settings applied")
+
+    def _on_queue_execution_settings_changed(self, settings: dict) -> None:
+        self._settings.update(settings)
 
     def _refresh_icons(self) -> None:
         app = QApplication.instance()

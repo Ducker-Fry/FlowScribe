@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from flowscribe.gui.dialogs.queue_item_settings_dialog import QueueItemSettingsDialog
+from flowscribe.gui.remote_targets import validate_remote_execution_settings
 from flowscribe.gui.services.queue_service import build_local_queue_items, build_url_queue_items
 from flowscribe.gui.services.runtime_service import start_queue_runtime
 from flowscribe.tasks.queue_importers import import_urls_from_file, parse_urls_from_text
@@ -33,29 +34,39 @@ class NewMainWindowQueueMixin:
             self.statusBar().showMessage(f"Error adding URLs: {exc}")
 
     def _on_enqueue_files(self, paths: list[Path]) -> None:
-        settings = self._settings_to_queue_settings()
-        items = build_local_queue_items(paths, settings=settings)
-        for item in items:
-            self._queue_store.enqueue(item)
-        self._refresh_queue_view()
-        self.statusBar().showMessage(f"Added {len(items)} file(s) to queue")
+        try:
+            settings = self._settings_to_queue_settings()
+            items = build_local_queue_items(paths, settings=settings)
+            for item in items:
+                self._queue_store.enqueue(item)
+            self._refresh_queue_view()
+            self.statusBar().showMessage(f"Added {len(items)} file(s) to queue")
+        except Exception as exc:
+            self.statusBar().showMessage(f"Error adding files: {exc}")
 
     def _on_import_file(self, file_path: str) -> None:
-        urls = import_urls_from_file(Path(file_path))
-        settings = self._settings_to_queue_settings()
-        items = build_url_queue_items(
-            urls,
-            settings=settings,
-            download_options=self._queue_view.get_download_options(),
-        )
-        for item in items:
-            self._queue_store.enqueue(item)
-        self._refresh_queue_view()
-        self.statusBar().showMessage(f"Imported {len(items)} URL(s) from file")
+        try:
+            urls = import_urls_from_file(Path(file_path))
+            settings = self._settings_to_queue_settings()
+            items = build_url_queue_items(
+                urls,
+                settings=settings,
+                download_options=self._queue_view.get_download_options(),
+            )
+            for item in items:
+                self._queue_store.enqueue(item)
+            self._refresh_queue_view()
+            self.statusBar().showMessage(f"Imported {len(items)} URL(s) from file")
+        except Exception as exc:
+            self.statusBar().showMessage(f"Import failed: {exc}")
 
     def _on_start_queue(self) -> None:
         if self._queue_thread is not None:
             self.statusBar().showMessage("Queue is already running")
+            return
+        validation_error = self._validate_pending_queue_items()
+        if validation_error:
+            self.statusBar().showMessage(validation_error)
             return
 
         self._queue_thread, self._queue_runner = start_queue_runtime(
@@ -185,9 +196,20 @@ class NewMainWindowQueueMixin:
         self._queue_view.refresh_queue(self._queue_store.load_items())
 
     def _settings_to_queue_settings(self) -> QueueItemSettings:
+        remote_settings = {
+            "execution_mode": self._settings.get("execution_mode", "local"),
+            "server_target": self._settings.get("server_target"),
+            "remote_token": self._settings.get("remote_token"),
+            "remote_poll_seconds": float(self._settings.get("remote_poll_seconds", 1.0)),
+            "download_artifacts": self._settings.get("download_artifacts", True),
+        }
+        validation_error = validate_remote_execution_settings(remote_settings)
+        if validation_error is not None:
+            raise ValueError(validation_error)
         return QueueItemSettings(
             output_dir=Path(self._settings["output_dir"]),
             output_name_base=self._settings.get("output_name_base", ""),
+            **remote_settings,
             provider_name=self._settings.get("provider_name", "local-whisper"),
             model_name=self._settings["model_name"],
             language=self._settings["language"],
@@ -206,3 +228,16 @@ class NewMainWindowQueueMixin:
             native_threads=self._settings.get("native_threads"),
         )
 
+    def _validate_pending_queue_items(self) -> str | None:
+        for item in self._queue_store.load_items():
+            if item.status != "pending":
+                continue
+            validation_error = validate_remote_execution_settings(
+                {
+                    "execution_mode": item.settings.execution_mode,
+                    "server_target": item.settings.server_target,
+                }
+            )
+            if validation_error is not None:
+                return f"Queue item '{item.display_label}' has invalid remote settings: {validation_error}"
+        return None

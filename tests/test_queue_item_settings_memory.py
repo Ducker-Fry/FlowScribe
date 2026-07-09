@@ -25,6 +25,11 @@ def test_dialog_loads_provided_settings(qapp):
     custom_settings = QueueItemSettings(
         output_dir=Path("custom_output"),
         output_name_base="custom_name",
+        execution_mode="remote",
+        server_target="http://127.0.0.1:18769",
+        remote_token="secret",
+        remote_poll_seconds=2.5,
+        download_artifacts=False,
         provider_name="native-engine",
         native_threads=8,
         model_name="models/ggml-base.en.bin",
@@ -50,6 +55,12 @@ def test_dialog_loads_provided_settings(qapp):
     # Verify all settings are loaded correctly
     assert dialog.output_dir_input.text() == "custom_output"
     assert dialog.output_name_input.text() == "custom_name"
+    assert dialog.execution_mode_combo.currentData() == "remote"
+    assert dialog.server_target_combo.currentText() == "http://127.0.0.1:18769"
+    assert dialog.remote_token_input.text() == "secret"
+    assert dialog.remote_poll_seconds_spin.value() == 2.5
+    assert dialog.download_artifacts_check.isChecked() is False
+    assert "Direct URL" in dialog.resolved_target_label.text()
     assert dialog.provider_combo.currentData() == "native-engine"
     assert dialog.model_combo.currentText() == "models/ggml-base.en.bin"
     assert dialog.native_threads_spin.value() == 8
@@ -82,6 +93,11 @@ def test_dialog_loads_default_settings(qapp):
     # Verify default settings are loaded
     assert dialog.output_dir_input.text() == "outputs"
     assert dialog.output_name_input.text() == ""
+    assert dialog.execution_mode_combo.currentData() == "local"
+    assert dialog.server_target_combo.currentText() == ""
+    assert dialog.remote_token_input.text() == ""
+    assert dialog.remote_poll_seconds_spin.value() == 1.0
+    assert dialog.download_artifacts_check.isChecked() is True
     assert dialog.provider_combo.currentData() == "local-whisper"
     assert dialog.model_combo.currentText() == "small"
     assert dialog.language_combo.currentText() == "auto"
@@ -142,18 +158,34 @@ def test_global_settings_dialog_collects_native_engine_settings(qapp):
     dialog = SettingsDialog(
         None,
         {
+            "execution_mode": "remote",
+            "server_target": "http://127.0.0.1:18769",
+            "remote_token": "secret",
+            "remote_poll_seconds": 2.0,
+            "download_artifacts": False,
             "provider_name": "native-engine",
             "model_name": "models/ggml-base.en.bin",
             "native_threads": 6,
         },
     )
 
+    assert dialog.execution_mode_combo.currentData() == "remote"
+    assert dialog.server_target_combo.currentText() == "http://127.0.0.1:18769"
+    assert dialog.remote_token_input.text() == "secret"
+    assert dialog.remote_poll_seconds_spin.value() == 2.0
+    assert dialog.download_artifacts_check.isChecked() is False
+    assert "Direct URL" in dialog.resolved_target_label.text()
     assert dialog.provider_combo.currentData() == "native-engine"
     assert dialog.model_combo.currentText() == "models/ggml-base.en.bin"
     assert dialog.native_threads_spin.value() == 6
 
     collected = dialog._collect_settings()
 
+    assert collected["execution_mode"] == "remote"
+    assert collected["server_target"] == "http://127.0.0.1:18769"
+    assert collected["remote_token"] == "secret"
+    assert collected["remote_poll_seconds"] == 2.0
+    assert collected["download_artifacts"] is False
     assert collected["provider_name"] == "native-engine"
     assert collected["model_name"] == "models/ggml-base.en.bin"
     assert collected["native_threads"] == 6

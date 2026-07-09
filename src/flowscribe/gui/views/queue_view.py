@@ -20,7 +20,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from flowscribe.gui.widgets import CollapsibleSection
+from flowscribe.gui.remote_targets import inspect_remote_target
+from flowscribe.gui.widgets import CollapsibleSection, RemoteExecutionWidget
 from flowscribe.tasks.queue_models import QueueItem, QueueItemStatus
 
 from .queue_view_controls import QueueViewControlsMixin
@@ -201,12 +202,14 @@ class QueueView(
     clear_completed_requested = Signal()
     reorder_requested = Signal(list)
     edit_item_settings_requested = Signal(list)
+    execution_settings_changed = Signal(dict)
     server_start_requested = Signal(int)
     server_stop_requested = Signal()
 
     def __init__(self, settings: dict, parent: QWidgetType | None = None):
         super().__init__(parent)
         self._settings = settings
+        self._loading_execution_settings = False
         self._item_ids: list[str] = []
         self._items_cache: dict[str, QueueItem] = {}
         self._checked_item_ids: set[str] = set()
@@ -296,6 +299,17 @@ class QueueView(
         settings_row.addWidget(self._max_retries_spin)
         settings_row.addStretch()
         defaults_layout.addLayout(settings_row)
+
+        self._remote_execution_widget = RemoteExecutionWidget(self)
+        self._remote_execution_widget.settings_changed.connect(self._emit_execution_settings_changed)
+        defaults_layout.addWidget(self._remote_execution_widget)
+        self._execution_mode_combo = self._remote_execution_widget.execution_mode_combo
+        self._server_target_combo = self._remote_execution_widget.server_target_combo
+        self._remote_token_input = self._remote_execution_widget.remote_token_input
+        self._remote_poll_seconds_spin = self._remote_execution_widget.remote_poll_seconds_spin
+        self._download_artifacts_check = self._remote_execution_widget.download_artifacts_check
+        self._resolved_target_label = self._remote_execution_widget.resolved_target_label
+        self._manage_remote_servers_btn = self._remote_execution_widget.manage_remote_servers_button
 
         download_row = QHBoxLayout()
         self._preserve_media_check = QCheckBox("Preserve media")
@@ -390,13 +404,38 @@ class QueueView(
         self._status_label = QLabel("Queue is empty")
         queue_layout.addWidget(self._status_label)
         layout.addWidget(queue_group, 1)
+        self._load_execution_settings(self._settings)
         self._update_button_states()
 
     def update_settings(self, settings: dict) -> None:
         self._settings = settings
+        self._load_execution_settings(settings)
 
     def eventFilter(self, watched, event) -> bool:
         return QueueViewControlsMixin.eventFilter(self, watched, event)
+
+    def get_execution_settings(self) -> dict:
+        return self._remote_execution_widget.settings()
+
+    def refresh_remote_server_profiles(self) -> None:
+        self._remote_execution_widget.refresh_remote_server_targets()
+
+    def _load_execution_settings(self, settings: dict) -> None:
+        self._loading_execution_settings = True
+        self._remote_execution_widget.load_settings(settings)
+        self._loading_execution_settings = False
+
+    def _emit_execution_settings_changed(self, *_args) -> None:
+        if self._loading_execution_settings:
+            return
+        self.execution_settings_changed.emit(self.get_execution_settings())
+
+    def validate_execution_settings(self) -> str | None:
+        settings = self.get_execution_settings()
+        if settings.get("execution_mode") != "remote":
+            return None
+        inspection = inspect_remote_target(settings.get("server_target"))
+        return inspection.error
 
 
 def _is_card_action_widget(widget: QObject | None) -> bool:

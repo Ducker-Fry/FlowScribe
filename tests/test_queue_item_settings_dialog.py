@@ -138,3 +138,27 @@ def test_dialog_preserves_source_fields(qapp):
     assert updated_source.media_output_dir == source.media_output_dir
     # Only keep_media should change
     assert updated_source.keep_media is True
+
+
+def test_dialog_returns_remote_execution_settings(qapp):
+    settings = QueueItemSettings()
+    source = SourceSpec(kind="local", value="/path/to/file.mp3")
+
+    dialog = QueueItemSettingsDialog(None, settings, source, "Test Item")
+    dialog.execution_mode_combo.setCurrentIndex(dialog.execution_mode_combo.findData("remote"))
+    dialog.server_target_combo.setCurrentText("http://127.0.0.1:18769")
+    dialog.remote_token_input.setText("secret")
+    dialog.remote_poll_seconds_spin.setValue(2.5)
+    dialog.download_artifacts_check.setChecked(False)
+    dialog.accept()
+
+    result = dialog.get_settings()
+    assert result is not None
+    updated_settings, _ = result
+
+    assert updated_settings.execution_mode == "remote"
+    assert updated_settings.server_target == "http://127.0.0.1:18769"
+    assert updated_settings.remote_token == "secret"
+    assert updated_settings.remote_poll_seconds == 2.5
+    assert updated_settings.download_artifacts is False
+    assert "Direct URL" in dialog.resolved_target_label.text()

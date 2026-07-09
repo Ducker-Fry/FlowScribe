@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 from flowscribe.tasks.models import SourceSpec
 from flowscribe.gui.state import SUPPORTED_GUI_FORMATS
 from flowscribe.gui.utils.state import GUI_PROVIDER_LABELS, GUI_PROVIDER_OPTIONS
+from flowscribe.gui.widgets import RemoteExecutionWidget
 from flowscribe.tasks.queue_models import QueueItemSettings
 
 if TYPE_CHECKING:
@@ -191,6 +192,19 @@ class QueueItemSettingsDialog(QDialog):
         progressive_layout.addWidget(QLabel("Native threads"), 3, 0)
         progressive_layout.addWidget(self.native_threads_spin, 3, 1)
 
+        # Execution Settings
+        execution_group = QGroupBox("Execution Settings")
+        execution_layout = QVBoxLayout(execution_group)
+        self.remote_execution_widget = RemoteExecutionWidget(self)
+        execution_layout.addWidget(self.remote_execution_widget)
+        self.execution_mode_combo = self.remote_execution_widget.execution_mode_combo
+        self.server_target_combo = self.remote_execution_widget.server_target_combo
+        self.remote_token_input = self.remote_execution_widget.remote_token_input
+        self.remote_poll_seconds_spin = self.remote_execution_widget.remote_poll_seconds_spin
+        self.download_artifacts_check = self.remote_execution_widget.download_artifacts_check
+        self.manage_remote_servers_button = self.remote_execution_widget.manage_remote_servers_button
+        self.resolved_target_label = self.remote_execution_widget.resolved_target_label
+
         # Network Settings
         network_group = QGroupBox("Network Settings")
         network_group.setCheckable(False)
@@ -257,6 +271,7 @@ class QueueItemSettingsDialog(QDialog):
         content_layout.addWidget(model_group)
         content_layout.addWidget(timestamp_group)
         content_layout.addWidget(progressive_group)
+        content_layout.addWidget(execution_group)
         content_layout.addWidget(network_group)
         content_layout.addWidget(media_group)
         content_layout.addStretch(1)
@@ -314,6 +329,18 @@ class QueueItemSettingsDialog(QDialog):
         self.progressive_chunk_spin.setValue(int(settings.progressive_chunk_seconds))
         self.progressive_workers_spin.setValue(settings.progressive_max_workers)
         self.native_threads_spin.setValue(settings.native_threads or 0)
+
+        self.remote_execution_widget.load_settings(
+            {
+                "execution_mode": settings.execution_mode,
+                "server_target": settings.server_target,
+                "remote_token": settings.remote_token,
+                "remote_poll_seconds": float(settings.remote_poll_seconds),
+                "download_artifacts": (
+                    True if settings.download_artifacts is None else settings.download_artifacts
+                ),
+            }
+        )
 
         self.network_combo.setCurrentText(settings.network_family)
         self.proxy_input.setText(settings.proxy or "")
@@ -396,6 +423,11 @@ class QueueItemSettingsDialog(QDialog):
         """Return updated settings and source if Apply was clicked, None if canceled."""
         if self.result() != QDialog.DialogCode.Accepted:
             return None
+        if not self.remote_execution_widget.validate_settings(
+            parent=self,
+            title="Queue Item Remote Settings",
+        ):
+            return None
 
         output_formats = tuple(
             fmt for fmt, checkbox in self.format_checks.items() if checkbox.isChecked()
@@ -418,6 +450,7 @@ class QueueItemSettingsDialog(QDialog):
         settings = QueueItemSettings(
             output_dir=Path(self.output_dir_input.text().strip() or "outputs"),
             output_name_base=self.output_name_input.text().strip(),
+            **self.remote_execution_widget.settings(),
             provider_name=self.provider_combo.currentData() or "local-whisper",
             model_name=self.model_combo.currentText().strip() or "small",
             language=language,
