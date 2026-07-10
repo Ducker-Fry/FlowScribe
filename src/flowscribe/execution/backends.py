@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime
+import copy
 import inspect
 from pathlib import Path
 
@@ -15,6 +16,15 @@ from flowscribe.server.task_payloads import job_to_payload
 from flowscribe.tasks.models import ErrorInfo, ProgressCallback, ProgressEvent, SourceSpec, TranscriptionJob, TranscriptionResult
 
 ServiceFactory = Callable[[], object]
+
+
+@dataclass(frozen=True)
+class RemoteTaskSubmission:
+    task_id: str
+    status: str
+    source: str
+    source_kind: str
+    local_task_id: str | None = None
 
 
 class ExecutionBackend:
@@ -148,6 +158,84 @@ class RemoteExecutionBackend(ExecutionBackend):
             finished_at=finished_at,
         )
 
+    def submit(
+        self,
+        job: TranscriptionJob,
+        *,
+        progress: ProgressCallback | None = None,
+        should_cancel: Callable[[], bool] | None = None,
+    ) -> tuple[RemoteTaskSubmission, ...]:
+        progress = progress or (lambda event: None)
+        should_cancel = should_cancel or (lambda: False)
+        task_specs = job.to_task_specs()
+        submissions: list[RemoteTaskSubmission] = []
+        progress(
+            ProgressEvent(
+                stage="discover",
+                message=f"Submitting {len(job.sources)} remote source(s).",
+                total=len(job.sources),
+                task_id=task_specs[0].task_id if task_specs else None,
+            )
+        )
+        for index, (source, task_spec) in enumerate(zip(job.sources, task_specs, strict=False), start=1):
+            if should_cancel():
+                break
+            sub_job = replace(
+                job,
+                sources=(source,),
+                task_id=task_spec.task_id,
+                resume_token=task_spec.resume_token,
+                checkpoint_id=task_spec.checkpoint_id,
+            )
+            submissions.append(
+                self._submit_one_source(
+                    sub_job=sub_job,
+                    source=source,
+                    task_spec=task_spec,
+                    current=index,
+                    total=len(job.sources),
+                    progress=progress,
+                )
+            )
+        return tuple(submissions)
+
+    def download_result_artifacts(
+        self,
+        result_payload: dict,
+        output_dir: Path,
+        *,
+        overwrite: bool = True,
+        progress: ProgressCallback | None = None,
+    ) -> dict:
+        progress = progress or (lambda event: None)
+        payload = copy.deepcopy(result_payload)
+        outputs = payload.get("outputs", [])
+        if not isinstance(outputs, list):
+            return payload
+        for output in outputs:
+            if not isinstance(output, dict):
+                continue
+            downloaded_paths = [
+                self._download_artifact(
+                    artifact,
+                    output_dir,
+                    overwrite=overwrite,
+                    progress=progress,
+                    task_id=payload.get("task_id"),
+                    source=str(output.get("source_value") or output.get("source_locator") or ""),
+                    current=1,
+                    total=1,
+                )
+                for artifact in _artifacts_from_output_payload(output)
+            ]
+            if downloaded_paths:
+                output["paths"] = [str(path) for path in downloaded_paths]
+                for artifact, path in zip(_artifacts_from_output_payload(output), downloaded_paths, strict=False):
+                    artifact_format = artifact.get("format")
+                    if isinstance(artifact_format, str) and artifact_format:
+                        output[f"{artifact_format}_path"] = str(path)
+        return payload
+
     def _run_one_source(
         self,
         *,
@@ -159,91 +247,15 @@ class RemoteExecutionBackend(ExecutionBackend):
         progress: ProgressCallback,
         should_cancel: Callable[[], bool],
     ) -> OutputArtifacts | None:
-        source_payload = None
-        cookies_payload = None
-        if source.kind == "local":
-            file_path = Path(source.value)
-            progress(
-                ProgressEvent(
-                    stage="prepare",
-                    message=f"Uploading local media: {file_path.name}",
-                    source=str(file_path),
-                    current=current,
-                    total=total,
-                    task_id=task_spec.task_id,
-                )
-            )
-            upload = self._client.upload_file(file_path)
-            source_payload = {
-                "kind": "remote_blob",
-                "value": upload["blob_id"],
-                "locator": str(file_path),
-                "metadata": {
-                    "filename": upload["filename"],
-                    "size_bytes": upload["size_bytes"],
-                },
-            }
-            progress(
-                ProgressEvent(
-                    stage="prepare",
-                    message=f"Upload complete: {upload['filename']}",
-                    source=str(file_path),
-                    current=current,
-                    total=total,
-                    task_id=task_spec.task_id,
-                )
-            )
-
-        if sub_job.cookies_path is not None:
-            cookies_path = Path(sub_job.cookies_path)
-            progress(
-                ProgressEvent(
-                    stage="prepare",
-                    message=f"Uploading cookies file: {cookies_path.name}",
-                    source=str(cookies_path),
-                    current=current,
-                    total=total,
-                    task_id=task_spec.task_id,
-                )
-            )
-            upload = self._client.upload_file(cookies_path)
-            cookies_payload = {
-                "kind": "remote_blob",
-                "value": upload["blob_id"],
-                "locator": str(cookies_path),
-                "metadata": {
-                    "filename": upload["filename"],
-                    "size_bytes": upload["size_bytes"],
-                },
-            }
-            progress(
-                ProgressEvent(
-                    stage="prepare",
-                    message=f"Cookies upload complete: {upload['filename']}",
-                    source=str(cookies_path),
-                    current=current,
-                    total=total,
-                    task_id=task_spec.task_id,
-                )
-            )
-
-        payload = job_to_payload(
-            sub_job,
-            source_payload=source_payload,
-            cookies_payload=cookies_payload,
+        submission = self._submit_one_source(
+            sub_job=sub_job,
+            source=source,
+            task_spec=task_spec,
+            current=current,
+            total=total,
+            progress=progress,
         )
-        progress(
-            ProgressEvent(
-                stage="discover",
-                message="Submitting remote task.",
-                source=source.value,
-                current=current,
-                total=total,
-                task_id=task_spec.task_id,
-            )
-        )
-        task_summary = self._client.submit_task(payload)
-        remote_task_id = str(task_summary["task_id"])
+        remote_task_id = submission.task_id
         seen_events: set[tuple[object, ...]] = set()
 
         while True:
@@ -330,6 +342,108 @@ class RemoteExecutionBackend(ExecutionBackend):
             subtitle_language=first_output.subtitle_language,
             source_locator=source_locator,
             original_filename=original_filename,
+        )
+
+    def _submit_one_source(
+        self,
+        *,
+        sub_job: TranscriptionJob,
+        source: SourceSpec,
+        task_spec,
+        current: int,
+        total: int,
+        progress: ProgressCallback,
+    ) -> RemoteTaskSubmission:
+        source_payload = None
+        cookies_payload = None
+        if source.kind == "local":
+            file_path = Path(source.value)
+            progress(
+                ProgressEvent(
+                    stage="prepare",
+                    message=f"Uploading local media: {file_path.name}",
+                    source=str(file_path),
+                    current=current,
+                    total=total,
+                    task_id=task_spec.task_id,
+                )
+            )
+            upload = self._client.upload_file(file_path)
+            source_payload = {
+                "kind": "remote_blob",
+                "value": upload["blob_id"],
+                "locator": str(file_path),
+                "metadata": {
+                    "filename": upload["filename"],
+                    "size_bytes": upload["size_bytes"],
+                },
+            }
+            progress(
+                ProgressEvent(
+                    stage="prepare",
+                    message=f"Upload complete: {upload['filename']}",
+                    source=str(file_path),
+                    current=current,
+                    total=total,
+                    task_id=task_spec.task_id,
+                )
+            )
+
+        if sub_job.cookies_path is not None:
+            cookies_path = Path(sub_job.cookies_path)
+            progress(
+                ProgressEvent(
+                    stage="prepare",
+                    message=f"Uploading cookies file: {cookies_path.name}",
+                    source=str(cookies_path),
+                    current=current,
+                    total=total,
+                    task_id=task_spec.task_id,
+                )
+            )
+            upload = self._client.upload_file(cookies_path)
+            cookies_payload = {
+                "kind": "remote_blob",
+                "value": upload["blob_id"],
+                "locator": str(cookies_path),
+                "metadata": {
+                    "filename": upload["filename"],
+                    "size_bytes": upload["size_bytes"],
+                },
+            }
+            progress(
+                ProgressEvent(
+                    stage="prepare",
+                    message=f"Cookies upload complete: {upload['filename']}",
+                    source=str(cookies_path),
+                    current=current,
+                    total=total,
+                    task_id=task_spec.task_id,
+                )
+            )
+
+        payload = job_to_payload(
+            sub_job,
+            source_payload=source_payload,
+            cookies_payload=cookies_payload,
+        )
+        progress(
+            ProgressEvent(
+                stage="discover",
+                message="Submitting remote task.",
+                source=source.value,
+                current=current,
+                total=total,
+                task_id=task_spec.task_id,
+            )
+        )
+        task_summary = self._client.submit_task(payload)
+        return RemoteTaskSubmission(
+            task_id=str(task_summary["task_id"]),
+            status=str(task_summary.get("status") or "accepted"),
+            source=source.value,
+            source_kind=source.kind,
+            local_task_id=task_spec.task_id,
         )
 
     def _download_artifact(

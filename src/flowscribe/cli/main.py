@@ -30,11 +30,13 @@ from flowscribe.input.url_inspector import UrlInspector
 from flowscribe.input.url_tool_bridge import select_url_inspector_cls
 from flowscribe.media.inspector import LocalMediaInspector
 from flowscribe.execution.factory import build_execution_backend
+from flowscribe.execution.remote_client import RemoteServerClient
 from flowscribe.execution.remote_config import (
     RemoteServerProfile,
     get_remote_server_profile,
     load_remote_server_profiles,
     remove_remote_server_profile,
+    resolve_remote_server,
     upsert_remote_server_profile,
 )
 from flowscribe.output.time_format import format_timestamp
@@ -321,6 +323,8 @@ def run_transcribe(options) -> int:
     try:
         job = _job_from_transcribe_options(options)
         backend = _build_execution_backend(options)
+        if getattr(options, "execution_mode", "local") == "remote" and getattr(options, "submit_only", False):
+            return _submit_remote_job(options, backend, job)
         result = backend.run(job, progress=_build_cli_progress_handler(options))
     except FlowScribeError as exc:
         print(f"Error: {exc}", file=sys.stderr)
@@ -343,6 +347,8 @@ def run_url(options) -> int:
     try:
         job = _job_from_url_options(options)
         backend = _build_execution_backend(options)
+        if getattr(options, "execution_mode", "local") == "remote" and getattr(options, "submit_only", False):
+            return _submit_remote_job(options, backend, job)
         result = backend.run(job, progress=_build_cli_progress_handler(options))
     except FlowScribeError as exc:
         print(f"Error: {exc}", file=sys.stderr)
@@ -604,8 +610,98 @@ def run_remote_command(options) -> int:
             print(f"Remote server profile not found: {options.name}", file=sys.stderr)
         return 0 if removed else 1
 
+    if options.subcommand == "status":
+        try:
+            client = _remote_client_for_target(options.server_target)
+            payload = client.get_task_status(options.task_id)
+        except (FlowScribeError, ValueError) as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 2
+        if options.json_output:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            print(f"Task: {payload.get('task_id', options.task_id)}")
+            print(f"Status: {payload.get('status', 'unknown')}")
+            if payload.get("error"):
+                print(f"Error: {payload['error']}")
+        return 0
+
+    if options.subcommand == "events":
+        try:
+            client = _remote_client_for_target(options.server_target)
+            events = client.get_task_events(options.task_id)
+        except (FlowScribeError, ValueError) as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 2
+        if options.json_output:
+            print(json.dumps({"task_id": options.task_id, "events": events}, ensure_ascii=False, indent=2))
+        else:
+            for event in events:
+                message = event.get("message") or ""
+                stage = event.get("stage") or event.get("event_type") or "event"
+                print(f"[{stage}] {message}")
+        return 0
+
+    if options.subcommand == "result":
+        try:
+            client = _remote_client_for_target(options.server_target)
+            payload = client.get_task_result(options.task_id)
+            download_artifacts = _resolve_remote_result_download_artifacts(options)
+            if download_artifacts:
+                backend = _remote_backend_for_target(
+                    options.server_target,
+                    download_artifacts=True,
+                )
+                progress = (lambda event: None) if options.json_output else _print_cli_progress
+                payload = backend.download_result_artifacts(
+                    payload,
+                    options.output_dir,
+                    overwrite=True,
+                    progress=progress,
+                )
+        except (FlowScribeError, ValueError) as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 2
+        if options.json_output:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            print(f"Task: {options.task_id}")
+            if payload.get("ok", True):
+                print("Result: available")
+            for output in payload.get("outputs", []):
+                if isinstance(output, dict):
+                    for path in output.get("paths", []):
+                        print(f"Output: {path}")
+        return 0
+
     print(f"Unsupported remote subcommand: {options.subcommand}", file=sys.stderr)
     return 2
+
+
+def _submit_remote_job(options, backend, job: TranscriptionJob) -> int:
+    if not hasattr(backend, "submit"):
+        print("Error: selected backend does not support submit-only mode.", file=sys.stderr)
+        return 2
+    submissions = backend.submit(job, progress=_build_cli_progress_handler(options))
+    payload = {
+        "ok": True,
+        "submitted": [
+            {
+                "task_id": item.task_id,
+                "status": item.status,
+                "source": item.source,
+                "source_kind": item.source_kind,
+                "local_task_id": item.local_task_id,
+            }
+            for item in submissions
+        ],
+    }
+    if options.json_output or options.non_interactive:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        for item in submissions:
+            print(f"Submitted remote task: {item.task_id} ({item.status})")
+    return 0
 
 
 def _search_payload(options, hits) -> dict:
@@ -745,6 +841,36 @@ def _build_execution_backend(options):
         download_artifacts=getattr(options, "download_artifacts", None),
         service_factory=lambda: TranscriptionService(),
     )
+
+
+def _remote_client_for_target(server_target: str | None) -> RemoteServerClient:
+    if not server_target:
+        raise FlowScribeError("Remote server profile name or base URL is required.")
+    resolved = resolve_remote_server(server_target)
+    if not resolved.enabled:
+        raise FlowScribeError(f"Remote server profile is disabled: {resolved.name}")
+    return RemoteServerClient(
+        resolved.base_url,
+        token=resolved.token,
+        verify_tls=resolved.verify_tls,
+        timeout_seconds=resolved.timeout_seconds,
+    )
+
+
+def _remote_backend_for_target(server_target: str | None, *, download_artifacts: bool):
+    return build_execution_backend(
+        execution_mode="remote",
+        server_target=server_target,
+        download_artifacts=download_artifacts,
+        service_factory=lambda: TranscriptionService(),
+    )
+
+
+def _resolve_remote_result_download_artifacts(options) -> bool:
+    if options.download_artifacts is not None:
+        return options.download_artifacts
+    resolved = resolve_remote_server(options.server_target)
+    return resolved.download_artifacts_by_default
 
 
 def _remote_profile_payload(profile: RemoteServerProfile) -> dict:

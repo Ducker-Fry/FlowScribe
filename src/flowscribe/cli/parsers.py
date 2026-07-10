@@ -98,6 +98,11 @@ def add_remote_execution_options(parser: argparse.ArgumentParser) -> None:
         default=1.0,
         help="Polling interval for remote task status and event refresh. Default: 1.0",
     )
+    parser.add_argument(
+        "--submit-only",
+        action="store_true",
+        help="Submit remote task(s), print task id(s), and return without waiting for completion.",
+    )
     artifact_group = parser.add_mutually_exclusive_group()
     artifact_group.add_argument(
         "--download-artifacts",
@@ -456,6 +461,7 @@ def parse_transcribe_args(argv: list[str] | None = None, *, prog: str = "flowscr
         remote_token=namespace.remote_token,
         remote_poll_seconds=namespace.remote_poll_seconds,
         download_artifacts=namespace.download_artifacts,
+        submit_only=namespace.submit_only,
         json_output=namespace.json_output,
         event_stream=namespace.event_stream,
         non_interactive=namespace.non_interactive,
@@ -560,6 +566,7 @@ def parse_url_args(argv: list[str] | None = None) -> UrlOptions:
         remote_token=namespace.remote_token,
         remote_poll_seconds=namespace.remote_poll_seconds,
         download_artifacts=namespace.download_artifacts,
+        submit_only=namespace.submit_only,
         download_quality=namespace.download_quality,
         download_format=namespace.download_format,
         json_output=namespace.json_output,
@@ -834,6 +841,40 @@ def parse_remote_args(argv: list[str] | None = None) -> RemoteCommandOptions:
     show_parser.add_argument("name", help="Profile name.")
     remove_parser = subparsers.add_parser("remove-server", help="Remove a configured remote server profile.")
     remove_parser.add_argument("name", help="Profile name.")
+    status_parser = subparsers.add_parser("status", help="Show one remote task status.")
+    status_parser.add_argument("server_target", help="Remote server profile name or base URL.")
+    status_parser.add_argument("task_id", help="Remote task id.")
+    events_parser = subparsers.add_parser("events", help="Show remote task events.")
+    events_parser.add_argument("server_target", help="Remote server profile name or base URL.")
+    events_parser.add_argument("task_id", help="Remote task id.")
+    result_parser = subparsers.add_parser(
+        "result",
+        help="Fetch one remote task result and optionally download artifacts.",
+    )
+    result_parser.add_argument("server_target", help="Remote server profile name or base URL.")
+    result_parser.add_argument("task_id", help="Remote task id.")
+    result_parser.add_argument(
+        "-o",
+        "--output-dir",
+        type=Path,
+        default=Path("outputs"),
+        help="Directory for downloaded artifacts. Default: outputs",
+    )
+    result_artifact_group = result_parser.add_mutually_exclusive_group()
+    result_artifact_group.add_argument(
+        "--download-artifacts",
+        action="store_true",
+        dest="download_artifacts",
+        default=None,
+        help="Download result artifacts to --output-dir.",
+    )
+    result_artifact_group.add_argument(
+        "--no-download-artifacts",
+        action="store_false",
+        dest="download_artifacts",
+        default=None,
+        help="Return result metadata without downloading artifacts.",
+    )
 
     namespace = parser.parse_args(argv)
     return RemoteCommandOptions(
@@ -842,10 +883,14 @@ def parse_remote_args(argv: list[str] | None = None) -> RemoteCommandOptions:
         name=getattr(namespace, "name", None),
         base_url=getattr(namespace, "base_url", None),
         token=getattr(namespace, "token", None),
+        server_target=getattr(namespace, "server_target", None),
+        task_id=getattr(namespace, "task_id", None),
+        output_dir=getattr(namespace, "output_dir", None),
         enabled=getattr(namespace, "enabled", True),
         verify_tls=getattr(namespace, "verify_tls", True),
         timeout_seconds=getattr(namespace, "timeout_seconds", 30.0),
         download_artifacts_by_default=getattr(namespace, "download_artifacts_by_default", True),
+        download_artifacts=getattr(namespace, "download_artifacts", None),
         json_output=namespace.json_output,
     )
 

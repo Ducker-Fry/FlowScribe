@@ -10,7 +10,7 @@ from time import sleep
 from flowscribe.cli.args import parse_args
 from flowscribe.cli.main import main
 from flowscribe.core.models import OutputArtifacts
-from flowscribe.execution.backends import RemoteExecutionBackend
+from flowscribe.execution.backends import RemoteExecutionBackend, RemoteTaskSubmission
 from flowscribe.server import BookmarkletServer
 from flowscribe.server.task_payloads import job_to_payload, task_job_from_payload
 from flowscribe.tasks.models import DownloadOptions, SourceSpec, TranscriptionJob, TranscriptionResult
@@ -41,6 +41,7 @@ def test_parse_transcribe_args_supports_remote_execution(tmp_path: Path) -> None
     assert options.remote_token == "secret"
     assert options.remote_poll_seconds == 2.5
     assert options.download_artifacts is False
+    assert options.submit_only is False
 
 
 def test_parse_url_args_supports_remote_execution() -> None:
@@ -53,12 +54,38 @@ def test_parse_url_args_supports_remote_execution() -> None:
             "--server",
             "http://127.0.0.1:8765",
             "--download-artifacts",
+            "--submit-only",
         ]
     )
 
     assert options.execution_mode == "remote"
     assert options.server_target == "http://127.0.0.1:8765"
     assert options.download_artifacts is True
+    assert options.submit_only is True
+
+
+def test_parse_remote_task_commands() -> None:
+    status_options = parse_args(["remote", "status", "demo", "task-1"])
+    assert status_options.subcommand == "status"
+    assert status_options.server_target == "demo"
+    assert status_options.task_id == "task-1"
+
+    result_options = parse_args(
+        [
+            "remote",
+            "result",
+            "http://127.0.0.1:8765",
+            "task-2",
+            "-o",
+            "client-outputs",
+            "--no-download-artifacts",
+        ]
+    )
+    assert result_options.subcommand == "result"
+    assert result_options.server_target == "http://127.0.0.1:8765"
+    assert result_options.task_id == "task-2"
+    assert result_options.output_dir == Path("client-outputs")
+    assert result_options.download_artifacts is False
 
 
 def test_remote_server_profile_management_round_trip(monkeypatch, tmp_path: Path) -> None:
@@ -257,6 +284,46 @@ def test_remote_transcribe_backend_uploads_local_media(tmp_path: Path) -> None:
     assert result.outputs[0].source_value == str(media)
     assert result.outputs[0].source_locator == str(media)
     assert result.outputs[0].original_filename == "sample.mp4"
+
+
+def test_remote_backend_submit_returns_without_polling(tmp_path: Path) -> None:
+    media = tmp_path / "sample.mp4"
+    media.write_bytes(b"sample-media")
+
+    class FakeClient:
+        def __init__(self):
+            self.polled = False
+
+        def upload_file(self, path: Path):
+            return {"blob_id": "blob-1", "filename": path.name, "size_bytes": path.stat().st_size}
+
+        def submit_task(self, payload: dict):
+            assert payload["source"]["kind"] == "remote_blob"
+            return {"task_id": "remote-local-task", "status": "accepted"}
+
+        def get_task_status(self, task_id: str):
+            self.polled = True
+            return {"task_id": task_id, "status": "completed"}
+
+    client = FakeClient()
+    backend = RemoteExecutionBackend(client, poll_seconds=0.1, download_artifacts=True)
+    job = TranscriptionJob(
+        sources=(SourceSpec(kind="local", value=str(media)),),
+        output_formats=("json",),
+    )
+
+    submissions = backend.submit(job)
+
+    assert submissions == (
+        RemoteTaskSubmission(
+            task_id="remote-local-task",
+            status="accepted",
+            source=str(media),
+            source_kind="local",
+            local_task_id=job.to_task_specs()[0].task_id,
+        ),
+    )
+    assert client.polled is False
 
 
 def test_remote_url_backend_uploads_cookies_and_forwards_network_settings(tmp_path: Path) -> None:
@@ -476,3 +543,114 @@ def test_remote_transcribe_cli_json_includes_local_source_metadata(
     assert payload["outputs"][0]["source_locator"] == str(media)
     assert payload["outputs"][0]["original_filename"] == "sample.mp4"
     assert payload["outputs"][0]["json_path"] == str(json_path)
+
+
+def test_remote_url_cli_submit_only_prints_task_id(monkeypatch, tmp_path: Path) -> None:
+    cookies = tmp_path / "cookies.txt"
+    cookies.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
+
+    class FakeBackend:
+        def run(self, job, progress=None, should_cancel=None):
+            raise AssertionError("submit-only mode must not wait for backend.run")
+
+        def submit(self, job, progress=None, should_cancel=None):
+            assert job.cookies_path == cookies
+            return (
+                RemoteTaskSubmission(
+                    task_id="remote-url-task",
+                    status="accepted",
+                    source=job.sources[0].value,
+                    source_kind="url",
+                    local_task_id=job.to_task_specs()[0].task_id,
+                ),
+            )
+
+    monkeypatch.setattr("flowscribe.cli.main._build_execution_backend", lambda options: FakeBackend())
+
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    with redirect_stdout(stdout), redirect_stderr(stderr):
+        exit_code = main(
+            [
+                "url",
+                "https://example.com/watch",
+                "--execution",
+                "remote",
+                "--server",
+                "demo",
+                "--submit-only",
+                "--json",
+                "--non-interactive",
+                "--cookies",
+                str(cookies),
+            ]
+        )
+
+    assert exit_code == 0
+    payload = json.loads(stdout.getvalue())
+    assert payload["submitted"][0]["task_id"] == "remote-url-task"
+    assert payload["submitted"][0]["status"] == "accepted"
+
+
+def test_remote_result_command_downloads_artifacts(monkeypatch, tmp_path: Path) -> None:
+    server_json = tmp_path / "server.json"
+    server_json.write_text('{"remote": true}', encoding="utf-8")
+    output_dir = tmp_path / "client-outputs"
+
+    class FakeClient:
+        def get_task_result(self, task_id: str):
+            assert task_id == "task-1"
+            return {
+                "ok": True,
+                "outputs": [
+                    {
+                        "paths": [str(server_json)],
+                        "json_path": str(server_json),
+                        "artifacts": [
+                            {
+                                "artifact_id": "artifact-1",
+                                "filename": "remote.json",
+                                "format": "json",
+                            }
+                        ],
+                    }
+                ],
+                "errors": [],
+            }
+
+    class FakeBackend:
+        def download_result_artifacts(self, payload, output_dir_arg, overwrite=True, progress=None):
+            assert output_dir_arg == output_dir
+            local_path = output_dir_arg / "remote.json"
+            local_path.parent.mkdir(parents=True, exist_ok=True)
+            local_path.write_text(server_json.read_text(encoding="utf-8"), encoding="utf-8")
+            payload["outputs"][0]["paths"] = [str(local_path)]
+            payload["outputs"][0]["json_path"] = str(local_path)
+            return payload
+
+    monkeypatch.setattr("flowscribe.cli.main._remote_client_for_target", lambda target: FakeClient())
+    monkeypatch.setattr(
+        "flowscribe.cli.main._remote_backend_for_target",
+        lambda target, download_artifacts: FakeBackend(),
+    )
+    monkeypatch.setattr("flowscribe.cli.main._resolve_remote_result_download_artifacts", lambda options: True)
+
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    with redirect_stdout(stdout), redirect_stderr(stderr):
+        exit_code = main(
+            [
+                "remote",
+                "--json",
+                "result",
+                "demo",
+                "task-1",
+                "-o",
+                str(output_dir),
+            ]
+        )
+
+    assert exit_code == 0
+    payload = json.loads(stdout.getvalue())
+    assert Path(payload["outputs"][0]["json_path"]).is_file()
+    assert Path(payload["outputs"][0]["json_path"]).parent == output_dir

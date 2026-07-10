@@ -41,6 +41,7 @@ class CliOptions:
     remote_token: str | None = None
     remote_poll_seconds: float = 1.0
     download_artifacts: bool | None = None
+    submit_only: bool = False
     json_output: bool = False
     event_stream: str | None = None
     non_interactive: bool = False
@@ -119,6 +120,7 @@ class UrlOptions:
     remote_token: str | None = None
     remote_poll_seconds: float = 1.0
     download_artifacts: bool | None = None
+    submit_only: bool = False
     download_quality: str = "best"
     download_format: str | None = None
     json_output: bool = False
@@ -176,8 +178,12 @@ class RemoteCommandOptions:
     name: str | None = None
     base_url: str | None = None
     token: str | None = None
+    server_target: str | None = None
+    task_id: str | None = None
+    output_dir: Path | None = None
     enabled: bool = True
     verify_tls: bool = True
     timeout_seconds: float = 30.0
     download_artifacts_by_default: bool = True
+    download_artifacts: bool | None = None
     json_output: bool = False
