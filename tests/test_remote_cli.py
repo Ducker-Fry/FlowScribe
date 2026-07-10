@@ -12,7 +12,8 @@ from flowscribe.cli.main import main
 from flowscribe.core.models import OutputArtifacts
 from flowscribe.execution.backends import RemoteExecutionBackend
 from flowscribe.server import BookmarkletServer
-from flowscribe.tasks.models import SourceSpec, TranscriptionJob, TranscriptionResult
+from flowscribe.server.task_payloads import job_to_payload, task_job_from_payload
+from flowscribe.tasks.models import DownloadOptions, SourceSpec, TranscriptionJob, TranscriptionResult
 
 
 def test_parse_transcribe_args_supports_remote_execution(tmp_path: Path) -> None:
@@ -256,6 +257,169 @@ def test_remote_transcribe_backend_uploads_local_media(tmp_path: Path) -> None:
     assert result.outputs[0].source_value == str(media)
     assert result.outputs[0].source_locator == str(media)
     assert result.outputs[0].original_filename == "sample.mp4"
+
+
+def test_remote_url_backend_uploads_cookies_and_forwards_network_settings(tmp_path: Path) -> None:
+    cookies = tmp_path / "bilibili.cookies.txt"
+    cookies.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
+    output_dir = tmp_path / "client-outputs"
+    server_output_dir = tmp_path / "server-outputs"
+    server_output_dir.mkdir(parents=True, exist_ok=True)
+    json_path = server_output_dir / "remote-url.json"
+    json_path.write_text('{"remote": true}', encoding="utf-8")
+    uploaded_cookie_path = tmp_path / "remote-blobs" / "cookies.txt"
+    uploaded_cookie_path.parent.mkdir(parents=True, exist_ok=True)
+
+    class FakeClient:
+        def __init__(self):
+            self.upload_calls: list[Path] = []
+
+        def upload_file(self, path: Path):
+            self.upload_calls.append(path)
+            if path == cookies:
+                uploaded_cookie_path.write_bytes(path.read_bytes())
+                return {"blob_id": "cookie-blob", "filename": path.name, "size_bytes": path.stat().st_size}
+            raise AssertionError(f"Unexpected upload: {path}")
+
+        def submit_task(self, payload: dict):
+            assert payload["source"]["kind"] == "url"
+            assert payload["source"]["value"] == "https://example.com/watch"
+            assert payload["source"]["keep_media"] is True
+            assert payload["source"]["url_media_kind"] == "video"
+            assert payload["source"]["download_options"] == {"quality": "high", "prefer_format": "mp4"}
+            assert payload["cookies"]["kind"] == "remote_blob"
+            assert payload["cookies"]["value"] == "cookie-blob"
+            assert payload["proxy"] == "http://127.0.0.1:7890"
+            assert payload["network_family"] == "ipv4"
+            assert payload["max_download_mb"] == 123
+            assert payload["max_duration_seconds"] == 456
+            assert payload["download_timeout_seconds"] == 78
+            return {"task_id": "remote-url-task", "status": "accepted"}
+
+        def get_task_events(self, task_id: str):
+            return []
+
+        def get_task_status(self, task_id: str):
+            return {"task_id": task_id, "status": "completed"}
+
+        def get_task_result(self, task_id: str):
+            return {
+                "ok": True,
+                "canceled": False,
+                "succeeded": 1,
+                "failed": 0,
+                "elapsed_seconds": 1.0,
+                "tasks": [],
+                "outputs": [
+                    {
+                        "paths": [str(json_path)],
+                        "json_path": str(json_path),
+                        "media_path": None,
+                        "media_kind": None,
+                        "requested_media_kind": None,
+                        "source_kind": "url",
+                        "source_value": "https://example.com/watch",
+                        "source_locator": "https://example.com/watch",
+                        "original_filename": "watch",
+                        "transcription_strategy": "audio-transcription",
+                        "subtitle_language": None,
+                        "artifacts": [
+                            {
+                                "artifact_id": "artifact-1",
+                                "filename": "remote-url.json",
+                                "format": "json",
+                                "download_path": "/v1/artifacts/artifact-1",
+                                "size_bytes": json_path.stat().st_size,
+                                "path": str(json_path),
+                            }
+                        ],
+                    }
+                ],
+                "errors": [],
+            }
+
+        def download_artifact(self, artifact_id: str, destination: Path):
+            destination.write_bytes(json_path.read_bytes())
+            return destination
+
+        def sleep(self, seconds: float):
+            return None
+
+    backend = RemoteExecutionBackend(FakeClient(), poll_seconds=0.1, download_artifacts=True)
+    job = TranscriptionJob(
+        sources=(
+            SourceSpec(
+                kind="url",
+                value="https://example.com/watch",
+                keep_media=True,
+                url_media_kind="video",
+                download_options=DownloadOptions(quality="high", prefer_format="mp4"),
+            ),
+        ),
+        output_dir=output_dir,
+        output_formats=("json",),
+        cookies_path=cookies,
+        proxy="http://127.0.0.1:7890",
+        network_family="ipv4",
+        max_download_mb=123,
+        max_duration_seconds=456,
+        download_timeout_seconds=78,
+    )
+
+    result = backend.run(job)
+
+    assert result.ok is True
+    assert result.outputs[0].json_path is not None
+    assert result.outputs[0].json_path.is_file()
+
+
+def test_task_payloads_round_trip_remote_url_cookie_blob(tmp_path: Path) -> None:
+    cookies = tmp_path / "cookies.txt"
+    cookies.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
+    job = TranscriptionJob(
+        sources=(
+            SourceSpec(
+                kind="url",
+                value="https://example.com/watch",
+                keep_media=True,
+                url_media_kind="video",
+                download_options=DownloadOptions(quality="medium", prefer_format="mp4"),
+            ),
+        ),
+        output_formats=("json",),
+        cookies_path=tmp_path / "local.cookies.txt",
+        proxy="http://proxy:8080",
+        network_family="ipv6",
+        max_download_mb=321,
+        max_duration_seconds=654,
+        download_timeout_seconds=87,
+    )
+
+    payload = job_to_payload(
+        job,
+        cookies_payload={
+            "kind": "remote_blob",
+            "value": "cookie-blob-1",
+        },
+    )
+    rebuilt = task_job_from_payload(
+        payload,
+        blob_resolver=lambda blob_id: cookies if blob_id == "cookie-blob-1" else None,
+    )
+
+    rebuilt_source = rebuilt.sources[0]
+    assert rebuilt_source.kind == "url"
+    assert rebuilt_source.keep_media is True
+    assert rebuilt_source.url_media_kind == "video"
+    assert rebuilt_source.download_options is not None
+    assert rebuilt_source.download_options.quality == "medium"
+    assert rebuilt_source.download_options.prefer_format == "mp4"
+    assert rebuilt.cookies_path == cookies
+    assert rebuilt.proxy == "http://proxy:8080"
+    assert rebuilt.network_family == "ipv6"
+    assert rebuilt.max_download_mb == 321
+    assert rebuilt.max_duration_seconds == 654
+    assert rebuilt.download_timeout_seconds == 87
 
 
 def test_remote_transcribe_cli_json_includes_local_source_metadata(

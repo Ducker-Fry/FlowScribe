@@ -31,6 +31,7 @@ def task_job_from_payload(
         output_formats = ("json",)
 
     source = _source_from_payload(source_payload, blob_resolver=blob_resolver)
+    cookies_path = _cookies_path_from_payload(payload, blob_resolver=blob_resolver)
     return TranscriptionJob(
         sources=(source,),
         task_id=payload.get("task_id"),
@@ -43,6 +44,12 @@ def task_job_from_payload(
         timestamps=bool(payload.get("timestamps", True)),
         word_timestamps=bool(payload.get("word_timestamps", False)),
         overwrite=bool(output_payload.get("overwrite", False)),
+        max_download_mb=int(payload.get("max_download_mb", 2048)),
+        max_duration_seconds=float(payload.get("max_duration_seconds", 4 * 60 * 60)),
+        download_timeout_seconds=int(payload.get("download_timeout_seconds", 30)),
+        network_family=str(payload.get("network_family") or "auto"),
+        cookies_path=cookies_path,
+        proxy=payload.get("proxy"),
         progressive_enabled=bool(payload.get("progressive", False)),
         progressive_resume=bool(payload.get("progressive_resume", False)),
         progressive_chunk_seconds=float(payload.get("progressive_chunk_seconds", 30.0)),
@@ -58,18 +65,12 @@ def job_to_payload(
     job: TranscriptionJob,
     *,
     source_payload: dict[str, Any] | None = None,
+    cookies_payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     source = job.sources[0]
     if source_payload is None:
-        source_payload = {
-            "kind": source.kind,
-            "value": source.value,
-        }
-        if source.locator:
-            source_payload["locator"] = source.locator
-        if source.metadata:
-            source_payload["metadata"] = dict(source.metadata)
-    return {
+        source_payload = _source_to_payload(source)
+    payload = {
         "task_id": job.task_id,
         "source": source_payload,
         "output": {
@@ -83,6 +84,11 @@ def job_to_payload(
         "preset": job.preset,
         "timestamps": job.timestamps,
         "word_timestamps": job.word_timestamps,
+        "max_download_mb": job.max_download_mb,
+        "max_duration_seconds": job.max_duration_seconds,
+        "download_timeout_seconds": job.download_timeout_seconds,
+        "network_family": job.network_family,
+        "proxy": job.proxy,
         "progressive": job.progressive_enabled,
         "progressive_resume": job.progressive_resume,
         "progressive_chunk_seconds": job.progressive_chunk_seconds,
@@ -90,6 +96,41 @@ def job_to_payload(
         "progressive_max_workers": job.progressive_max_workers,
         "resume_token": job.resume_token,
         "checkpoint_id": job.checkpoint_id,
+    }
+    cookies = cookies_payload or _cookies_to_payload(job.cookies_path)
+    if cookies is not None:
+        payload["cookies"] = cookies
+    return payload
+
+
+def _source_to_payload(source: SourceSpec) -> dict[str, Any]:
+    payload = {
+        "kind": source.kind,
+        "value": source.value,
+    }
+    if source.kind == "url":
+        payload["keep_media"] = source.keep_media
+        payload["url_media_kind"] = source.url_media_kind
+        if source.download_options is not None:
+            payload["download_options"] = {
+                "quality": source.download_options.quality,
+                "prefer_format": source.download_options.prefer_format,
+            }
+    else:
+        payload["recursive"] = source.recursive
+    if source.locator:
+        payload["locator"] = source.locator
+    if source.metadata:
+        payload["metadata"] = dict(source.metadata)
+    return payload
+
+
+def _cookies_to_payload(cookies_path: Path | None) -> dict[str, Any] | None:
+    if cookies_path is None:
+        return None
+    return {
+        "kind": "path",
+        "value": str(cookies_path),
     }
 
 
@@ -135,3 +176,30 @@ def _source_from_payload(source_payload: dict[str, Any], *, blob_resolver=None) 
         recursive=bool(source_payload.get("recursive", False)),
         metadata=metadata,
     )
+
+
+def _cookies_path_from_payload(
+    payload: dict[str, Any],
+    *,
+    blob_resolver=None,
+) -> Path | None:
+    cookies_payload = payload.get("cookies")
+    if isinstance(cookies_payload, dict):
+        cookies_kind = str(cookies_payload.get("kind") or "").strip()
+        cookies_value = str(cookies_payload.get("value") or "").strip()
+        if cookies_kind == "remote_blob":
+            if not cookies_value:
+                return None
+            if blob_resolver is None:
+                raise ValueError("remote cookie blob requires a blob resolver")
+            resolved = blob_resolver(cookies_value)
+            if resolved is None:
+                raise ValueError(f"remote cookie blob not found: {cookies_value}")
+            return resolved
+        if cookies_kind == "path" and cookies_value:
+            return Path(cookies_value)
+
+    legacy_path = payload.get("cookies_path")
+    if isinstance(legacy_path, str) and legacy_path.strip():
+        return Path(legacy_path)
+    return None

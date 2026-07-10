@@ -160,6 +160,7 @@ class RemoteExecutionBackend(ExecutionBackend):
         should_cancel: Callable[[], bool],
     ) -> OutputArtifacts | None:
         source_payload = None
+        cookies_payload = None
         if source.kind == "local":
             file_path = Path(source.value)
             progress(
@@ -193,7 +194,44 @@ class RemoteExecutionBackend(ExecutionBackend):
                 )
             )
 
-        payload = job_to_payload(sub_job, source_payload=source_payload)
+        if sub_job.cookies_path is not None:
+            cookies_path = Path(sub_job.cookies_path)
+            progress(
+                ProgressEvent(
+                    stage="prepare",
+                    message=f"Uploading cookies file: {cookies_path.name}",
+                    source=str(cookies_path),
+                    current=current,
+                    total=total,
+                    task_id=task_spec.task_id,
+                )
+            )
+            upload = self._client.upload_file(cookies_path)
+            cookies_payload = {
+                "kind": "remote_blob",
+                "value": upload["blob_id"],
+                "locator": str(cookies_path),
+                "metadata": {
+                    "filename": upload["filename"],
+                    "size_bytes": upload["size_bytes"],
+                },
+            }
+            progress(
+                ProgressEvent(
+                    stage="prepare",
+                    message=f"Cookies upload complete: {upload['filename']}",
+                    source=str(cookies_path),
+                    current=current,
+                    total=total,
+                    task_id=task_spec.task_id,
+                )
+            )
+
+        payload = job_to_payload(
+            sub_job,
+            source_payload=source_payload,
+            cookies_payload=cookies_payload,
+        )
         progress(
             ProgressEvent(
                 stage="discover",
