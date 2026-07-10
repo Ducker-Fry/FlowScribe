@@ -335,6 +335,72 @@ def test_remote_backend_submit_returns_without_polling(tmp_path: Path) -> None:
     assert client.polled is False
 
 
+def test_remote_backend_polls_status_before_events(tmp_path: Path) -> None:
+    json_path = tmp_path / "remote.json"
+    json_path.write_text("{}", encoding="utf-8")
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+            self.status_calls = 0
+
+        def submit_task(self, payload: dict):
+            self.calls.append("submit")
+            return {"task_id": "remote-task", "status": "accepted"}
+
+        def get_task_status(self, task_id: str):
+            self.calls.append("status")
+            self.status_calls += 1
+            return {"task_id": task_id, "status": "completed" if self.status_calls > 1 else "running"}
+
+        def get_task_events(self, task_id: str):
+            self.calls.append("events")
+            return [{"task_id": task_id, "stage": "transcribe", "message": "chunk"}]
+
+        def get_task_result(self, task_id: str):
+            self.calls.append("result")
+            return {
+                "ok": True,
+                "canceled": False,
+                "succeeded": 1,
+                "failed": 0,
+                "elapsed_seconds": 1.0,
+                "tasks": [],
+                "outputs": [
+                    {
+                        "paths": [str(json_path)],
+                        "json_path": str(json_path),
+                        "media_path": None,
+                        "media_kind": None,
+                        "requested_media_kind": None,
+                        "source_kind": "url",
+                        "source_value": "https://example.com/watch",
+                        "source_locator": "https://example.com/watch",
+                        "original_filename": "watch",
+                        "transcription_strategy": None,
+                        "subtitle_language": None,
+                        "artifacts": [],
+                    }
+                ],
+                "errors": [],
+            }
+
+        def sleep(self, seconds: float):
+            self.calls.append("sleep")
+            return None
+
+    backend = RemoteExecutionBackend(FakeClient(), poll_seconds=0.1, download_artifacts=False)
+    job = TranscriptionJob(
+        sources=(SourceSpec(kind="url", value="https://example.com/watch"),),
+        output_formats=("json",),
+    )
+
+    result = backend.run(job)
+
+    assert result.ok is True
+    assert backend._client.calls == ["submit", "status", "events", "sleep", "status", "result"]
+
+
 def test_remote_url_backend_uploads_cookies_and_forwards_network_settings(tmp_path: Path) -> None:
     cookies = tmp_path / "bilibili.cookies.txt"
     cookies.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")

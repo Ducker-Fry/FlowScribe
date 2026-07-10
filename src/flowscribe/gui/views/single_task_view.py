@@ -75,6 +75,7 @@ class SingleTaskView(
         self._last_output_paths: list[Path] = []
         self._current_run_output = ""
         self._last_result = None
+        self._last_remote_task_id: str | None = None
         self._view_dialog = None
         self._current_output_dir: Path | None = None
         self._progress_event_count = 0
@@ -258,6 +259,9 @@ class SingleTaskView(
         self.open_transcript_button = QPushButton(get_document_icon(theme), "Open Transcript")
         self.open_transcript_button.clicked.connect(self._open_transcript)
         self.open_transcript_button.setProperty("secondary", True)
+        self.recover_remote_result_button = QPushButton(get_document_icon(theme), "Recover Remote Result")
+        self.recover_remote_result_button.clicked.connect(self._recover_remote_result)
+        self.recover_remote_result_button.setProperty("secondary", True)
         self.open_view_button = QPushButton(get_open_icon(theme), "Open View")
         self.open_view_button.clicked.connect(self._open_view)
         self.open_view_button.setProperty("secondary", True)
@@ -265,6 +269,7 @@ class SingleTaskView(
         controls_layout.addWidget(self.cancel_button)
         controls_layout.addWidget(self.settings_button)
         controls_layout.addWidget(self.open_transcript_button)
+        controls_layout.addWidget(self.recover_remote_result_button)
         controls_layout.addWidget(self.open_view_button)
         controls_layout.addStretch(1)
         lower_layout.addLayout(controls_layout)

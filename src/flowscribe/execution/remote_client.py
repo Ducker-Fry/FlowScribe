@@ -17,6 +17,7 @@ LOGGER = logging.getLogger(__name__)
 TRANSIENT_HTTP_STATUS_CODES = {502, 504}
 POLL_RETRY_ATTEMPTS = 4
 POLL_RETRY_BASE_DELAY_SECONDS = 1.0
+DEFAULT_POLL_TIMEOUT_SECONDS = 5.0
 
 
 class _TransientRemoteError(TranscriptionError):
@@ -31,6 +32,7 @@ class RemoteServerClient:
     token: str | None = None
     verify_tls: bool = True
     timeout_seconds: float = 30.0
+    poll_timeout_seconds: float | None = None
 
     def upload_file(self, path: Path) -> dict[str, Any]:
         url = self._url(
@@ -108,8 +110,15 @@ class RemoteServerClient:
         method: str = "GET",
         data: bytes | None = None,
         headers: dict[str, str] | None = None,
+        timeout_seconds: float | None = None,
     ) -> dict[str, Any]:
-        payload = self._request_bytes(url, method=method, data=data, headers=headers)
+        payload = self._request_bytes(
+            url,
+            method=method,
+            data=data,
+            headers=headers,
+            timeout_seconds=timeout_seconds,
+        )
         try:
             parsed = json.loads(payload.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -126,7 +135,7 @@ class RemoteServerClient:
         task_id: str,
     ) -> dict[str, Any]:
         return self._with_poll_retries(
-            lambda: self._request_json(url),
+            lambda: self._request_json(url, timeout_seconds=self._poll_timeout_seconds()),
             action=action,
             task_id=task_id,
         )
@@ -138,8 +147,15 @@ class RemoteServerClient:
         method: str = "GET",
         data: bytes | None = None,
         headers: dict[str, str] | None = None,
+        timeout_seconds: float | None = None,
     ) -> str:
-        payload = self._request_bytes(url, method=method, data=data, headers=headers)
+        payload = self._request_bytes(
+            url,
+            method=method,
+            data=data,
+            headers=headers,
+            timeout_seconds=timeout_seconds,
+        )
         try:
             return payload.decode("utf-8")
         except UnicodeDecodeError as exc:
@@ -153,7 +169,7 @@ class RemoteServerClient:
         task_id: str,
     ) -> str:
         return self._with_poll_retries(
-            lambda: self._request_text(url),
+            lambda: self._request_text(url, timeout_seconds=self._poll_timeout_seconds()),
             action=action,
             task_id=task_id,
         )
@@ -185,6 +201,7 @@ class RemoteServerClient:
         method: str = "GET",
         data: bytes | None = None,
         headers: dict[str, str] | None = None,
+        timeout_seconds: float | None = None,
     ) -> bytes:
         request_headers = dict(headers or {})
         if self.token:
@@ -193,8 +210,9 @@ class RemoteServerClient:
         context = None
         if url.startswith("https://") and not self.verify_tls:
             context = ssl._create_unverified_context()
+        effective_timeout = max(0.1, timeout_seconds or self.timeout_seconds)
         try:
-            with request.urlopen(req, timeout=self.timeout_seconds, context=context) as response:
+            with request.urlopen(req, timeout=effective_timeout, context=context) as response:
                 return response.read()
         except TimeoutError as exc:
             raise _TransientRemoteError(
@@ -214,6 +232,11 @@ class RemoteServerClient:
                     f"Timed out while contacting remote server {self.base_url}."
                 ) from exc
             raise DownloadError(f"Could not reach remote server {self.base_url}: {exc.reason}") from exc
+
+    def _poll_timeout_seconds(self) -> float:
+        if self.poll_timeout_seconds is not None:
+            return max(0.1, self.poll_timeout_seconds)
+        return min(max(0.1, self.timeout_seconds), DEFAULT_POLL_TIMEOUT_SECONDS)
 
     def _url(self, path: str, query: dict[str, str] | None = None) -> str:
         base = self.base_url.rstrip("/")

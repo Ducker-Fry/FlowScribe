@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QThread
+from PySide6.QtWidgets import QInputDialog
 
 from flowscribe.core.errors import FlowScribeError
 from flowscribe.execution.factory import build_execution_backend
@@ -43,6 +44,7 @@ class SingleTaskViewRuntimeMixin:
         self._transcription_start_time = time.time()
         self._current_run_output = ""
         self._cancel_requested = False
+        self._last_remote_task_id = None
 
         self.progress_bar.setValue(0)
         self.progress_bar.setRange(0, 0)
@@ -165,6 +167,8 @@ class SingleTaskViewRuntimeMixin:
             self._current_run_output += event.message + "\n"
             if self._view_dialog is not None and self._view_dialog.isVisible():
                 self._view_dialog.update_run_output(self._current_run_output)
+            if event.message.startswith("Remote task accepted: ") and event.task_id:
+                self._last_remote_task_id = str(event.task_id)
 
         if event.total_duration_seconds is not None:
             self.progress_bar.setRange(0, 1000)
@@ -281,14 +285,94 @@ class SingleTaskViewRuntimeMixin:
     def _request_settings(self) -> None:
         self.settings_requested.emit()
 
+    def _recover_remote_result(self) -> None:
+        if self._thread is not None:
+            self.status_label.setText("Wait for the current task to finish before recovering a remote result.")
+            return
+
+        execution_mode = str(self._settings.get("execution_mode") or "local")
+        server_target = self._settings.get("server_target")
+        if execution_mode != "remote" or not server_target:
+            self.status_label.setText("Remote result recovery requires remote execution with a saved server target.")
+            return
+
+        task_id, ok = QInputDialog.getText(
+            self,
+            "Recover Remote Result",
+            "Enter remote task ID:",
+            text=self._last_remote_task_id or "",
+        )
+        task_id = task_id.strip()
+        if not ok or not task_id:
+            self.status_label.setText("Remote result recovery canceled.")
+            return
+
+        try:
+            backend = build_execution_backend(
+                execution_mode="remote",
+                server_target=server_target,
+                remote_token=self._settings.get("remote_token"),
+                remote_poll_seconds=float(self._settings.get("remote_poll_seconds", 1.0)),
+                download_artifacts=True,
+            )
+            payload = backend.recover_task_result(
+                task_id,
+                Path(self._settings.get("output_dir", "outputs")),
+                overwrite=True,
+                progress=self._on_progress,
+            )
+        except (AttributeError, FlowScribeError) as exc:
+            message = str(exc)
+            self.status_label.setText(f"Remote recovery failed: {message}")
+            self.preview_output.appendPlainText(f"\nRemote recovery failed: {message}")
+            self.transcription_error.emit(message)
+            return
+
+        self._last_remote_task_id = task_id
+        self._apply_recovered_remote_payload(payload, task_id=task_id)
+
+    def _apply_recovered_remote_payload(self, payload: dict[str, Any], *, task_id: str) -> None:
+        output_dir = Path(self._settings.get("output_dir", "outputs"))
+        outputs = payload.get("outputs", [])
+        if not isinstance(outputs, list):
+            outputs = []
+
+        self.progress_bar.setRange(0, 1)
+        self.progress_bar.setValue(1)
+        self._last_output_dir = output_dir
+        self._last_output_paths = []
+        self._last_transcript_path = None
+        self.preview_output.appendPlainText(f"\nRecovered remote result for task {task_id}.")
+
+        for output in outputs:
+            if not isinstance(output, dict):
+                continue
+            for raw_path in output.get("paths", []):
+                if not isinstance(raw_path, str) or not raw_path.strip():
+                    continue
+                path = Path(raw_path)
+                self._last_output_paths.append(path)
+                self.preview_output.appendPlainText(f"  {path}")
+                if path.suffix.lower() == ".json" and self._last_transcript_path is None:
+                    self._last_transcript_path = path
+
+        self.status_label.setText(
+            f"Remote result recovered for task {task_id}. Outputs: {len(self._last_output_paths)}"
+        )
+        self._refresh_action_buttons()
+
     def _refresh_action_buttons(self) -> None:
         running = self._thread is not None
         capture_running = self._is_capture_running()
         has_transcript = self._last_transcript_path is not None
+        remote_recovery_enabled = (
+            not running and str(self._settings.get("execution_mode") or "local") == "remote"
+        )
 
         self.start_button.setEnabled(not running and not capture_running)
         self.cancel_button.setEnabled(running and not self._cancel_requested)
         self.open_transcript_button.setEnabled(not running)
+        self.recover_remote_result_button.setEnabled(remote_recovery_enabled)
         self.open_view_button.setEnabled(True)
         self.capture_start_button.setEnabled(not running and not capture_running)
         self.capture_stop_button.setEnabled(not running and capture_running)

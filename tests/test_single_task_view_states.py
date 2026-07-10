@@ -183,3 +183,45 @@ def test_single_task_view_uses_remote_execution_backend(qt_app, monkeypatch):
     assert view._worker.execution_mode == "remote"
     assert view._worker.server_target == "http://127.0.0.1:18769"
     view.deleteLater()
+
+
+def test_single_task_view_recovers_remote_result(qt_app, monkeypatch, tmp_path):
+    recovered_json = tmp_path / "recovered.json"
+    recovered_json.write_text('{"segments": []}', encoding="utf-8")
+
+    class _FakeBackend:
+        def recover_task_result(self, task_id, output_dir, overwrite=True, progress=None):
+            assert task_id == "remote-task-1"
+            assert output_dir == tmp_path
+            return {
+                "ok": True,
+                "outputs": [
+                    {
+                        "paths": [str(recovered_json)],
+                    }
+                ],
+            }
+
+    monkeypatch.setattr(
+        "flowscribe.gui.views.single_task_view_runtime.build_execution_backend",
+        lambda **kwargs: _FakeBackend(),
+    )
+    monkeypatch.setattr(
+        "flowscribe.gui.views.single_task_view_runtime.QInputDialog.getText",
+        lambda *args, **kwargs: ("remote-task-1", True),
+    )
+
+    view = SingleTaskView(
+        {
+            "execution_mode": "remote",
+            "server_target": "aliyun-bj",
+            "output_dir": tmp_path,
+        }
+    )
+
+    view._recover_remote_result()
+
+    assert view._last_transcript_path == recovered_json
+    assert recovered_json in view._last_output_paths
+    assert "remote-task-1" in view.status_label.text()
+    view.deleteLater()

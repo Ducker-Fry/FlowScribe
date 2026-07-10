@@ -265,29 +265,17 @@ class RemoteExecutionBackend(ExecutionBackend):
         while True:
             if should_cancel():
                 raise TranscriptionError("Remote task polling canceled before completion.")
-            for event in self._client.get_task_events(remote_task_id):
-                key = (
-                    event.get("sequence"),
-                    event.get("timestamp"),
-                    event.get("event_type"),
-                    event.get("stage"),
-                    event.get("message"),
-                )
-                if key in seen_events:
-                    continue
-                seen_events.add(key)
-                progress(_progress_event_from_payload(event))
-
             status = self._client.get_task_status(remote_task_id)
             if status["status"] in {"completed", "failed", "canceled"}:
                 break
+            self._emit_remote_events(
+                remote_task_id,
+                seen_events=seen_events,
+                progress=progress,
+            )
             self._client.sleep(self._poll_seconds)
 
-        result_payload = None
-        try:
-            result_payload = self._client.get_task_result(remote_task_id)
-        except FlowScribeError:
-            result_payload = None
+        result_payload = self._recover_result_payload(remote_task_id, status=status)
 
         if status["status"] == "canceled":
             raise TranscriptionError("Remote task was canceled.")
@@ -346,6 +334,36 @@ class RemoteExecutionBackend(ExecutionBackend):
             subtitle_language=first_output.subtitle_language,
             source_locator=source_locator,
             original_filename=original_filename,
+        )
+
+    def recover_task_result(
+        self,
+        task_id: str,
+        output_dir: Path,
+        *,
+        overwrite: bool = True,
+        progress: ProgressCallback | None = None,
+    ) -> dict:
+        progress = progress or (lambda event: None)
+        status = self._client.get_task_status(task_id)
+        state = str(status.get("status") or "unknown")
+        if state in {"accepted", "running"}:
+            raise TranscriptionError(f"Remote task {task_id} is still {state}. Try again later.")
+        if state == "canceled":
+            raise TranscriptionError(f"Remote task {task_id} was canceled.")
+
+        payload = self._recover_result_payload(task_id, status=status)
+        if payload is None:
+            if status.get("error"):
+                raise TranscriptionError(str(status["error"]))
+            raise TranscriptionError("Remote task completed without a result payload.")
+        if not self._download_artifacts:
+            return payload
+        return self.download_result_artifacts(
+            payload,
+            output_dir,
+            overwrite=overwrite,
+            progress=progress,
         )
 
     def _submit_one_source(
@@ -481,6 +499,43 @@ class RemoteExecutionBackend(ExecutionBackend):
             source_kind=source.kind,
             local_task_id=task_spec.task_id,
         )
+
+    def _emit_remote_events(
+        self,
+        task_id: str,
+        *,
+        seen_events: set[tuple[object, ...]],
+        progress: ProgressCallback,
+    ) -> None:
+        for event in self._client.get_task_events(task_id):
+            key = (
+                event.get("sequence"),
+                event.get("timestamp"),
+                event.get("event_type"),
+                event.get("stage"),
+                event.get("message"),
+            )
+            if key in seen_events:
+                continue
+            seen_events.add(key)
+            progress(_progress_event_from_payload(event))
+
+    def _recover_result_payload(
+        self,
+        task_id: str,
+        *,
+        status: dict[str, object] | None = None,
+    ) -> dict | None:
+        result_payload = None
+        try:
+            result_payload = self._client.get_task_result(task_id)
+        except FlowScribeError:
+            result_payload = None
+        if result_payload is not None:
+            return result_payload
+        if status is not None and status.get("status") == "failed" and status.get("error"):
+            raise TranscriptionError(str(status["error"]))
+        return None
 
     def _download_artifact(
         self,
