@@ -142,6 +142,7 @@ class ServeOptions:
     model_name: str
     language: str | None
     api_token: str | None = None
+    task_retention_hours: float | None = 24.0
 
 
 @dataclass(frozen=True)

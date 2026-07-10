@@ -7,6 +7,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 import copy
 import inspect
+import logging
 from pathlib import Path
 
 from flowscribe.core.errors import DownloadError, FlowScribeError, TranscriptionError
@@ -16,6 +17,7 @@ from flowscribe.server.task_payloads import job_to_payload
 from flowscribe.tasks.models import ErrorInfo, ProgressCallback, ProgressEvent, SourceSpec, TranscriptionJob, TranscriptionResult
 
 ServiceFactory = Callable[[], object]
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -455,8 +457,25 @@ class RemoteExecutionBackend(ExecutionBackend):
             )
         )
         task_summary = self._client.submit_task(payload)
+        remote_task_id = str(task_summary["task_id"])
+        LOGGER.info(
+            "Remote task accepted: remote_task_id=%s local_task_id=%s source=%s",
+            remote_task_id,
+            task_spec.task_id,
+            source.value,
+        )
+        progress(
+            ProgressEvent(
+                stage="discover",
+                message=f"Remote task accepted: {remote_task_id}",
+                source=source.value,
+                current=current,
+                total=total,
+                task_id=remote_task_id,
+            )
+        )
         return RemoteTaskSubmission(
-            task_id=str(task_summary["task_id"]),
+            task_id=remote_task_id,
             status=str(task_summary.get("status") or "accepted"),
             source=source.value,
             source_kind=source.kind,

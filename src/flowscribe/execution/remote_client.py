@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import logging
 from pathlib import Path
 import ssl
 import time
@@ -11,6 +12,15 @@ from typing import Any
 from urllib import error, parse, request
 
 from flowscribe.core.errors import DownloadError, TranscriptionError
+
+LOGGER = logging.getLogger(__name__)
+TRANSIENT_HTTP_STATUS_CODES = {502, 504}
+POLL_RETRY_ATTEMPTS = 4
+POLL_RETRY_BASE_DELAY_SECONDS = 1.0
+
+
+class _TransientRemoteError(TranscriptionError):
+    """Temporary polling failure that may succeed on retry."""
 
 
 @dataclass(frozen=True)
@@ -48,10 +58,18 @@ class RemoteServerClient:
         )
 
     def get_task_status(self, task_id: str) -> dict[str, Any]:
-        return self._request_json(self._url(f"/v1/tasks/{parse.quote(task_id, safe='')}"))
+        return self._request_json_with_retry(
+            self._url(f"/v1/tasks/{parse.quote(task_id, safe='')}"),
+            action="status",
+            task_id=task_id,
+        )
 
     def get_task_events(self, task_id: str) -> list[dict[str, Any]]:
-        payload = self._request_text(self._url(f"/v1/tasks/{parse.quote(task_id, safe='')}/events"))
+        payload = self._request_text_with_retry(
+            self._url(f"/v1/tasks/{parse.quote(task_id, safe='')}/events"),
+            action="events",
+            task_id=task_id,
+        )
         events: list[dict[str, Any]] = []
         for line in payload.splitlines():
             if not line.startswith("data: "):
@@ -65,7 +83,11 @@ class RemoteServerClient:
         return events
 
     def get_task_result(self, task_id: str) -> dict[str, Any]:
-        return self._request_json(self._url(f"/v1/tasks/{parse.quote(task_id, safe='')}/result"))
+        return self._request_json_with_retry(
+            self._url(f"/v1/tasks/{parse.quote(task_id, safe='')}/result"),
+            action="result",
+            task_id=task_id,
+        )
 
     def get_server_info(self) -> dict[str, Any]:
         return self._request_json(self._url("/v1/server"))
@@ -96,6 +118,19 @@ class RemoteServerClient:
             raise TranscriptionError("Remote server returned an unexpected JSON payload.")
         return parsed
 
+    def _request_json_with_retry(
+        self,
+        url: str,
+        *,
+        action: str,
+        task_id: str,
+    ) -> dict[str, Any]:
+        return self._with_poll_retries(
+            lambda: self._request_json(url),
+            action=action,
+            task_id=task_id,
+        )
+
     def _request_text(
         self,
         url: str,
@@ -109,6 +144,39 @@ class RemoteServerClient:
             return payload.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise TranscriptionError("Remote server returned invalid text content.") from exc
+
+    def _request_text_with_retry(
+        self,
+        url: str,
+        *,
+        action: str,
+        task_id: str,
+    ) -> str:
+        return self._with_poll_retries(
+            lambda: self._request_text(url),
+            action=action,
+            task_id=task_id,
+        )
+
+    def _with_poll_retries(self, operation, *, action: str, task_id: str):
+        attempts = POLL_RETRY_ATTEMPTS + 1
+        for attempt in range(1, attempts + 1):
+            try:
+                return operation()
+            except _TransientRemoteError as exc:
+                if attempt >= attempts:
+                    raise
+                delay = min(POLL_RETRY_BASE_DELAY_SECONDS * attempt, 3.0)
+                LOGGER.warning(
+                    "Transient remote %s failure for task %s on %s/%s: %s. Retrying in %.1fs.",
+                    action,
+                    task_id,
+                    attempt,
+                    attempts,
+                    exc,
+                    delay,
+                )
+                self.sleep(delay)
 
     def _request_bytes(
         self,
@@ -128,13 +196,23 @@ class RemoteServerClient:
         try:
             with request.urlopen(req, timeout=self.timeout_seconds, context=context) as response:
                 return response.read()
+        except TimeoutError as exc:
+            raise _TransientRemoteError(
+                f"Timed out while contacting remote server {self.base_url}."
+            ) from exc
         except error.HTTPError as exc:
             body = exc.read()
             message = _http_error_message(body, exc.reason)
+            if exc.code in TRANSIENT_HTTP_STATUS_CODES:
+                raise _TransientRemoteError(message or f"Remote server returned HTTP {exc.code}.") from exc
             if exc.code == 404:
                 raise TranscriptionError(message or "Remote resource was not found.") from exc
             raise TranscriptionError(message or f"Remote server request failed with status {exc.code}.") from exc
         except error.URLError as exc:
+            if _is_timeout_reason(exc.reason):
+                raise _TransientRemoteError(
+                    f"Timed out while contacting remote server {self.base_url}."
+                ) from exc
             raise DownloadError(f"Could not reach remote server {self.base_url}: {exc.reason}") from exc
 
     def _url(self, path: str, query: dict[str, str] | None = None) -> str:
@@ -157,3 +235,8 @@ def _http_error_message(body: bytes, fallback: object) -> str:
                 if isinstance(value, str) and value.strip():
                     return value
     return str(fallback or "").strip()
+
+
+def _is_timeout_reason(reason: object) -> bool:
+    text = str(reason or "").strip().lower()
+    return "timed out" in text or "timeout" in text

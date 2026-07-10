@@ -241,6 +241,7 @@ class BookmarkletRequestHandler(BaseHTTPRequestHandler):
         return {
             "name": "FlowScribe Remote API",
             "version": __version__,
+            "task_retention_hours": self.add_url_handler.task_retention_hours,
             "capabilities": {
                 "uploads": True,
                 "remote_blob": True,
@@ -272,6 +273,7 @@ class BookmarkletServer:
         default_model_name: str = "small",
         default_language: str | None = None,
         api_token: str | None = None,
+        task_retention_hours: float | None = 24.0,
     ) -> None:
         self.host = host
         self.port = port
@@ -282,6 +284,7 @@ class BookmarkletServer:
             default_model_name=default_model_name,
             default_language=default_language,
             api_token=api_token,
+            task_retention_hours=task_retention_hours,
         )
         self.server: HTTPServer | None = None
         self.status_interval = status_interval
@@ -306,6 +309,7 @@ class BookmarkletServer:
             time.sleep(self.status_interval)
             while not self._stop_status_thread:
                 try:
+                    self.handler.cleanup_expired_remote_data()
                     status = self.handler.get_status()
                     queue = status["queue"]
                     logger.info(

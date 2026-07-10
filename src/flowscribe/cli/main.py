@@ -408,7 +408,12 @@ def run_serve(options) -> int:
     print("")
     print("Task Persistence:")
     print("  Agent task history is stored in agent-tasks.json next to the queue store.")
-    print("  Completed, failed, and canceled tasks remain queryable after server restart.")
+    if options.task_retention_hours is None:
+        print("  Completed, failed, and canceled tasks remain queryable until manually cleaned up.")
+    else:
+        print(
+            f"  Completed, failed, and canceled tasks remain queryable for {options.task_retention_hours:g} hour(s) before cleanup."
+        )
     print("  Accepted or running tasks interrupted by restart are recovered as failed.")
     print("")
     print("Status reports will be shown every 30 seconds")
@@ -427,6 +432,7 @@ def run_serve(options) -> int:
             default_model_name=options.model_name,
             default_language=options.language,
             api_token=options.api_token,
+            task_retention_hours=options.task_retention_hours,
         )
         server.start()
         return 0

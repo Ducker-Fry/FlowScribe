@@ -784,6 +784,12 @@ def parse_serve_args(argv: list[str] | None = None) -> ServeOptions:
         default=None,
         help="Optional bearer token required for /v1 remote task and artifact APIs.",
     )
+    parser.add_argument(
+        "--task-retention-hours",
+        type=non_negative_float,
+        default=24.0,
+        help="Retention window for completed/failed/canceled remote tasks before cleanup. Use 0 to disable automatic cleanup. Default: 24",
+    )
     namespace = parser.parse_args(argv)
 
     # Default queue store path
@@ -814,6 +820,9 @@ def parse_serve_args(argv: list[str] | None = None) -> ServeOptions:
         model_name=namespace.model_name,
         language=namespace.language,
         api_token=namespace.api_token,
+        task_retention_hours=(
+            None if namespace.task_retention_hours == 0 else namespace.task_retention_hours
+        ),
     )
 
 

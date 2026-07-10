@@ -315,8 +315,12 @@ def test_remote_backend_submit_returns_without_polling(tmp_path: Path) -> None:
         sources=(SourceSpec(kind="local", value=str(media)),),
         output_formats=("json",),
     )
+    progress_messages: list[tuple[str, object]] = []
 
-    submissions = backend.submit(job)
+    submissions = backend.submit(
+        job,
+        progress=lambda event: progress_messages.append((event.message, event.task_id)),
+    )
 
     assert submissions == (
         RemoteTaskSubmission(
@@ -327,6 +331,7 @@ def test_remote_backend_submit_returns_without_polling(tmp_path: Path) -> None:
             local_task_id=job.to_task_specs()[0].task_id,
         ),
     )
+    assert ("Remote task accepted: remote-local-task", "remote-local-task") in progress_messages
     assert client.polled is False
 
 

@@ -468,6 +468,21 @@ def test_run_serve_reports_port_conflict_for_windows_socket_error(monkeypatch, t
     assert "Port 8765 is already in use" in stderr.getvalue()
 
 
+def test_parse_serve_args_supports_disabling_task_retention(tmp_path: Path) -> None:
+    options = parse_args(
+        [
+            "serve",
+            "--task-retention-hours",
+            "0",
+            "-o",
+            str(tmp_path / "outputs"),
+        ]
+    )
+
+    assert options.command == "serve"
+    assert options.task_retention_hours is None
+
+
 def test_run_install_write_config_json(monkeypatch, tmp_path: Path) -> None:
     models_dir = tmp_path / "models"
     docs_dir = tmp_path / "docs"

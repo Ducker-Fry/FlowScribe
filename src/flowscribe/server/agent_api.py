@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+import logging
 import threading
 from dataclasses import asdict, dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
@@ -16,6 +17,8 @@ from flowscribe.tasks.models import ProgressEvent, TranscriptionJob
 
 AgentTaskStatus = Literal["accepted", "running", "completed", "failed", "canceled"]
 AGENT_TASK_STORE_VERSION = 1
+TERMINAL_AGENT_TASK_STATUSES = frozenset({"completed", "failed", "canceled"})
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -35,13 +38,23 @@ class AgentTaskRecord:
 class AgentTaskStore:
     """JSON-backed task registry for agent-facing HTTP APIs."""
 
-    def __init__(self, path: Path, *, blob_resolver=None) -> None:
+    def __init__(
+        self,
+        path: Path,
+        *,
+        blob_resolver=None,
+        blob_deleter=None,
+        task_retention: timedelta | None = None,
+    ) -> None:
         self._path = path.expanduser().resolve()
         self._lock = threading.Lock()
         self._tasks: dict[str, AgentTaskRecord] = {}
         self._blob_resolver = blob_resolver
+        self._blob_deleter = blob_deleter
+        self._task_retention = task_retention if task_retention and task_retention.total_seconds() > 0 else None
         self._load()
         self._recover_incomplete_tasks()
+        self.prune_expired()
 
     def submit(self, job: TranscriptionJob) -> dict[str, Any]:
         spec = job.to_task_specs()[0]
@@ -104,6 +117,54 @@ class AgentTaskStore:
                         if isinstance(artifact, dict) and artifact.get("artifact_id") == artifact_id:
                             return artifact
         return None
+
+    def prune_expired(self, *, now: datetime | None = None) -> int:
+        if self._task_retention is None:
+            return 0
+
+        current_time = now.astimezone(UTC) if now is not None else datetime.now(UTC)
+        expired_records: list[AgentTaskRecord] = []
+
+        with self._lock:
+            for task_id, record in list(self._tasks.items()):
+                if not _task_record_is_expired(record, retention=self._task_retention, now=current_time):
+                    continue
+                expired_records.append(record)
+                del self._tasks[task_id]
+            if expired_records:
+                self._save()
+
+        if not expired_records:
+            return 0
+
+        artifact_paths = {
+            artifact_path
+            for record in expired_records
+            for artifact_path in _artifact_paths_from_record(record)
+        }
+        blob_ids = {
+            blob_id
+            for record in expired_records
+            for blob_id in _remote_blob_ids_from_record(record)
+        }
+        deleted_files = sum(1 for path in artifact_paths if _delete_file_if_present(path))
+        deleted_blobs = 0
+        for blob_id in blob_ids:
+            if self._blob_deleter is None:
+                continue
+            try:
+                if self._blob_deleter(blob_id):
+                    deleted_blobs += 1
+            except OSError as exc:
+                LOGGER.warning("Could not delete remote upload blob %s: %s", blob_id, exc)
+
+        LOGGER.info(
+            "Pruned %s expired remote task(s); removed %s artifact file(s) and %s upload blob(s).",
+            len(expired_records),
+            deleted_files,
+            deleted_blobs,
+        )
+        return len(expired_records)
 
     def _run_task(self, task_id: str) -> None:
         with self._lock:
@@ -304,3 +365,82 @@ def _attach_artifact_manifests(task_id: str, payload: dict[str, Any]) -> None:
                 }
             )
         output["artifacts"] = artifacts
+
+
+def _task_record_is_expired(
+    record: AgentTaskRecord,
+    *,
+    retention: timedelta,
+    now: datetime,
+) -> bool:
+    if record.status not in TERMINAL_AGENT_TASK_STATUSES:
+        return False
+    updated_at = _parse_utc_timestamp(record.updated_at) or _parse_utc_timestamp(record.created_at)
+    if updated_at is None:
+        return False
+    return now - updated_at >= retention
+
+
+def _parse_utc_timestamp(value: str | None) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    candidate = value.strip()
+    if candidate.endswith("Z"):
+        candidate = f"{candidate[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(candidate)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _artifact_paths_from_record(record: AgentTaskRecord) -> set[Path]:
+    if not isinstance(record.result, dict):
+        return set()
+    paths: set[Path] = set()
+    outputs = record.result.get("outputs", [])
+    if not isinstance(outputs, list):
+        return paths
+    for output in outputs:
+        if not isinstance(output, dict):
+            continue
+        for raw_path in output.get("paths", []):
+            if isinstance(raw_path, str) and raw_path.strip():
+                paths.add(Path(raw_path))
+        for artifact in output.get("artifacts", []):
+            if not isinstance(artifact, dict):
+                continue
+            raw_path = artifact.get("path")
+            if isinstance(raw_path, str) and raw_path.strip():
+                paths.add(Path(raw_path))
+    return paths
+
+
+def _remote_blob_ids_from_record(record: AgentTaskRecord) -> set[str]:
+    payload = record.job_payload
+    if not isinstance(payload, dict):
+        return set()
+    blob_ids: set[str] = set()
+    for section_name in ("source", "cookies"):
+        section = payload.get(section_name)
+        if not isinstance(section, dict):
+            continue
+        if str(section.get("kind") or "").strip() != "remote_blob":
+            continue
+        blob_id = str(section.get("value") or "").strip()
+        if blob_id:
+            blob_ids.add(blob_id)
+    return blob_ids
+
+
+def _delete_file_if_present(path: Path) -> bool:
+    try:
+        if not path.is_file():
+            return False
+        path.unlink()
+        return True
+    except OSError as exc:
+        LOGGER.warning("Could not delete expired remote artifact %s: %s", path, exc)
+        return False

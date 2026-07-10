@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import shutil
 import uuid
 
 
@@ -52,3 +53,10 @@ class UploadBlobStore:
             if child.is_file():
                 return child
         return None
+
+    def delete(self, blob_id: str) -> bool:
+        blob_dir = self._root_dir / blob_id
+        if not blob_dir.exists():
+            return False
+        shutil.rmtree(blob_dir, ignore_errors=False)
+        return True
