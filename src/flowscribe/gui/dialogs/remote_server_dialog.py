@@ -73,6 +73,11 @@ class RemoteServerDialog(QDialog):
         self.token_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.token_input.setPlaceholderText("Optional bearer token")
 
+        self.remote_cookies_path_input = QLineEdit()
+        self.remote_cookies_path_input.setPlaceholderText(
+            "Optional cookies.txt path on the remote server"
+        )
+
         self.enabled_check = QCheckBox("Enabled")
         self.verify_tls_check = QCheckBox("Verify TLS")
         self.download_artifacts_check = QCheckBox("Download artifacts by default")
@@ -89,14 +94,17 @@ class RemoteServerDialog(QDialog):
         form_layout.addWidget(self.base_url_input, 1, 1)
         form_layout.addWidget(QLabel("Token"), 2, 0)
         form_layout.addWidget(self.token_input, 2, 1)
-        form_layout.addWidget(QLabel("Timeout"), 3, 0)
-        form_layout.addWidget(self.timeout_spin, 3, 1)
-        form_layout.addWidget(self.enabled_check, 4, 0, 1, 2)
-        form_layout.addWidget(self.verify_tls_check, 5, 0, 1, 2)
-        form_layout.addWidget(self.download_artifacts_check, 6, 0, 1, 2)
+        form_layout.addWidget(QLabel("Remote cookies path"), 3, 0)
+        form_layout.addWidget(self.remote_cookies_path_input, 3, 1)
+        form_layout.addWidget(QLabel("Timeout"), 4, 0)
+        form_layout.addWidget(self.timeout_spin, 4, 1)
+        form_layout.addWidget(self.enabled_check, 5, 0, 1, 2)
+        form_layout.addWidget(self.verify_tls_check, 6, 0, 1, 2)
+        form_layout.addWidget(self.download_artifacts_check, 7, 0, 1, 2)
 
         note = QLabel(
-            "Use profile names in Queue settings, or type a full URL directly when you need a one-off target."
+            "Use profile names in Queue settings, or type a full URL directly when you need a one-off target. "
+            "Set a remote cookies path when the server should use its own cookies.txt for login-required URL media."
         )
         note.setWordWrap(True)
         note.setProperty("compactNote", True)
@@ -161,6 +169,7 @@ class RemoteServerDialog(QDialog):
         self.name_input.setText(profile.name)
         self.base_url_input.setText(profile.base_url)
         self.token_input.setText(profile.token or "")
+        self.remote_cookies_path_input.setText(profile.remote_cookies_path or "")
         self.enabled_check.setChecked(profile.enabled)
         self.verify_tls_check.setChecked(profile.verify_tls)
         self.timeout_spin.setValue(profile.timeout_seconds)
@@ -170,6 +179,7 @@ class RemoteServerDialog(QDialog):
         self.name_input.clear()
         self.base_url_input.clear()
         self.token_input.clear()
+        self.remote_cookies_path_input.clear()
         self.enabled_check.setChecked(True)
         self.verify_tls_check.setChecked(True)
         self.timeout_spin.setValue(30.0)
@@ -188,6 +198,7 @@ class RemoteServerDialog(QDialog):
             name=name,
             base_url=base_url,
             token=self.token_input.text().strip() or None,
+            remote_cookies_path=self.remote_cookies_path_input.text().strip() or None,
             enabled=self.enabled_check.isChecked(),
             verify_tls=self.verify_tls_check.isChecked(),
             timeout_seconds=float(self.timeout_spin.value()),

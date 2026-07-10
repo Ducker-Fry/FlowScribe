@@ -6,7 +6,10 @@ from dataclasses import dataclass
 from typing import Mapping
 from urllib.parse import urlparse
 
-from flowscribe.execution.remote_config import get_remote_server_profile
+from flowscribe.execution.remote_config import (
+    get_remote_server_profile,
+    get_remote_server_profile_for_url,
+)
 
 
 @dataclass(frozen=True)
@@ -68,6 +71,15 @@ def inspect_remote_target(target: str | None) -> RemoteTargetInspection:
         )
 
     resolved = raw.rstrip("/")
+    matched_profile = get_remote_server_profile_for_url(resolved)
+    if matched_profile is not None:
+        return RemoteTargetInspection(
+            target=raw,
+            valid=True,
+            resolved_url=resolved,
+            message=f"Matched saved profile: {matched_profile.name} -> {resolved}",
+            profile_name=matched_profile.name,
+        )
     return RemoteTargetInspection(
         target=raw,
         valid=True,

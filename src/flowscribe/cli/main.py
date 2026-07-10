@@ -552,6 +552,7 @@ def run_remote_command(options) -> int:
             name=options.name,
             base_url=options.base_url,
             token=options.token,
+            remote_cookies_path=options.remote_cookies_path,
             enabled=options.enabled,
             verify_tls=options.verify_tls,
             timeout_seconds=options.timeout_seconds,
@@ -592,6 +593,8 @@ def run_remote_command(options) -> int:
         else:
             print(f"Name: {profile.name}")
             print(f"URL: {profile.base_url}")
+            if profile.remote_cookies_path:
+                print(f"Remote cookies path: {profile.remote_cookies_path}")
             print(f"Enabled: {'yes' if profile.enabled else 'no'}")
             print(f"Verify TLS: {'yes' if profile.verify_tls else 'no'}")
             print(f"Timeout: {profile.timeout_seconds}")
@@ -878,6 +881,7 @@ def _remote_profile_payload(profile: RemoteServerProfile) -> dict:
         "name": profile.name,
         "base_url": profile.base_url,
         "has_token": bool(profile.token),
+        "remote_cookies_path": profile.remote_cookies_path,
         "enabled": profile.enabled,
         "verify_tls": profile.verify_tls,
         "timeout_seconds": profile.timeout_seconds,

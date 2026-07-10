@@ -140,7 +140,8 @@ def test_dialog_preserves_source_fields(qapp):
     assert updated_source.keep_media is True
 
 
-def test_dialog_returns_remote_execution_settings(qapp):
+def test_dialog_returns_remote_execution_settings(qapp, monkeypatch, tmp_path):
+    monkeypatch.setenv("FLOWSCRIBE_CONFIG_DIR", str(tmp_path / "config"))
     settings = QueueItemSettings()
     source = SourceSpec(kind="local", value="/path/to/file.mp3")
 

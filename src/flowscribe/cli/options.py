@@ -178,6 +178,7 @@ class RemoteCommandOptions:
     name: str | None = None
     base_url: str | None = None
     token: str | None = None
+    remote_cookies_path: str | None = None
     server_target: str | None = None
     task_id: str | None = None
     output_dir: Path | None = None

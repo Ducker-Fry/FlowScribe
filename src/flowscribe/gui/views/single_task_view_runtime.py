@@ -6,6 +6,8 @@ from typing import Any
 
 from PySide6.QtCore import QThread
 
+from flowscribe.core.errors import FlowScribeError
+from flowscribe.execution.factory import build_execution_backend
 from flowscribe.gui.workers.transcription_worker import TranscriptionWorker
 from flowscribe.tasks.models import DownloadOptions, ProgressEvent, SourceSpec, TranscriptionJob
 
@@ -48,8 +50,31 @@ class SingleTaskViewRuntimeMixin:
         self.preview_output.appendPlainText("Starting transcription...\n")
         self.status_label.setText("Transcription in progress...")
 
+        execution_mode = str(self._settings.get("execution_mode") or "local")
+        server_target = self._settings.get("server_target")
+        try:
+            execution_backend = build_execution_backend(
+                execution_mode=execution_mode,
+                server_target=server_target,
+                remote_token=self._settings.get("remote_token"),
+                remote_poll_seconds=float(self._settings.get("remote_poll_seconds", 1.0)),
+                download_artifacts=self._settings.get("download_artifacts"),
+            )
+        except FlowScribeError as exc:
+            message = str(exc)
+            self.status_label.setText(f"Transcription failed: {message}")
+            self.preview_output.appendPlainText(f"\nFailed: {message}")
+            self.transcription_error.emit(message)
+            self._refresh_action_buttons()
+            return
+
         self._thread = QThread(self)
-        self._worker = TranscriptionWorker(job)
+        self._worker = TranscriptionWorker(
+            job,
+            execution_backend=execution_backend,
+            execution_mode=execution_mode,
+            server_target=server_target if execution_mode == "remote" else None,
+        )
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
         self._worker.progress.connect(self._on_progress)

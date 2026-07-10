@@ -41,4 +41,5 @@ def build_execution_backend(
         client,
         poll_seconds=remote_poll_seconds,
         download_artifacts=resolved.download_artifacts_by_default,
+        remote_cookies_path=resolved.remote_cookies_path,
     )

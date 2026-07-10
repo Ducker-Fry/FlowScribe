@@ -26,6 +26,7 @@ def test_remote_server_dialog_saves_and_removes_profile(
     dialog.name_input.setText("local-test")
     dialog.base_url_input.setText("http://127.0.0.1:18769")
     dialog.token_input.setText("secret")
+    dialog.remote_cookies_path_input.setText("/home/fry/.flowscribe-secrets/bilibili.cookies.txt")
     dialog.timeout_spin.setValue(45.0)
     dialog.download_artifacts_check.setChecked(False)
 
@@ -36,6 +37,7 @@ def test_remote_server_dialog_saves_and_removes_profile(
     assert profiles[0].name == "local-test"
     assert profiles[0].base_url == "http://127.0.0.1:18769"
     assert profiles[0].token == "secret"
+    assert profiles[0].remote_cookies_path == "/home/fry/.flowscribe-secrets/bilibili.cookies.txt"
     assert profiles[0].timeout_seconds == 45.0
     assert profiles[0].download_artifacts_by_default is False
 

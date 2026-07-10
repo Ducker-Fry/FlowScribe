@@ -20,7 +20,8 @@ def qapp():
     yield app
 
 
-def test_dialog_loads_provided_settings(qapp):
+def test_dialog_loads_provided_settings(qapp, monkeypatch, tmp_path):
+    monkeypatch.setenv("FLOWSCRIBE_CONFIG_DIR", str(tmp_path / "config"))
     """Dialog should load the settings passed to it, not defaults."""
     custom_settings = QueueItemSettings(
         output_dir=Path("custom_output"),
@@ -154,7 +155,8 @@ def test_apply_button_exists(qapp):
     # The actual button finding logic might need to be more specific
 
 
-def test_global_settings_dialog_collects_native_engine_settings(qapp):
+def test_global_settings_dialog_collects_native_engine_settings(qapp, monkeypatch, tmp_path):
+    monkeypatch.setenv("FLOWSCRIBE_CONFIG_DIR", str(tmp_path / "config"))
     dialog = SettingsDialog(
         None,
         {

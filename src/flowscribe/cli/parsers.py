@@ -829,6 +829,11 @@ def parse_remote_args(argv: list[str] | None = None) -> RemoteCommandOptions:
     add_parser.add_argument("name", help="Stable profile name.")
     add_parser.add_argument("--url", required=True, dest="base_url", help="Base URL such as http://127.0.0.1:8765")
     add_parser.add_argument("--token", default=None, help="Optional bearer token.")
+    add_parser.add_argument(
+        "--remote-cookies-path",
+        default=None,
+        help="Optional cookies.txt path on the remote server for login-required URL media.",
+    )
     add_parser.add_argument("--disable", action="store_false", dest="enabled", default=True, help="Store the profile as disabled.")
     add_parser.add_argument("--no-verify-tls", action="store_false", dest="verify_tls", default=True, help="Disable TLS certificate verification.")
     add_parser.add_argument("--timeout", type=positive_float, dest="timeout_seconds", default=30.0, help="Default request timeout in seconds. Default: 30")
@@ -883,6 +888,7 @@ def parse_remote_args(argv: list[str] | None = None) -> RemoteCommandOptions:
         name=getattr(namespace, "name", None),
         base_url=getattr(namespace, "base_url", None),
         token=getattr(namespace, "token", None),
+        remote_cookies_path=getattr(namespace, "remote_cookies_path", None),
         server_target=getattr(namespace, "server_target", None),
         task_id=getattr(namespace, "task_id", None),
         output_dir=getattr(namespace, "output_dir", None),

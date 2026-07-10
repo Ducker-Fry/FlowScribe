@@ -19,6 +19,7 @@ class RemoteServerProfile:
     name: str
     base_url: str
     token: str | None = None
+    remote_cookies_path: str | None = None
     enabled: bool = True
     verify_tls: bool = True
     timeout_seconds: float = 30.0
@@ -92,6 +93,16 @@ def get_remote_server_profile(name: str) -> RemoteServerProfile | None:
     return None
 
 
+def get_remote_server_profile_for_url(base_url: str) -> RemoteServerProfile | None:
+    target = _normalize_base_url(base_url)
+    if target is None:
+        return None
+    for profile in load_remote_server_profiles():
+        if _normalize_base_url(profile.base_url) == target:
+            return profile
+    return None
+
+
 def resolve_remote_server(
     target: str,
     *,
@@ -100,7 +111,20 @@ def resolve_remote_server(
     download_artifacts: bool | None = None,
 ) -> RemoteServerProfile:
     if _looks_like_url(target):
-        profile = RemoteServerProfile(name=target, base_url=target)
+        matched_profile = get_remote_server_profile_for_url(target)
+        if matched_profile is not None:
+            profile = RemoteServerProfile(
+                name=matched_profile.name,
+                base_url=target.rstrip("/"),
+                token=matched_profile.token,
+                remote_cookies_path=matched_profile.remote_cookies_path,
+                enabled=matched_profile.enabled,
+                verify_tls=matched_profile.verify_tls,
+                timeout_seconds=matched_profile.timeout_seconds,
+                download_artifacts_by_default=matched_profile.download_artifacts_by_default,
+            )
+        else:
+            profile = RemoteServerProfile(name=target, base_url=target)
     else:
         profile = get_remote_server_profile(target)
         if profile is None:
@@ -109,6 +133,7 @@ def resolve_remote_server(
         name=profile.name,
         base_url=profile.base_url,
         token=token_override if token_override is not None else profile.token,
+        remote_cookies_path=profile.remote_cookies_path,
         enabled=profile.enabled,
         verify_tls=profile.verify_tls,
         timeout_seconds=profile.timeout_seconds if poll_seconds is None else profile.timeout_seconds,
@@ -131,6 +156,7 @@ def _profile_from_payload(payload: object) -> RemoteServerProfile | None:
         name=name.strip(),
         base_url=base_url.strip(),
         token=payload.get("token"),
+        remote_cookies_path=payload.get("remote_cookies_path"),
         enabled=bool(payload.get("enabled", True)),
         verify_tls=bool(payload.get("verify_tls", True)),
         timeout_seconds=float(payload.get("timeout_seconds", 30.0)),
@@ -141,3 +167,11 @@ def _profile_from_payload(payload: object) -> RemoteServerProfile | None:
 def _looks_like_url(value: str) -> bool:
     parsed = urlparse(value)
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _normalize_base_url(value: str) -> str | None:
+    parsed = urlparse(value.strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.port is None:
+        return None
+    path = parsed.path.rstrip("/")
+    return f"{parsed.scheme.lower()}://{parsed.hostname.lower()}:{parsed.port}{path}"

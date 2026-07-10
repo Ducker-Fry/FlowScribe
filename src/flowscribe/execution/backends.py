@@ -69,10 +69,12 @@ class RemoteExecutionBackend(ExecutionBackend):
         *,
         poll_seconds: float,
         download_artifacts: bool,
+        remote_cookies_path: str | None = None,
     ) -> None:
         self._client = client
         self._poll_seconds = max(0.1, poll_seconds)
         self._download_artifacts = download_artifacts
+        self._remote_cookies_path = remote_cookies_path
 
     def run(
         self,
@@ -416,6 +418,21 @@ class RemoteExecutionBackend(ExecutionBackend):
                     stage="prepare",
                     message=f"Cookies upload complete: {upload['filename']}",
                     source=str(cookies_path),
+                    current=current,
+                    total=total,
+                    task_id=task_spec.task_id,
+                )
+            )
+        elif self._remote_cookies_path:
+            cookies_payload = {
+                "kind": "path",
+                "value": self._remote_cookies_path,
+            }
+            progress(
+                ProgressEvent(
+                    stage="prepare",
+                    message=f"Using remote server cookies: {self._remote_cookies_path}",
+                    source=source.value,
                     current=current,
                     total=total,
                     task_id=task_spec.task_id,

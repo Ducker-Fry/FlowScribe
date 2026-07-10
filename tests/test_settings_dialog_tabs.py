@@ -172,8 +172,9 @@ def test_advanced_tab_has_progressive_settings(qtbot):
     assert isinstance(dialog.progressive_max_workers_spin, QSpinBox)
 
 
-def test_remote_tab_has_execution_settings(qtbot):
+def test_remote_tab_has_execution_settings(qtbot, monkeypatch, tmp_path):
     """Test that remote tab exposes queue remote execution defaults."""
+    monkeypatch.setenv("FLOWSCRIBE_CONFIG_DIR", str(tmp_path / "config"))
     from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QLineEdit
 
     from flowscribe.gui.dialogs.settings_dialog import SettingsDialog

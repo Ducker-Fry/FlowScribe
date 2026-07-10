@@ -21,9 +21,19 @@ class TranscriptionWorker(QObject):
     failed = Signal(str)
     warning = Signal(str)  # New signal for warnings
 
-    def __init__(self, job) -> None:
+    def __init__(
+        self,
+        job,
+        *,
+        execution_backend=None,
+        execution_mode: str = "local",
+        server_target: str | None = None,
+    ) -> None:
         super().__init__()
         self._job = job
+        self._execution_backend = execution_backend
+        self._execution_mode = execution_mode
+        self._server_target = server_target
         self._cancel_requested = False
 
     @Slot()
@@ -33,18 +43,21 @@ class TranscriptionWorker(QObject):
     @Slot()
     def run(self) -> None:
         LOGGER.info(
-            "Transcription worker started: sources=%s provider=%s model=%s output_dir=%s",
+            "Transcription worker started: sources=%s provider=%s model=%s output_dir=%s execution_mode=%s server_target=%s",
             len(self._job.sources),
             self._job.provider_name,
             self._job.model_name,
             self._job.output_dir,
+            self._execution_mode,
+            self._server_target or "<none>",
         )
         # Capture warnings during transcription
         with warnings.catch_warnings(record=True) as warning_list:
             warnings.simplefilter("always")
 
             try:
-                result = TranscriptionService().run(
+                backend = self._execution_backend or TranscriptionService()
+                result = backend.run(
                     self._job,
                     progress=self._handle_progress,
                     should_cancel=lambda: self._cancel_requested,

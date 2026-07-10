@@ -57,14 +57,17 @@ class QueueRunner(QObject):
 
     def _process_item(self, item: QueueItem) -> bool:
         job = item.to_job()
+        effective_target = item.settings.server_target if item.settings.execution_mode == "remote" else None
         LOGGER.info(
-            "Processing queue item %s: source=%s provider=%s model=%s output_dir=%s formats=%s",
+            "Processing queue item %s: source=%s provider=%s model=%s output_dir=%s formats=%s execution_mode=%s server_target=%s",
             item.item_id,
             item.source.value,
             job.provider_name,
             job.model_name,
             job.output_dir,
             job.output_formats,
+            item.settings.execution_mode,
+            effective_target or "<none>",
         )
         try:
             backend = self._build_backend(item)

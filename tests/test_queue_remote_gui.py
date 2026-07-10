@@ -18,7 +18,8 @@ def qapp():
     yield app
 
 
-def test_queue_view_loads_remote_execution_defaults(qapp) -> None:
+def test_queue_view_loads_remote_execution_defaults(qapp, monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("FLOWSCRIBE_CONFIG_DIR", str(tmp_path / "config"))
     view = QueueView(
         {
             "execution_mode": "remote",

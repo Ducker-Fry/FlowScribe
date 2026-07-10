@@ -105,12 +105,15 @@ def test_remote_server_profile_management_round_trip(monkeypatch, tmp_path: Path
                 "http://127.0.0.1:8765",
                 "--token",
                 "secret",
+                "--remote-cookies-path",
+                "/home/fry/.flowscribe-secrets/bilibili.cookies.txt",
             ]
         )
 
     assert exit_code == 0
     saved = json.loads(stdout.getvalue())
     assert saved["profile"]["name"] == "demo"
+    assert saved["profile"]["remote_cookies_path"] == "/home/fry/.flowscribe-secrets/bilibili.cookies.txt"
 
     stdout = io.StringIO()
     with redirect_stdout(stdout), redirect_stderr(io.StringIO()):
@@ -118,6 +121,7 @@ def test_remote_server_profile_management_round_trip(monkeypatch, tmp_path: Path
     assert exit_code == 0
     payload = json.loads(stdout.getvalue())
     assert payload[0]["name"] == "demo"
+    assert payload[0]["remote_cookies_path"] == "/home/fry/.flowscribe-secrets/bilibili.cookies.txt"
 
     stdout = io.StringIO()
     with redirect_stdout(stdout), redirect_stderr(io.StringIO()):
@@ -431,6 +435,103 @@ def test_remote_url_backend_uploads_cookies_and_forwards_network_settings(tmp_pa
         max_download_mb=123,
         max_duration_seconds=456,
         download_timeout_seconds=78,
+    )
+
+    result = backend.run(job)
+
+    assert result.ok is True
+    assert result.outputs[0].json_path is not None
+    assert result.outputs[0].json_path.is_file()
+
+
+def test_remote_url_backend_uses_remote_profile_cookies_path(tmp_path: Path) -> None:
+    output_dir = tmp_path / "client-outputs"
+    server_output_dir = tmp_path / "server-outputs"
+    server_output_dir.mkdir(parents=True, exist_ok=True)
+    json_path = server_output_dir / "remote-url.json"
+    json_path.write_text('{"remote": true}', encoding="utf-8")
+
+    class FakeClient:
+        def __init__(self):
+            self.upload_calls: list[Path] = []
+
+        def upload_file(self, path: Path):
+            self.upload_calls.append(path)
+            raise AssertionError("Remote profile cookies path should not upload a local file")
+
+        def submit_task(self, payload: dict):
+            assert payload["source"]["kind"] == "url"
+            assert payload["cookies"]["kind"] == "path"
+            assert payload["cookies"]["value"] == "/home/fry/.flowscribe-secrets/bilibili.cookies.txt"
+            return {"task_id": "remote-url-task", "status": "accepted"}
+
+        def get_task_events(self, task_id: str):
+            return []
+
+        def get_task_status(self, task_id: str):
+            return {"task_id": task_id, "status": "completed"}
+
+        def get_task_result(self, task_id: str):
+            return {
+                "ok": True,
+                "canceled": False,
+                "succeeded": 1,
+                "failed": 0,
+                "elapsed_seconds": 1.0,
+                "tasks": [],
+                "outputs": [
+                    {
+                        "paths": [str(json_path)],
+                        "json_path": str(json_path),
+                        "media_path": None,
+                        "media_kind": None,
+                        "requested_media_kind": None,
+                        "source_kind": "url",
+                        "source_value": "https://example.com/watch",
+                        "source_locator": "https://example.com/watch",
+                        "original_filename": "watch",
+                        "transcription_strategy": "audio-transcription",
+                        "subtitle_language": None,
+                        "artifacts": [
+                            {
+                                "artifact_id": "artifact-1",
+                                "filename": "remote-url.json",
+                                "format": "json",
+                                "download_path": "/v1/artifacts/artifact-1",
+                                "size_bytes": json_path.stat().st_size,
+                                "path": str(json_path),
+                            }
+                        ],
+                    }
+                ],
+                "errors": [],
+            }
+
+        def download_artifact(self, artifact_id: str, destination: Path):
+            destination.write_bytes(json_path.read_bytes())
+            return destination
+
+        def sleep(self, seconds: float):
+            return None
+
+    backend = RemoteExecutionBackend(
+        FakeClient(),
+        poll_seconds=0.1,
+        download_artifacts=True,
+        remote_cookies_path="/home/fry/.flowscribe-secrets/bilibili.cookies.txt",
+    )
+    job = TranscriptionJob(
+        sources=(
+            SourceSpec(
+                kind="url",
+                value="https://example.com/watch",
+                keep_media=True,
+                url_media_kind="video",
+                download_options=DownloadOptions(quality="high", prefer_format="mp4"),
+            ),
+        ),
+        output_dir=output_dir,
+        output_formats=("json",),
     )
 
     result = backend.run(job)
