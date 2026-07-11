@@ -1,7 +1,7 @@
 # 中文 | [English](gui-user-guide-en.md)
 
 # FlowScribe GUI 用户指南
-> 版本：v0.3.3  
+> 版本：v0.3.4  
 > 更新日期：2026-06-05  
 > 适用平台：Windows 10/11
 ## 1. 先看全局

@@ -9,6 +9,8 @@ from pathlib import Path
 
 from flowscribe.utils.runtime_layout import resolve_runtime_layout
 
+THEME_DIR: Path | None = None
+
 
 def _theme_dir() -> Path:
     layout = resolve_runtime_layout()
@@ -61,7 +63,8 @@ def load_theme_stylesheet(theme_name: str) -> str:
             f"Invalid theme '{theme_name}'. Available themes: {get_available_themes()}"
         )
 
-    theme_file = _theme_dir() / f"{theme_name}.qss"
+    theme_dir = THEME_DIR if THEME_DIR is not None else _theme_dir()
+    theme_file = theme_dir / f"{theme_name}.qss"
     if not theme_file.exists():
         raise FileNotFoundError(f"Theme file not found: {theme_file}")
 

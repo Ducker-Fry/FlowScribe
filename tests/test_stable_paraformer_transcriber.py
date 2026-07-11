@@ -2,6 +2,8 @@ import sys
 import types
 from pathlib import Path
 
+import numpy as np
+
 from flowscribe.core.models import MediaItem, PreparedAudio
 from flowscribe.providers.transcribe import stable_paraformer
 from flowscribe.providers.transcribe.stable_paraformer import StableParaformerTranscriber
@@ -68,6 +70,11 @@ def test_stable_paraformer_clip_generate_uses_asr_only_kwargs(monkeypatch, tmp_p
         StableParaformerTranscriber,
         "_extract_clip_audio",
         lambda self, *args, **kwargs: clip_audio,
+    )
+    monkeypatch.setattr(
+        StableParaformerTranscriber,
+        "_load_clip_waveform",
+        staticmethod(lambda audio: np.zeros(1600, dtype=np.float32)),
     )
     monkeypatch.setattr(StableParaformerTranscriber, "_load_clip_model", lambda self: FakeModel())
 

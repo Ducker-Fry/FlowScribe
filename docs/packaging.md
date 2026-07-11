@@ -198,6 +198,19 @@ Start the packaged application with:
 
 The root launch scripts are the canonical entrypoints. They should stay next to `core/` and `code/`.
 
+## Release Workflow Alignment
+
+The GitHub release workflow follows a create-or-update path instead of
+assuming each tag is released only once.
+
+- it creates a release when the tag has no release record yet
+- it updates the existing release metadata when the release already exists
+- asset uploads use overwrite mode so reruns can replace archives without
+  failing on duplicate asset names
+- packaged smoke checks include `doctor --skip-model-access` so release
+  verification does not fail only because model hosting is temporarily
+  unreachable
+
 ## Validation Checklist
 
 ### Core Validation

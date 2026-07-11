@@ -24,7 +24,9 @@ def run_gui(argv: list[str] | None = None) -> int:
         )
         return 2
 
-    app = QApplication(argv or sys.argv)
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication(argv or sys.argv)
     app.setApplicationName("FlowScribe")
     app.setApplicationVersion(__version__)
     LOGGER.debug("Starting GUI in %s mode.", log_mode)
