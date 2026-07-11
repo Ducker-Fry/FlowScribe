@@ -137,8 +137,16 @@ class TranscriptionViewDialogEditingMixin:
         if self._editable_transcript is None:
             return
 
+        segments = getattr(self._editable_transcript, "segments", None)
+        if segments is None:
+            return
+        try:
+            segment_count = len(segments)
+        except TypeError:
+            return
+
         row = self._current_segment_index
-        if row < 0 or row >= len(self._editable_transcript.segments):
+        if row < 0 or row >= segment_count:
             return
 
         updated = update_editable_transcript_segment(
