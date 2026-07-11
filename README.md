@@ -60,6 +60,21 @@ You get:
 - a GUI workspace for review and correction
 - a browser-fed batch URL queue through the bookmarklet flow
 
+## Remote Execution / 远端执行
+
+FlowScribe can offload transcription to another FlowScribe server and pull the finished artifacts back to the local machine.
+
+- `CLI` and `GUI` can both switch from local execution to remote execution.
+- Remote server profiles can store the base URL, bearer token, timeout, and a server-side `cookies.txt` path.
+- When artifact download is enabled, the server writes results into its own staging directory and the client downloads them back into the requested local output directory.
+- The HTTP control plane now stays responsive during long-running jobs, while heavy remote transcription is still limited to one active task by default on small hosts.
+
+Start here:
+
+- deployment and client setup: [中文](docs/remote-server-guide.md) / [English](docs/remote-server-guide-en.md)
+- server endpoint details: [docs/server-configuration.md](docs/server-configuration.md)
+- task/result payload details: [docs/agent-api.md](docs/agent-api.md)
+
 ## 一键收集网页，批量慢慢转 / Collect Now, Process In Batch Later
 
 > 把浏览器变成 FlowScribe 的采集入口。  
@@ -118,6 +133,7 @@ Start here:
 
 - CLI first: [中文](docs/user-guide.md) / [English](docs/user-guide-en.md)
 - GUI first: [中文](docs/gui-user-guide.md) / [English](docs/gui-user-guide-en.md)
+- remote execution and deployment: [中文](docs/remote-server-guide.md) / [English](docs/remote-server-guide-en.md)
 - packaged install help: [中文](docs/release-installation.md) / [English](docs/release-installation-en.md)
 - release downloads: [Releases](https://github.com/Ducker-Fry/FlowScribe/releases)
 

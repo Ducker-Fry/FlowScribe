@@ -21,6 +21,10 @@ TERMINAL_AGENT_TASK_STATUSES = frozenset({"completed", "failed", "canceled"})
 LOGGER = logging.getLogger(__name__)
 
 
+class RemoteTaskCapacityError(RuntimeError):
+    """Raised when the server is already running the maximum number of tasks."""
+
+
 @dataclass(frozen=True)
 class AgentTaskRecord:
     task_id: str
@@ -45,6 +49,7 @@ class AgentTaskStore:
         blob_resolver=None,
         blob_deleter=None,
         task_retention: timedelta | None = None,
+        max_concurrent_tasks: int | None = None,
     ) -> None:
         self._path = path.expanduser().resolve()
         self._lock = threading.Lock()
@@ -52,6 +57,11 @@ class AgentTaskStore:
         self._blob_resolver = blob_resolver
         self._blob_deleter = blob_deleter
         self._task_retention = task_retention if task_retention and task_retention.total_seconds() > 0 else None
+        self._max_concurrent_tasks = (
+            None
+            if max_concurrent_tasks is None
+            else max(1, int(max_concurrent_tasks))
+        )
         self._load()
         self._recover_incomplete_tasks()
         self.prune_expired()
@@ -77,6 +87,14 @@ class AgentTaskStore:
             },
         )
         with self._lock:
+            if (
+                self._max_concurrent_tasks is not None
+                and self._active_task_count() >= self._max_concurrent_tasks
+            ):
+                raise RemoteTaskCapacityError(
+                    "Remote server is already processing the maximum number of tasks. "
+                    "Try again after the current task finishes."
+                )
             self._tasks[task_id] = record
             self._save()
 
@@ -268,6 +286,13 @@ class AgentTaskStore:
             changed = True
         if changed:
             self._save()
+
+    def _active_task_count(self) -> int:
+        return sum(
+            1
+            for record in self._tasks.values()
+            if record.status in {"accepted", "running"}
+        )
 
 def _task_summary(record: AgentTaskRecord) -> dict[str, Any]:
     result = record.result

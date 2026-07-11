@@ -6,16 +6,26 @@ import json
 import logging
 import threading
 import time
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from flowscribe import __version__
-from flowscribe.server.agent_api import sse_bytes, task_job_from_payload
+from flowscribe.server.agent_api import (
+    RemoteTaskCapacityError,
+    sse_bytes,
+    task_job_from_payload,
+)
 from flowscribe.server.handlers import AddUrlHandler
 
 logger = logging.getLogger(__name__)
+
+
+class FlowScribeThreadingHTTPServer(ThreadingHTTPServer):
+    """Thread-per-request HTTP server tuned for lightweight control-plane traffic."""
+
+    daemon_threads = True
 
 
 class BookmarkletRequestHandler(BaseHTTPRequestHandler):
@@ -159,6 +169,8 @@ class BookmarkletRequestHandler(BaseHTTPRequestHandler):
             self._send_json_response(400, {"error": "Invalid JSON"})
         except ValueError as exc:
             self._send_json_response(400, {"error": str(exc)})
+        except RemoteTaskCapacityError as exc:
+            self._send_json_response(429, {"error": str(exc)})
         except Exception as exc:
             logger.exception("Failed to submit task")
             self._send_json_response(500, {"error": str(exc)})
@@ -274,6 +286,7 @@ class BookmarkletServer:
         default_language: str | None = None,
         api_token: str | None = None,
         task_retention_hours: float | None = 24.0,
+        max_concurrent_remote_tasks: int | None = 1,
     ) -> None:
         self.host = host
         self.port = port
@@ -285,8 +298,9 @@ class BookmarkletServer:
             default_language=default_language,
             api_token=api_token,
             task_retention_hours=task_retention_hours,
+            max_concurrent_remote_tasks=max_concurrent_remote_tasks,
         )
-        self.server: HTTPServer | None = None
+        self.server: FlowScribeThreadingHTTPServer | None = None
         self.status_interval = status_interval
         self._status_thread: threading.Thread | None = None
         self._stop_status_thread = False
@@ -295,7 +309,7 @@ class BookmarkletServer:
         def handler_factory(*args, **kwargs):
             return BookmarkletRequestHandler(*args, handler=self.handler, **kwargs)
 
-        self.server = HTTPServer((self.host, self.port), handler_factory)
+        self.server = FlowScribeThreadingHTTPServer((self.host, self.port), handler_factory)
         logger.info("FlowScribe server listening on %s:%s", self.host, self.port)
         logger.info("Queue store: %s", self.handler.queue_store_path)
         self._start_status_thread()

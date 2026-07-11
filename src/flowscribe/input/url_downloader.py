@@ -26,6 +26,7 @@ from flowscribe.utils.subprocess import hidden_subprocess_kwargs
 
 AUDIO_EXTENSIONS = {".aac", ".aiff", ".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav", ".wma"}
 VIDEO_EXTENSIONS = SUPPORTED_MEDIA_EXTENSIONS - AUDIO_EXTENSIONS
+TEMPORARY_DOWNLOAD_NAME_MARKERS = (".part", ".ytdl", ".tmp", ".temp", ".frag")
 LOGGER = logging.getLogger(__name__)
 
 
@@ -312,7 +313,7 @@ class UrlAudioDownloader:
                 "or update yt-dlp."
             ) from exc
 
-        files = [path for path in item_dir.iterdir() if path.is_file()]
+        files = self._final_download_candidates(item_dir, prefix="remote-audio.")
         if not files:
             raise DownloadError("yt-dlp did not produce an audio file.")
         path = max(files, key=lambda candidate: candidate.stat().st_size)
@@ -399,11 +400,7 @@ class UrlAudioDownloader:
             )
             return None
 
-        candidates = [
-            path
-            for path in item_dir.iterdir()
-            if path.is_file() and path.name.startswith("remote-media.")
-        ]
+        candidates = self._final_download_candidates(item_dir, prefix="remote-media.")
         if not candidates:
             import warnings
             warnings.warn(
@@ -607,6 +604,18 @@ class UrlAudioDownloader:
     def _ensure_not_canceled(self) -> None:
         if self._should_cancel is not None and self._should_cancel():
             raise CancellationError("Remote media acquisition canceled.")
+
+    @staticmethod
+    def _final_download_candidates(item_dir: Path, *, prefix: str) -> list[Path]:
+        candidates: list[Path] = []
+        for path in item_dir.iterdir():
+            if not path.is_file() or not path.name.startswith(prefix):
+                continue
+            lowered_name = path.name.lower()
+            if any(marker in lowered_name for marker in TEMPORARY_DOWNLOAD_NAME_MARKERS):
+                continue
+            candidates.append(path)
+        return candidates
 
     def _report_progress(self, message: str) -> None:
         LOGGER.info("URL download stage: %s", message)

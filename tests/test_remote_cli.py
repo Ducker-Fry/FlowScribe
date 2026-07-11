@@ -426,6 +426,7 @@ def test_remote_url_backend_uploads_cookies_and_forwards_network_settings(tmp_pa
         def submit_task(self, payload: dict):
             assert payload["source"]["kind"] == "url"
             assert payload["source"]["value"] == "https://example.com/watch"
+            assert payload["output"]["output_dir"] == ".flowscribe-remote/tasks/remote-job-1"
             assert payload["source"]["keep_media"] is True
             assert payload["source"]["url_media_kind"] == "video"
             assert payload["source"]["download_options"] == {"quality": "high", "prefer_format": "mp4"}
@@ -498,6 +499,7 @@ def test_remote_url_backend_uploads_cookies_and_forwards_network_settings(tmp_pa
                 download_options=DownloadOptions(quality="high", prefer_format="mp4"),
             ),
         ),
+        task_id="remote-job-1",
         output_dir=output_dir,
         output_formats=("json",),
         cookies_path=cookies,
@@ -532,6 +534,7 @@ def test_remote_url_backend_uses_remote_profile_cookies_path(tmp_path: Path) -> 
 
         def submit_task(self, payload: dict):
             assert payload["source"]["kind"] == "url"
+            assert payload["output"]["output_dir"] == ".flowscribe-remote/tasks/remote-job-2"
             assert payload["cookies"]["kind"] == "path"
             assert payload["cookies"]["value"] == "/home/fry/.flowscribe-secrets/bilibili.cookies.txt"
             return {"task_id": "remote-url-task", "status": "accepted"}
@@ -601,6 +604,7 @@ def test_remote_url_backend_uses_remote_profile_cookies_path(tmp_path: Path) -> 
                 download_options=DownloadOptions(quality="high", prefer_format="mp4"),
             ),
         ),
+        task_id="remote-job-2",
         output_dir=output_dir,
         output_formats=("json",),
     )
@@ -610,6 +614,48 @@ def test_remote_url_backend_uses_remote_profile_cookies_path(tmp_path: Path) -> 
     assert result.ok is True
     assert result.outputs[0].json_path is not None
     assert result.outputs[0].json_path.is_file()
+
+
+def test_remote_backend_preserves_output_dir_when_not_downloading_artifacts(tmp_path: Path) -> None:
+    output_dir = tmp_path / "client-outputs"
+
+    class FakeClient:
+        def submit_task(self, payload: dict):
+            assert payload["output"]["output_dir"] == str(output_dir)
+            return {"task_id": "remote-url-task", "status": "accepted"}
+
+        def get_task_events(self, task_id: str):
+            return []
+
+        def get_task_status(self, task_id: str):
+            return {"task_id": task_id, "status": "completed"}
+
+        def get_task_result(self, task_id: str):
+            return {
+                "ok": True,
+                "canceled": False,
+                "succeeded": 1,
+                "failed": 0,
+                "elapsed_seconds": 1.0,
+                "tasks": [],
+                "outputs": [],
+                "errors": [],
+            }
+
+        def sleep(self, seconds: float):
+            return None
+
+    backend = RemoteExecutionBackend(FakeClient(), poll_seconds=0.1, download_artifacts=False)
+    job = TranscriptionJob(
+        sources=(SourceSpec(kind="url", value="https://example.com/watch"),),
+        task_id="remote-job-3",
+        output_dir=output_dir,
+        output_formats=("json",),
+    )
+
+    result = backend.run(job)
+
+    assert result.ok is True
 
 
 def test_task_payloads_round_trip_remote_url_cookie_blob(tmp_path: Path) -> None:

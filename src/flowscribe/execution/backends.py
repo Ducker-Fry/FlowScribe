@@ -8,7 +8,7 @@ from datetime import datetime
 import copy
 import inspect
 import logging
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from flowscribe.core.errors import DownloadError, FlowScribeError, TranscriptionError
 from flowscribe.core.models import OutputArtifacts
@@ -464,6 +464,9 @@ class RemoteExecutionBackend(ExecutionBackend):
             source_payload=source_payload,
             cookies_payload=cookies_payload,
         )
+        remote_output_dir = self._remote_output_dir_for_job(sub_job)
+        if remote_output_dir is not None:
+            payload["output"]["output_dir"] = remote_output_dir
         progress(
             ProgressEvent(
                 stage="discover",
@@ -499,6 +502,12 @@ class RemoteExecutionBackend(ExecutionBackend):
             source_kind=source.kind,
             local_task_id=task_spec.task_id,
         )
+
+    def _remote_output_dir_for_job(self, job: TranscriptionJob) -> str | None:
+        if not self._download_artifacts:
+            return None
+        remote_output_dir = PurePosixPath(".flowscribe-remote") / "tasks" / (job.task_id or "adhoc-task")
+        return remote_output_dir.as_posix()
 
     def _emit_remote_events(
         self,

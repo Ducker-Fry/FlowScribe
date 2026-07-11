@@ -44,6 +44,7 @@ class AddUrlHandler:
         default_language: str | None = None,
         api_token: str | None = None,
         task_retention_hours: float | None = 24.0,
+        max_concurrent_remote_tasks: int | None = 1,
     ) -> None:
         self.queue_store_path = queue_store_path
         self.store = BatchQueueStore(queue_store_path)
@@ -54,6 +55,7 @@ class AddUrlHandler:
             blob_resolver=self.upload_store.resolve,
             blob_deleter=self.upload_store.delete,
             task_retention=_retention_timedelta_from_hours(self.task_retention_hours),
+            max_concurrent_tasks=max_concurrent_remote_tasks,
         )
         self.default_output_dir = default_output_dir or (Path.home() / "Documents" / "FlowScribe")
         self.default_output_formats = default_output_formats

@@ -146,6 +146,40 @@ def test_server_submit_agent_task_endpoint(monkeypatch, server_thread: Bookmarkl
     assert data["task_id"] == "task-1"
 
 
+def test_server_rejects_task_when_capacity_is_full(monkeypatch, server_thread: BookmarkletServer) -> None:
+    from flowscribe.server.agent_api import AgentTaskRecord
+
+    with server_thread.handler.task_store._lock:
+        server_thread.handler.task_store._tasks["busy-task"] = AgentTaskRecord(
+            task_id="busy-task",
+            status="running",
+            created_at="2026-06-04T10:00:00.000Z",
+            source={"kind": "local", "value": "C:/media/busy.mp4"},
+            job_payload={},
+            task_spec={"task_id": "busy-task"},
+        )
+
+    conn = HTTPConnection("127.0.0.1", 18765, timeout=5)
+    payload = json.dumps(
+        {
+            "task_id": "task-2",
+            "source": {"kind": "local", "value": "C:/media/sample.mp4"},
+            "output": {"formats": ["json"], "output_dir": "outputs"},
+        }
+    )
+    conn.request(
+        "POST",
+        "/v1/tasks",
+        body=payload,
+        headers={"Content-Type": "application/json"},
+    )
+    response = conn.getresponse()
+
+    assert response.status == 429
+    data = json.loads(response.read().decode())
+    assert "maximum number of tasks" in data["error"]
+
+
 def test_server_task_events_endpoint(monkeypatch, server_thread: BookmarkletServer) -> None:
     from flowscribe.tasks.models import ProgressEvent, TranscriptionResult
 

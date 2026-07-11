@@ -1,9 +1,12 @@
 # Server Configuration
 
-`flowscribe serve` starts a local HTTP server for two kinds of clients:
+`flowscribe serve` starts an HTTP server for two kinds of clients:
 
 - human/browser tools such as the bookmarklet queue
 - agent / automation clients using `/v1/tasks`
+
+It can run on the same Windows workstation as the GUI, or on a separate remote
+host that receives jobs from CLI or GUI clients over HTTP.
 
 ## Basic Usage
 
@@ -23,6 +26,10 @@ Default behavior:
 - language: auto-detect
 - queue store: `batch-queue.json`
 - agent task store: `agent-tasks.json` in the same directory as the queue store
+
+For an end-to-end remote deployment walkthrough, see
+[remote-server-guide.md](remote-server-guide.md) and
+[remote-server-guide-en.md](remote-server-guide-en.md).
 
 ## Common Configuration
 
@@ -162,6 +169,40 @@ These are intended for:
 - RAG ingestion pipelines
 
 For request/response shapes, see [Agent API Guide](agent-api.md).
+
+## Operational Notes For Remote Hosts
+
+FlowScribe now keeps the HTTP control plane responsive during long-running jobs:
+
+- request handling uses a threaded HTTP server so `status`, `events`, and
+  `result` requests can still be served while another task is transcribing
+- heavy remote transcription is still limited to one active task by default, so
+  small hosts do not accept multiple memory-heavy jobs at once
+- when the active-task limit is reached, `POST /v1/tasks` returns HTTP `429`
+
+This default is especially helpful on low-memory servers where one model load
+or URL download can otherwise starve the whole machine.
+
+## Artifact Staging For Remote Clients
+
+When a client submits a remote job and requests artifact download, the server
+stores result files in a server-managed staging directory first, then exposes
+them through `/v1/artifacts/{artifact_id}` for client download.
+
+That behavior avoids leaking a client-local path such as `E:\Temp` into a
+Linux server filesystem and keeps remote outputs under server-controlled
+directories.
+
+## Sizing Guidance
+
+Suggested starting points:
+
+- `tiny` for very small Linux hosts or smoke tests
+- `small` for everyday remote use when the host has enough RAM and patience for
+  longer runs
+- keep one active remote task at a time on 2 GB machines
+- if you need login-required URL access, store a valid Netscape-format
+  `cookies.txt` on the server and reference it from the remote server profile
 
 ## Task Persistence And Recovery
 
