@@ -204,6 +204,13 @@ Suggested starting points:
 - if you need login-required URL access, store a valid Netscape-format
   `cookies.txt` on the server and reference it from the remote server profile
 
+The broader reason for this sizing model is client/server role separation:
+
+- let the client machine stay responsive for normal work
+- match the remote model size to the actual server hardware
+- allow very small servers to participate with `tiny` first, instead of forcing
+  every node to run a larger default model
+
 ## Task Persistence And Recovery
 
 FlowScribe persists `/v1/tasks` state to a local JSON file:

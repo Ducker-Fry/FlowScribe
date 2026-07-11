@@ -15,6 +15,37 @@ See also:
 - [server-configuration.md](server-configuration.md)
 - [agent-api.md](agent-api.md)
 
+## Why Use A Client/Server Architecture
+
+The main design goal is to separate the interactive workstation from the heavy
+transcription workload.
+
+Running `base` or `small` locally can be acceptable, but larger or higher
+quality models may noticeably consume CPU, RAM, disk I/O, and battery on the
+machine you are actively using. By moving transcription to a server, the local
+client can keep enough resources for browsing, editing transcripts, writing,
+coding, meetings, or other work while the remote node handles model inference
+and media acquisition.
+
+This also lets each server use a model that matches its hardware:
+
+- a 2-core / 2 GB server should start with `tiny`
+- a stronger CPU server can try `base` or `small`
+- a GPU or high-memory server can be reserved for larger models
+- a shared server can centralize cookies, URL downloading, and long-running
+  jobs instead of duplicating that setup on every client
+
+The current remote server is intentionally conservative: the control plane can
+serve multiple lightweight HTTP requests at once, but heavy transcription is
+kept to one active task by default. That is a better fit for small machines than
+accepting several model-loading jobs and then failing through memory pressure.
+
+Longer term, this boundary is also a path toward edge-style worker nodes. A
+phone, tablet, mini PC, or spare laptop could become a FlowScribe server if it
+can run the required media and transcription runtime within its memory,
+thermal, and battery limits. That is future planning, not a guarantee that
+mobile server packages are available today.
+
 ## What Changed
 
 Recent remote-execution improvements:
@@ -295,4 +326,3 @@ Artifacts finish on the server but not locally:
 
 - make sure artifact download is enabled in the profile or per-run settings
 - retry with `flowscribe remote result SERVER TASK_ID --download-artifacts`
-
