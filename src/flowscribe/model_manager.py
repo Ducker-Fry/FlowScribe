@@ -403,7 +403,7 @@ def _download_paraformer_package(target_root: Path, cache_root: Path, *, progres
                 progress_callbacks=callbacks,
                 allow_patterns=list(_paraformer_allow_patterns(target_dir.name)),
             )
-        except FileDownloadError as exc:
+        except FileDownloadError:
             if progress is not None:
                 progress(f"Retrying {model_source_id} with single-thread download...")
             shutil.rmtree(target_dir, ignore_errors=True)

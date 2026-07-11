@@ -30,31 +30,41 @@ def env_path(name: str) -> Path | None:
     return Path(raw_value).expanduser().resolve()
 
 
-@lru_cache(maxsize=1)
-def resolve_runtime_layout() -> RuntimeLayout:
+@lru_cache(maxsize=16)
+def _resolve_runtime_layout_cached(
+    frozen: bool,
+    executable: str,
+    app_root_override: str | None,
+    core_dir_override: str | None,
+    code_dir_override: str | None,
+) -> RuntimeLayout:
     source_root = Path(__file__).resolve().parents[3]
-    frozen = bool(getattr(sys, "frozen", False))
-    executable_dir = Path(sys.executable).resolve().parent if frozen else source_root
+    executable_dir = Path(executable).resolve().parent if frozen else source_root
 
-    app_root = env_path(APP_ROOT_ENV) or _infer_app_root(
+    def _path_override(raw_value: str | None) -> Path | None:
+        if raw_value is None or not raw_value.strip():
+            return None
+        return Path(raw_value).expanduser().resolve()
+
+    app_root = _path_override(app_root_override) or _infer_app_root(
         frozen=frozen,
         executable_dir=executable_dir,
         source_root=source_root,
     )
-    core_dir = env_path(CORE_DIR_ENV) or _infer_core_dir(
+    core_dir = _path_override(core_dir_override) or _infer_core_dir(
         frozen=frozen,
         executable_dir=executable_dir,
         app_root=app_root,
         source_root=source_root,
     )
-    code_dir = env_path(CODE_DIR_ENV) or _infer_code_dir(
+    code_dir = _path_override(code_dir_override) or _infer_code_dir(
         frozen=frozen,
         app_root=app_root,
         source_root=source_root,
     )
     layered = (
-        env_path(CODE_DIR_ENV) is not None
-        or env_path(CORE_DIR_ENV) is not None
+        _path_override(code_dir_override) is not None
+        or _path_override(core_dir_override) is not None
         or (frozen and core_dir != app_root)
     )
     return RuntimeLayout(
@@ -64,6 +74,16 @@ def resolve_runtime_layout() -> RuntimeLayout:
         source_root=source_root,
         frozen=frozen,
         layered=layered,
+    )
+
+
+def resolve_runtime_layout() -> RuntimeLayout:
+    return _resolve_runtime_layout_cached(
+        bool(getattr(sys, "frozen", False)),
+        str(sys.executable),
+        os.environ.get(APP_ROOT_ENV),
+        os.environ.get(CORE_DIR_ENV),
+        os.environ.get(CODE_DIR_ENV),
     )
 
 
