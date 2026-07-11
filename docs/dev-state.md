@@ -9,7 +9,7 @@ and then return here for more detail.
 - Name: FlowScribe
 - Path: `E:\Draft\FlowScribe`
 - Language: Python
-- Current version: v0.3.9
+- Current version: v0.3.10
 - Next release: v1.0.0 (major release in preparation)
 - Current branch: `dev`
 - Main branch: `main`

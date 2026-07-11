@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## 0.3.9 - 2026-07-11
+## 0.3.10 - 2026-07-11
 
 - Added remote execution support across CLI and GUI so local clients can submit work to another FlowScribe server and download finished artifacts back to the workstation.
 - Added persisted remote server profiles with base URL, bearer token, timeout, artifact-download preference, and optional server-side cookies path for login-required URL media.
@@ -10,6 +10,7 @@
 - Improved remote URL media acquisition by ignoring temporary `yt-dlp` partial files when selecting the final downloaded audio artifact.
 - Fixed native-engine service isolation in CI by preventing a unit test from depending on a locally installed `flowscribe-engine` runtime.
 - Fixed Windows release packaging on fresh environments by auto-installing `PyInstaller` into the dedicated packaging virtual environment when it is missing.
+- Fixed GitHub release verification to use the current unified `FlowScribePortable` package layout for helper checks and packaged smoke tests.
 
 ## 0.2.5 - 2026-05-15
 

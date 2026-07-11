@@ -99,7 +99,7 @@ jobs:
       - name: Verify packaged WASAPI helper
         shell: pwsh
         run: |
-          $helperPath = ".\dist\FlowScribeGUI\WasapiCaptureHelper.exe"
+          $helperPath = ".\dist\FlowScribePortable\core\WasapiCaptureHelper.exe"
           if (-not (Test-Path $helperPath)) {
             throw "WASAPI helper is missing from the GUI package: $helperPath"
           }
@@ -120,14 +120,14 @@ jobs:
 
       - name: Verify packaged executable
         shell: pwsh
-        run: .\dist\FlowScribe\FlowScribe.exe doctor -o release-smoke-test --model small --skip-model-access
+        run: .\dist\FlowScribePortable\run-cli.bat doctor -o release-smoke-test --model small --skip-model-access
 
       - name: Verify packaged GUI executable
         shell: pwsh
         run: |
           $process = Start-Process `
-            -FilePath ".\dist\FlowScribeGUI\FlowScribeGUI.exe" `
-            -ArgumentList "--self-test" `
+            -FilePath "cmd.exe" `
+            -ArgumentList "/c", "set FLOWSCRIBE_GUI_AUTOCLOSE_MS=500&& .\dist\FlowScribePortable\run-gui.bat --self-test" `
             -PassThru `
             -Wait `
             -WindowStyle Hidden
@@ -143,14 +143,14 @@ jobs:
           if (Test-Path $cliZipPath) {
             Remove-Item -LiteralPath $cliZipPath -Force
           }
-          Compress-Archive -LiteralPath "dist\FlowScribe" -DestinationPath $cliZipPath -CompressionLevel Optimal
+          Compress-Archive -LiteralPath "dist\FlowScribePortable" -DestinationPath $cliZipPath -CompressionLevel Optimal
 
           $guiZipName = "FlowScribeGUI-$env:RELEASE_VERSION-windows-x64.zip"
           $guiZipPath = Join-Path "dist" $guiZipName
           if (Test-Path $guiZipPath) {
             Remove-Item -LiteralPath $guiZipPath -Force
           }
-          Compress-Archive -LiteralPath "dist\FlowScribeGUI" -DestinationPath $guiZipPath -CompressionLevel Optimal
+          Compress-Archive -LiteralPath "dist\FlowScribePortable" -DestinationPath $guiZipPath -CompressionLevel Optimal
 
           "RELEASE_CLI_ZIP=$cliZipPath" | Out-File -FilePath $env:GITHUB_ENV -Append
           "RELEASE_CLI_ZIP_NAME=$cliZipName" | Out-File -FilePath $env:GITHUB_ENV -Append
