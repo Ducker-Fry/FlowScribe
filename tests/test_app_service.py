@@ -55,6 +55,7 @@ def test_transcription_service_runs_local_source_with_progress(monkeypatch, tmp_
 
     monkeypatch.setattr("flowscribe.app.service.LocalFileSource", FakeLocalFileSource)
     monkeypatch.setattr("flowscribe.app.service._build_pipeline", lambda job, settings: FakePipeline())
+    monkeypatch.setattr("flowscribe.app.service._validate_provider_runtime", lambda job, settings: None)
 
     job = TranscriptionJob(
         sources=(SourceSpec(kind="local", value=str(media)),),
@@ -560,6 +561,7 @@ def test_transcription_service_native_progressive_resume_note_is_explicit(
 
     monkeypatch.setattr("flowscribe.app.service.LocalFileSource", FakeLocalFileSource)
     monkeypatch.setattr("flowscribe.app.service._build_pipeline", lambda job, settings: FakePipeline())
+    monkeypatch.setattr("flowscribe.app.service._validate_provider_runtime", lambda job, settings: None)
 
     events = []
     job = TranscriptionJob(
@@ -667,6 +669,7 @@ def test_transcription_service_uses_python_progressive_for_paraformer_provider(
 
     monkeypatch.setattr("flowscribe.app.service.LocalFileSource", FakeLocalFileSource)
     monkeypatch.setattr("flowscribe.app.service._build_pipeline", lambda job, settings: FakePipeline())
+    monkeypatch.setattr("flowscribe.app.service._validate_provider_runtime", lambda job, settings: None)
 
     job = TranscriptionJob(
         sources=(SourceSpec(kind="local", value=str(media)),),
