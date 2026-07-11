@@ -1,15 +1,6 @@
 """Stable public application-layer API for FlowScribe."""
 
-from flowscribe.tasks.models import (
-    CancelAck,
-    CancelRequest,
-    ProgressCallback,
-    ProgressEvent,
-    SourceSpec,
-    TaskSpec,
-    TranscriptionJob,
-    TranscriptionResult,
-)
+from __future__ import annotations
 
 __all__ = [
     "CancelAck",
@@ -29,4 +20,17 @@ def __getattr__(name: str):
         from flowscribe.app.service import TranscriptionService
 
         return TranscriptionService
+    if name in {
+        "CancelAck",
+        "CancelRequest",
+        "ProgressCallback",
+        "ProgressEvent",
+        "SourceSpec",
+        "TaskSpec",
+        "TranscriptionJob",
+        "TranscriptionResult",
+    }:
+        from flowscribe.tasks import models as task_models
+
+        return getattr(task_models, name)
     raise AttributeError(name)

@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import queue
 import subprocess
-import sys
 import threading
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -20,6 +19,7 @@ from flowscribe.media.system_audio_capture_models import (
     CaptureStartResult,
     CaptureSupportStatus,
 )
+from flowscribe.utils.runtime_layout import resolve_runtime_layout
 from flowscribe.utils.subprocess import hidden_subprocess_kwargs
 
 HELPER_EXE_NAME = "WasapiCaptureHelper.exe"
@@ -320,14 +320,12 @@ class CaptureController:
 
 
 def _helper_candidates() -> tuple[Path, ...]:
-    executable_dir = Path(sys.executable).resolve().parent
-    source_root = Path(__file__).resolve().parents[3]
-    bundle_dir = Path(getattr(sys, "_MEIPASS", executable_dir))
+    layout = resolve_runtime_layout()
     return (
-        executable_dir / HELPER_EXE_NAME,
-        bundle_dir / HELPER_EXE_NAME,
-        source_root / "build" / "wasapi-helper" / HELPER_EXE_NAME,
-        source_root
+        layout.core_dir / HELPER_EXE_NAME,
+        layout.app_root / HELPER_EXE_NAME,
+        layout.source_root / "build" / "wasapi-helper" / HELPER_EXE_NAME,
+        layout.source_root
         / "tools"
         / "wasapi-capture-helper"
         / "src"

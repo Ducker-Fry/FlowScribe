@@ -69,6 +69,7 @@ class ProgressiveTranscriptionExecutor:
         merged_segments: list[TranscriptSegment] = []
         processed_duration_seconds = 0.0
         failed_count = 0
+        resumed_chunks = 0
         first_transcript: Transcript | None = None
         chunk_lookup = {chunk.index: chunk for chunk in chunk_plan.chunks}
         pending_chunks = [
@@ -76,6 +77,7 @@ class ProgressiveTranscriptionExecutor:
             for chunk in chunk_plan.chunks
             if chunk.index not in cached_results_by_index
         ]
+        effective_workers = 1 if not pending_chunks else self._resolve_max_workers(max_workers=max_workers)
         completed_results_by_index: dict[int, ChunkTranscriptionResult] = dict(cached_results_by_index)
         for update in self._yield_updates(
             audio=audio,
@@ -129,6 +131,8 @@ class ProgressiveTranscriptionExecutor:
                     continue
 
             chunk_results.append(result)
+            if update.resumed:
+                resumed_chunks += 1
             first_transcript = first_transcript or result.transcript
             appended_segments = self._merge_policy.merge(
                 existing_segments=merged_segments,
@@ -155,6 +159,8 @@ class ProgressiveTranscriptionExecutor:
                     chunk_plan.duration_info.duration_seconds or processed_duration_seconds,
                 ),
                 cache_dir=None if cache_store is None else cache_store.cache_dir,
+                resumed_chunks=resumed_chunks,
+                effective_parallel_chunks=effective_workers,
             )
             if cache_store is not None:
                 cache_store.save_chunk_result(result)
@@ -194,6 +200,8 @@ class ProgressiveTranscriptionExecutor:
                 chunk_plan.duration_info.duration_seconds or processed_duration_seconds,
             ),
             cache_dir=None if cache_store is None else cache_store.cache_dir,
+            resumed_chunks=resumed_chunks,
+            effective_parallel_chunks=effective_workers,
         )
         if cache_store is not None:
             cache_store.save_state(
@@ -285,6 +293,7 @@ class ProgressiveTranscriptionExecutor:
             chunk_results=(),
             transcript=Transcript(source=audio.source, segments=()),
             processed_duration_seconds=0.0,
+            effective_parallel_chunks=1,
         )
 
     def _resolve_max_workers(self, *, max_workers: int) -> int:

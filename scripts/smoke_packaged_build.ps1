@@ -1,7 +1,10 @@
 param(
     [string]$CliDir = "dist\\FlowScribe",
     [string]$GuiDir = "dist\\FlowScribeGUI",
-    [string]$Model = "tiny"
+    [string]$PortableRoot = "dist\\FlowScribePortable",
+    [string]$Model = "tiny",
+    [string]$ParaformerSample = "samples\\chinese_test.wav",
+    [switch]$SkipParaformer
 )
 
 $ErrorActionPreference = "Stop"
@@ -24,6 +27,11 @@ $guiExe = Join-Path $GuiDir "FlowScribeGUI.exe"
 $ffmpegExe = Join-Path $CliDir "ffmpeg.exe"
 $smokeAudio = Join-Path $CliDir "smoke-tone.wav"
 $smokeOutput = Join-Path $CliDir "smoke-output"
+$portableCoreDir = Join-Path $PortableRoot "core"
+$portableCliExe = Join-Path $portableCoreDir "cli-core.exe"
+$portableGuiExe = Join-Path $portableCoreDir "gui-core.exe"
+$portableModelsDir = Join-Path $PortableRoot "models"
+$paraformerOutput = Join-Path $PortableRoot "paraformer-smoke-output"
 
 Assert-PathExists -PathValue $cliExe
 Assert-PathExists -PathValue $ffmpegExe
@@ -61,5 +69,30 @@ $mdOutput = Join-Path $smokeOutput "smoke-tone.md"
 Assert-PathExists -PathValue $txtOutput
 Assert-PathExists -PathValue $mdOutput
 
+if (-not $SkipParaformer) {
+    Write-Step "Run packaged Paraformer smoke test"
+    Assert-PathExists -PathValue $portableCliExe
+    Assert-PathExists -PathValue $portableGuiExe
+    Assert-PathExists -PathValue $ParaformerSample
+    Assert-PathExists -PathValue (Join-Path $portableModelsDir "paraformer-zh\\tokens.json")
+    Assert-PathExists -PathValue (Join-Path $portableModelsDir "paraformer-zh\\am.mvn")
+    Assert-PathExists -PathValue (Join-Path $portableModelsDir "ct-punc\\tokens.json")
+    Assert-PathExists -PathValue (Join-Path $portableModelsDir "ct-punc\\jieba.c.dict")
+    Assert-PathExists -PathValue (Join-Path $portableModelsDir "ct-punc\\jieba_usr_dict")
+
+    & $portableGuiExe --self-test
+    if ($LASTEXITCODE -ne 0) {
+        throw "Portable GUI self-test failed with exit code $LASTEXITCODE"
+    }
+
+    & $portableCliExe transcribe $ParaformerSample -o $paraformerOutput --provider paraformer --model paraformer-zh --overwrite
+    if ($LASTEXITCODE -ne 0) {
+        throw "Packaged Paraformer smoke test failed with exit code $LASTEXITCODE"
+    }
+
+    $paraformerTxtOutput = Join-Path $paraformerOutput "chinese_test.txt"
+    Assert-PathExists -PathValue $paraformerTxtOutput
+}
+
 Write-Step "Smoke test passed"
-Write-Host "CLI doctor, GUI self-test, and packaged transcription smoke test all succeeded." -ForegroundColor Green
+Write-Host "CLI doctor, GUI self-test, packaged transcription smoke test, and Paraformer smoke test all succeeded." -ForegroundColor Green

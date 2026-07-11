@@ -70,4 +70,8 @@ class TranscriptArtifactWriter:
             media_path=media_path,
             media_kind=media_kind,
             auto_bind_media=media_path is not None,
+            source_kind="local",
+            source_value=str(transcript.source.path),
+            source_locator=str(transcript.source.path),
+            original_filename=transcript.source.path.name,
         )

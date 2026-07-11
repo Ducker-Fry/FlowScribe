@@ -146,6 +146,40 @@ def test_server_submit_agent_task_endpoint(monkeypatch, server_thread: Bookmarkl
     assert data["task_id"] == "task-1"
 
 
+def test_server_rejects_task_when_capacity_is_full(monkeypatch, server_thread: BookmarkletServer) -> None:
+    from flowscribe.server.agent_api import AgentTaskRecord
+
+    with server_thread.handler.task_store._lock:
+        server_thread.handler.task_store._tasks["busy-task"] = AgentTaskRecord(
+            task_id="busy-task",
+            status="running",
+            created_at="2026-06-04T10:00:00.000Z",
+            source={"kind": "local", "value": "C:/media/busy.mp4"},
+            job_payload={},
+            task_spec={"task_id": "busy-task"},
+        )
+
+    conn = HTTPConnection("127.0.0.1", 18765, timeout=5)
+    payload = json.dumps(
+        {
+            "task_id": "task-2",
+            "source": {"kind": "local", "value": "C:/media/sample.mp4"},
+            "output": {"formats": ["json"], "output_dir": "outputs"},
+        }
+    )
+    conn.request(
+        "POST",
+        "/v1/tasks",
+        body=payload,
+        headers={"Content-Type": "application/json"},
+    )
+    response = conn.getresponse()
+
+    assert response.status == 429
+    data = json.loads(response.read().decode())
+    assert "maximum number of tasks" in data["error"]
+
+
 def test_server_task_events_endpoint(monkeypatch, server_thread: BookmarkletServer) -> None:
     from flowscribe.tasks.models import ProgressEvent, TranscriptionResult
 
@@ -355,3 +389,89 @@ def test_agent_task_store_marks_interrupted_running_task_failed(tmp_path: Path) 
     assert task is not None
     assert task["status"] == "failed"
     assert "restart" in (task["error"] or "").lower()
+
+
+def test_agent_task_store_prunes_expired_task_artifacts_and_uploads(tmp_path: Path) -> None:
+    from datetime import timedelta
+
+    from flowscribe.server.agent_api import AgentTaskStore
+    from flowscribe.server.storage import UploadBlobStore
+
+    store_path = tmp_path / "agent-tasks.json"
+    outputs_dir = tmp_path / "outputs"
+    outputs_dir.mkdir(parents=True, exist_ok=True)
+    artifact_path = outputs_dir / "expired.json"
+    artifact_path.write_text("{}", encoding="utf-8")
+
+    upload_store = UploadBlobStore(tmp_path / "remote-blobs")
+    upload = upload_store.save(
+        filename="sample.mp4",
+        source_stream=artifact_path.open("rb"),
+        content_length=artifact_path.stat().st_size,
+    )
+    cookies_upload = upload_store.save(
+        filename="cookies.txt",
+        source_stream=artifact_path.open("rb"),
+        content_length=artifact_path.stat().st_size,
+    )
+
+    store_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "tasks": [
+                    {
+                        "task_id": "expired-task",
+                        "status": "completed",
+                        "created_at": "2026-06-04T10:00:00.000Z",
+                        "updated_at": "2026-06-04T10:00:01.000Z",
+                        "source": {"kind": "local", "value": str(artifact_path)},
+                        "job_payload": {
+                            "task_id": "expired-task",
+                            "source": {"kind": "remote_blob", "value": upload.blob_id},
+                            "cookies": {"kind": "remote_blob", "value": cookies_upload.blob_id},
+                        },
+                        "task_spec": {
+                            "task_id": "expired-task",
+                            "resume_token": None,
+                            "checkpoint_id": None,
+                            "cache_key": "v0_demo",
+                        },
+                        "events": [],
+                        "result": {
+                            "outputs": [
+                                {
+                                    "paths": [str(artifact_path)],
+                                    "artifacts": [
+                                        {
+                                            "artifact_id": "artifact-1",
+                                            "path": str(artifact_path),
+                                        }
+                                    ],
+                                }
+                            ]
+                        },
+                        "error": None,
+                    }
+                ],
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    store = AgentTaskStore(
+        store_path,
+        blob_resolver=upload_store.resolve,
+        blob_deleter=upload_store.delete,
+        task_retention=timedelta(hours=1),
+    )
+
+    assert store.get_task("expired-task") is None
+    assert artifact_path.exists() is False
+    assert upload_store.resolve(upload.blob_id) is None
+    assert upload_store.resolve(cookies_upload.blob_id) is None
+
+    saved = json.loads(store_path.read_text(encoding="utf-8"))
+    assert saved["tasks"] == []

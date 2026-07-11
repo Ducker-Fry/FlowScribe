@@ -42,11 +42,12 @@ def test_settings_dialog_has_tabs(qtbot):
     assert isinstance(dialog.tabs, QTabWidget)
 
     # Check that all expected tabs exist
-    assert dialog.tabs.count() == 4
+    assert dialog.tabs.count() == 5
     tab_names = [dialog.tabs.tabText(i) for i in range(dialog.tabs.count())]
     assert "Appearance" in tab_names
     assert "Transcription" in tab_names
     assert "Network" in tab_names
+    assert "Remote" in tab_names
     assert "Advanced" in tab_names
 
 
@@ -171,6 +172,43 @@ def test_advanced_tab_has_progressive_settings(qtbot):
     assert isinstance(dialog.progressive_max_workers_spin, QSpinBox)
 
 
+def test_remote_tab_has_execution_settings(qtbot, monkeypatch, tmp_path):
+    """Test that remote tab exposes queue remote execution defaults."""
+    monkeypatch.setenv("FLOWSCRIBE_CONFIG_DIR", str(tmp_path / "config"))
+    from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QLineEdit
+
+    from flowscribe.gui.dialogs.settings_dialog import SettingsDialog
+
+    app = QApplication.instance()
+    if not app:
+        pytest.skip("QApplication not available")
+
+    settings = {
+        "execution_mode": "remote",
+        "server_target": "http://127.0.0.1:18769",
+        "remote_token": "secret",
+        "remote_poll_seconds": 2.0,
+        "download_artifacts": False,
+    }
+
+    dialog = SettingsDialog(None, settings)
+    qtbot.addWidget(dialog)
+
+    assert hasattr(dialog, "execution_mode_combo")
+    assert isinstance(dialog.execution_mode_combo, QComboBox)
+    assert hasattr(dialog, "server_target_combo")
+    assert isinstance(dialog.server_target_combo, QComboBox)
+    assert hasattr(dialog, "remote_token_input")
+    assert isinstance(dialog.remote_token_input, QLineEdit)
+    assert hasattr(dialog, "remote_poll_seconds_spin")
+    assert isinstance(dialog.remote_poll_seconds_spin, QDoubleSpinBox)
+    assert hasattr(dialog, "download_artifacts_check")
+    assert isinstance(dialog.download_artifacts_check, QCheckBox)
+    assert dialog.execution_mode_combo.currentData() == "remote"
+    assert dialog.server_target_combo.currentText() == "http://127.0.0.1:18769"
+    assert "Direct URL" in dialog.resolved_target_label.text()
+
+
 def test_theme_change_applies_immediately(qtbot):
     """Test that theme change applies immediately."""
     from PySide6.QtWidgets import QApplication
@@ -218,6 +256,11 @@ def test_settings_collection_includes_all_tabs(qtbot):
         "network_family": "auto",
         "proxy": None,
         "cookies_path": None,
+        "execution_mode": "remote",
+        "server_target": "http://127.0.0.1:18769",
+        "remote_token": "secret",
+        "remote_poll_seconds": 2.0,
+        "download_artifacts": False,
         "progressive_enabled": True,
         "progressive_resume": True,
         "progressive_chunk_seconds": 30.0,
@@ -243,6 +286,11 @@ def test_settings_collection_includes_all_tabs(qtbot):
     assert "network_family" in collected
     assert "proxy" in collected
     assert "cookies_path" in collected
+    assert "execution_mode" in collected
+    assert "server_target" in collected
+    assert "remote_token" in collected
+    assert "remote_poll_seconds" in collected
+    assert "download_artifacts" in collected
     assert "progressive_enabled" in collected
     assert "progressive_resume" in collected
     assert "progressive_chunk_seconds" in collected

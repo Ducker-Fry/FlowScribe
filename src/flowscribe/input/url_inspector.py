@@ -119,8 +119,18 @@ class UrlInspector:
         try:
             from yt_dlp import YoutubeDL
             from yt_dlp.utils import DownloadError as YtDlpDownloadError
-        except ImportError as exc:
+        except ModuleNotFoundError as exc:
+            if exc.name != "yt_dlp":
+                raise DownloadError(
+                    "yt-dlp is present but failed to import one of its runtime dependencies.\n"
+                    f"Original error: {exc.__class__.__name__}: {exc}"
+                ) from exc
             raise DownloadError("yt-dlp is not installed. Run `python -m pip install -e .`.") from exc
+        except ImportError as exc:
+            raise DownloadError(
+                "yt-dlp is present but failed to initialize correctly.\n"
+                f"Original error: {exc.__class__.__name__}: {exc}"
+            ) from exc
 
         options = {
             "noplaylist": True,

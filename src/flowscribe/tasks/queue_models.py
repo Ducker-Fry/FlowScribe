@@ -18,6 +18,11 @@ QueueItemStatus = Literal["pending", "running", "completed", "failed", "canceled
 class QueueItemSettings:
     output_dir: Path = field(default_factory=lambda: Path("outputs"))
     output_name_base: str = ""
+    execution_mode: str = "local"
+    server_target: str | None = None
+    remote_token: str | None = None
+    remote_poll_seconds: float = 1.0
+    download_artifacts: bool | None = None
     provider_name: str = "local-whisper"
     model_name: str = "small"
     language: str | None = None

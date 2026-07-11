@@ -60,6 +60,24 @@ You get:
 - a GUI workspace for review and correction
 - a browser-fed batch URL queue through the bookmarklet flow
 
+## Remote Execution / 远端执行
+
+FlowScribe can offload transcription to another FlowScribe server and pull the finished artifacts back to the local machine.
+
+- The main reason is resource isolation: keep the desktop usable while heavier models run elsewhere.
+- A low-end server can start with `tiny`; stronger servers can move to `base`, `small`, or larger models when memory and CPU allow.
+- `CLI` and `GUI` can both switch from local execution to remote execution.
+- Remote server profiles can store the base URL, bearer token, timeout, and a server-side `cookies.txt` path.
+- When artifact download is enabled, the server writes results into its own staging directory and the client downloads them back into the requested local output directory.
+- The HTTP control plane now stays responsive during long-running jobs, while heavy remote transcription is still limited to one active task by default on small hosts.
+- Longer term, the same client/server boundary can support more server types, including phone or tablet nodes if their runtime and thermal limits are acceptable.
+
+Start here:
+
+- deployment and client setup: [中文](docs/remote-server-guide.md) / [English](docs/remote-server-guide-en.md)
+- server endpoint details: [docs/server-configuration.md](docs/server-configuration.md)
+- task/result payload details: [docs/agent-api.md](docs/agent-api.md)
+
 ## 一键收集网页，批量慢慢转 / Collect Now, Process In Batch Later
 
 > 把浏览器变成 FlowScribe 的采集入口。  
@@ -118,6 +136,7 @@ Start here:
 
 - CLI first: [中文](docs/user-guide.md) / [English](docs/user-guide-en.md)
 - GUI first: [中文](docs/gui-user-guide.md) / [English](docs/gui-user-guide-en.md)
+- remote execution and deployment: [中文](docs/remote-server-guide.md) / [English](docs/remote-server-guide-en.md)
 - packaged install help: [中文](docs/release-installation.md) / [English](docs/release-installation-en.md)
 - release downloads: [Releases](https://github.com/Ducker-Fry/FlowScribe/releases)
 
@@ -250,6 +269,39 @@ flowscribe gui
 - [发布安装说明](docs/release-installation.md) / [English](docs/release-installation-en.md)
 - [打包说明](docs/packaging.md) (`English only for now`)
 - [Releases](https://github.com/Ducker-Fry/FlowScribe/releases)
+
+#### Build Portable Packages
+
+FlowScribe now builds one shared portable release root:
+
+```text
+dist\FlowScribePortable\
+```
+
+Canonical packaging commands:
+
+```powershell
+cd E:\Draft\FlowScribe
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_core_package.ps1 -Python python
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_code_package.ps1 -Python python
+```
+
+What they do:
+
+- `build_core_package.ps1` rebuilds `dist\FlowScribePortable\core` with Python runtime, third-party libraries, Qt, ffmpeg/ffprobe, helper executables, and thin GUI/CLI launchers.
+- `build_code_package.ps1` rebuilds `dist\FlowScribePortable\code` with FlowScribe-only `.pyc` business code and self-owned resources, and refreshes `dist\FlowScribePortable\docs`.
+
+Incremental rule of thumb:
+
+- if you only changed `src\flowscribe\...` or app-owned resources, rebuild `code`
+- if you changed dependencies, runtime packaging, launchers, Qt, ffmpeg, or helpers, rebuild `core`
+
+Portable launch entrypoints:
+
+```powershell
+.\dist\FlowScribePortable\run-cli.bat --help
+.\dist\FlowScribePortable\run-gui.bat
+```
 
 ## 本地服务与书签 / Local Service And Bookmarklet
 

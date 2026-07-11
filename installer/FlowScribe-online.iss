@@ -9,10 +9,10 @@
 #define OnlineGuiZipName "FlowScribeGUI-0.3.3-windows-x64.zip"
 #endif
 #ifndef OnlineCliUrl
-#define OnlineCliUrl "https://github.com/Ducker-Fry/FlowScribe/releases/download/" + OnlineVersion + "/" + OnlineCliZipName
+#define OnlineCliUrl "https://gitee.com/Ducker-Fry/FlowScribe/releases/download/" + OnlineVersion + "/" + OnlineCliZipName
 #endif
 #ifndef OnlineGuiUrl
-#define OnlineGuiUrl "https://github.com/Ducker-Fry/FlowScribe/releases/download/" + OnlineVersion + "/" + OnlineGuiZipName
+#define OnlineGuiUrl "https://gitee.com/Ducker-Fry/FlowScribe/releases/download/" + OnlineVersion + "/" + OnlineGuiZipName
 #endif
 #ifndef OnlineCliSha256
 #error OnlineCliSha256 must be provided via ISCC /DOnlineCliSha256=...

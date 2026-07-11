@@ -5,30 +5,24 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QFileSystemWatcher, QThread, QUrl
 from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import QThread, QUrl
 from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QMessageBox, QStackedWidget, QToolBar
 
 from flowscribe.config.resources import allow_implicit_model_download
-from flowscribe.gui.dialogs.queue_item_settings_dialog import QueueItemSettingsDialog
 from flowscribe.gui.dialogs.settings_dialog import SettingsDialog
 from flowscribe.gui.icons import (
     get_app_icon,
     get_application_icon,
+    get_help_icon,
     get_library_icon,
     get_queue_icon,
     get_settings_icon,
 )
-from flowscribe.model_manager import local_docs_index_path
 from flowscribe.gui.services.library_service import (
     ensure_library_entry_outputs,
     remove_library_entry_and_output_dir,
     upsert_library_entry_from_artifacts,
-)
-from flowscribe.gui.services.queue_service import build_local_queue_items, build_url_queue_items
-from flowscribe.gui.services.runtime_service import (
-    start_bookmarklet_server_runtime,
-    start_queue_runtime,
 )
 from flowscribe.gui.services.window_service import (
     open_multiple_output_directories,
@@ -39,16 +33,12 @@ from flowscribe.gui.theme_manager import get_current_theme
 from flowscribe.gui.views.library_view import LibraryView
 from flowscribe.gui.views.queue_view import QueueView
 from flowscribe.gui.views.single_task_view import SingleTaskView
-from flowscribe.model_manager import local_model_guide_path, managed_models_present
-from flowscribe.tasks.queue_importers import import_urls_from_file, parse_urls_from_text
-from flowscribe.tasks.queue_models import (
-    QueueItemSettings,
-    apply_source_edit_options,
-)
+from flowscribe.gui.windows.new_main_window_queue import NewMainWindowQueueMixin
+from flowscribe.gui.windows.new_main_window_server import NewMainWindowServerMixin
+from flowscribe.model_manager import local_docs_index_path, local_model_guide_path, managed_models_present
 
 
 def _default_settings() -> dict:
-    """Return default application settings."""
     return {
         "output_dir": "outputs",
         "output_name_base": "",
@@ -63,6 +53,11 @@ def _default_settings() -> dict:
         "network_family": "auto",
         "proxy": None,
         "cookies_path": None,
+        "execution_mode": "local",
+        "server_target": None,
+        "remote_token": None,
+        "remote_poll_seconds": 1.0,
+        "download_artifacts": True,
         "progressive_enabled": True,
         "progressive_resume": True,
         "progressive_chunk_seconds": 30.0,
@@ -71,7 +66,7 @@ def _default_settings() -> dict:
     }
 
 
-class NewMainWindow(QMainWindow):
+class NewMainWindow(QMainWindow, NewMainWindowQueueMixin, NewMainWindowServerMixin):
     """Simplified main window with QStackedWidget architecture."""
 
     def __init__(self):
@@ -79,13 +74,12 @@ class NewMainWindow(QMainWindow):
         self.setWindowTitle("FlowScribe")
         self.resize(1200, 820)
 
-        # State
         self._settings = _default_settings()
         self._library_store = transcript_library_store()
         self._queue_store = batch_queue_store()
         self._queue_thread: QThread | None = None
         self._queue_runner = None
-        self._queue_file_watcher: QFileSystemWatcher | None = None
+        self._queue_file_watcher = None
         self._server_thread: QThread | None = None
         self._server_worker = None
         self._server_port: int | None = None
@@ -99,63 +93,50 @@ class NewMainWindow(QMainWindow):
         self._maybe_prompt_for_models()
 
     def _setup_ui(self) -> None:
-        """Initialize UI components."""
-        # Get current theme for icons
         app = QApplication.instance()
         theme = get_current_theme(app) if app else "light"
 
-        # Set application icon
         app_icon = get_app_icon()
         if app:
             app.setWindowIcon(app_icon)
         self.setWindowIcon(app_icon)
 
-        # Toolbar
         toolbar = QToolBar("Main")
+        toolbar.setObjectName("Main")
         toolbar.setMovable(False)
         self.addToolBar(toolbar)
 
-        settings_action = toolbar.addAction(get_settings_icon(theme), "Settings")
-        settings_action.triggered.connect(self._show_settings_dialog)
-        help_action = toolbar.addAction(get_settings_icon(theme), "Help")
-        help_action.triggered.connect(self._show_help)
-
+        toolbar.addAction(get_settings_icon(theme), "Settings").triggered.connect(
+            self._show_settings_dialog
+        )
+        toolbar.addAction(get_help_icon(theme), "Help").triggered.connect(self._show_help)
         toolbar.addSeparator()
+        toolbar.addAction(get_application_icon(theme), "Single Task").triggered.connect(
+            lambda: self._view_stack.setCurrentIndex(0)
+        )
+        toolbar.addAction(get_library_icon(theme), "Library").triggered.connect(
+            lambda: self._view_stack.setCurrentIndex(1)
+        )
+        toolbar.addAction(get_queue_icon(theme), "Queue").triggered.connect(
+            lambda: self._view_stack.setCurrentIndex(2)
+        )
 
-        single_task_action = toolbar.addAction(get_application_icon(theme), "Single Task")
-        single_task_action.triggered.connect(lambda: self._view_stack.setCurrentIndex(0))
-
-        library_action = toolbar.addAction(get_library_icon(theme), "Library")
-        library_action.triggered.connect(lambda: self._view_stack.setCurrentIndex(1))
-
-        queue_action = toolbar.addAction(get_queue_icon(theme), "Queue")
-        queue_action.triggered.connect(lambda: self._view_stack.setCurrentIndex(2))
-
-        # Views
         self._view_stack = QStackedWidget()
-
         self._single_task_view = SingleTaskView(self._settings)
         self._library_view = LibraryView()
         self._queue_view = QueueView(self._settings)
-
         self._view_stack.addWidget(self._single_task_view)
         self._view_stack.addWidget(self._library_view)
         self._view_stack.addWidget(self._queue_view)
-
         self.setCentralWidget(self._view_stack)
-
-        # Status bar
         self.statusBar().showMessage("Ready")
 
     def _connect_signals(self) -> None:
-        """Connect signals between views and main window."""
-        # SingleTaskView signals
         self._single_task_view.settings_requested.connect(self._show_settings_dialog)
         self._single_task_view.transcription_started.connect(self._on_transcription_started)
         self._single_task_view.transcription_finished.connect(self._on_transcription_finished)
         self._single_task_view.transcription_error.connect(self._on_transcription_error)
 
-        # LibraryView signals
         self._library_view.transcript_open_requested.connect(self._on_library_open_transcript)
         self._library_view.output_dir_open_requested.connect(self._on_library_open_output_dir)
         self._library_view.output_dirs_open_requested.connect(self._on_library_open_output_dirs)
@@ -165,7 +146,6 @@ class NewMainWindow(QMainWindow):
         self._library_view.artifact_open_requested.connect(self._on_library_open_artifact)
         self._library_view.missing_cleanup_requested.connect(self._on_library_cleanup_missing)
 
-        # QueueView signals
         self._queue_view.enqueue_urls_requested.connect(self._on_enqueue_urls)
         self._queue_view.enqueue_files_requested.connect(self._on_enqueue_files)
         self._queue_view.import_file_requested.connect(self._on_import_file)
@@ -177,11 +157,11 @@ class NewMainWindow(QMainWindow):
         self._queue_view.clear_completed_requested.connect(self._on_clear_completed)
         self._queue_view.reorder_requested.connect(self._on_reorder_queue)
         self._queue_view.edit_item_settings_requested.connect(self._on_edit_item_settings)
+        self._queue_view.execution_settings_changed.connect(self._on_queue_execution_settings_changed)
         self._queue_view.server_start_requested.connect(self._on_server_start)
         self._queue_view.server_stop_requested.connect(self._on_server_stop)
 
     def _show_settings_dialog(self) -> None:
-        """Show settings dialog."""
         dialog = SettingsDialog(self, self._settings)
         dialog.settings_changed.connect(self._on_settings_changed)
         dialog.model_manager_requested.connect(self._show_model_manager_dialog)
@@ -200,45 +180,38 @@ class NewMainWindow(QMainWindow):
         self.statusBar().showMessage("Model Center closed")
 
     def _on_settings_changed(self, settings: dict) -> None:
-        """Handle settings changes from Apply button."""
         self._settings = settings
         self._single_task_view.update_settings(settings)
         self._queue_view.update_settings(settings)
         self._refresh_icons()
         self.statusBar().showMessage("Settings applied")
 
+    def _on_queue_execution_settings_changed(self, settings: dict) -> None:
+        self._settings.update(settings)
+
     def _refresh_icons(self) -> None:
-        """Refresh all icons after theme change."""
         app = QApplication.instance()
         theme = get_current_theme(app) if app else "light"
-
-        # Update window icon (app icon doesn't change with theme)
         app_icon = get_app_icon()
         if app:
             app.setWindowIcon(app_icon)
         self.setWindowIcon(app_icon)
 
-        # Update toolbar icons
         toolbar = self.findChild(QToolBar, "Main")
         if toolbar:
             actions = toolbar.actions()
             if len(actions) >= 6:
-                actions[0].setIcon(get_settings_icon(theme))  # Settings
-                actions[1].setIcon(get_settings_icon(theme))  # Help
-                # Skip separator at index 2
-                actions[3].setIcon(get_application_icon(theme))  # Single Task
-                actions[4].setIcon(get_library_icon(theme))  # Library
-                actions[5].setIcon(get_queue_icon(theme))  # Queue
+                actions[0].setIcon(get_settings_icon(theme))
+                actions[1].setIcon(get_help_icon(theme))
+                actions[3].setIcon(get_application_icon(theme))
+                actions[4].setIcon(get_library_icon(theme))
+                actions[5].setIcon(get_queue_icon(theme))
 
-    # SingleTaskView handlers
     def _on_transcription_started(self) -> None:
-        """Handle transcription start."""
         self.statusBar().showMessage("Transcription started")
 
     def _on_transcription_finished(self, result) -> None:
-        """Handle transcription completion."""
         self.statusBar().showMessage("Transcription finished")
-        # Index in library
         if result.outputs:
             for artifacts in result.outputs:
                 for path in artifacts.paths:
@@ -247,7 +220,6 @@ class NewMainWindow(QMainWindow):
             self._library_view.refresh_library()
 
     def _add_transcript_to_library(self, transcript_path: Path, artifacts=None) -> None:
-        """Add transcript to library."""
         try:
             upsert_library_entry_from_artifacts(
                 self._library_store,
@@ -255,11 +227,10 @@ class NewMainWindow(QMainWindow):
                 artifacts=artifacts,
                 output_dir=transcript_path.parent,
             )
-        except Exception as e:
-            self.statusBar().showMessage(f"Failed to add to library: {e}")
+        except Exception as exc:
+            self.statusBar().showMessage(f"Failed to add to library: {exc}")
 
     def _on_transcription_error(self, error: str) -> None:
-        """Handle transcription error."""
         self.statusBar().showMessage(f"Transcription error: {error}")
         if "Model Center" in error or "is not installed" in error:
             self._show_model_manager_dialog()
@@ -275,17 +246,15 @@ class NewMainWindow(QMainWindow):
             self.statusBar().showMessage(f"Could not open help: {docs_path}")
 
     def _maybe_prompt_for_models(self) -> None:
-        if self._missing_models_prompt_shown:
+        if self._missing_models_prompt_shown or not bool(getattr(sys, "frozen", False)):
             return
-        if not bool(getattr(sys, "frozen", False)):
-            return
-        if allow_implicit_model_download():
-            return
-        if managed_models_present():
+        if allow_implicit_model_download() or managed_models_present():
             return
 
         self._missing_models_prompt_shown = True
-        self.statusBar().showMessage("No transcription model is installed yet. Open Model Center to download one.")
+        self.statusBar().showMessage(
+            "No transcription model is installed yet. Open Model Center to download one."
+        )
         message = QMessageBox(self)
         message.setWindowTitle("Download A Model Before First Use")
         message.setText(
@@ -299,7 +268,6 @@ class NewMainWindow(QMainWindow):
         help_button = message.addButton("Open Model Guide", QMessageBox.ButtonRole.HelpRole)
         message.addButton("Later", QMessageBox.ButtonRole.RejectRole)
         message.exec()
-
         clicked = message.clickedButton()
         if clicked is model_center_button:
             self._show_model_manager_dialog()
@@ -308,9 +276,7 @@ class NewMainWindow(QMainWindow):
             if guide_path is not None:
                 QDesktopServices.openUrl(QUrl.fromLocalFile(str(guide_path)))
 
-    # LibraryView handlers
     def _on_library_open_transcript(self, entry) -> None:
-        """Open transcript from library."""
         if not entry.transcript_path.is_file():
             self.statusBar().showMessage(f"Transcript not found: {entry.transcript_path}")
             self._library_view.refresh_library()
@@ -345,7 +311,6 @@ class NewMainWindow(QMainWindow):
         self.statusBar().showMessage(f"Opened transcript: {entry.display_label}")
 
     def _on_library_open_output_dir(self, entry) -> None:
-        """Open output directory."""
         if entry.output_dir and open_output_directory(Path(entry.output_dir)):
             self.statusBar().showMessage(f"Opened: {entry.output_dir}")
         else:
@@ -356,7 +321,6 @@ class NewMainWindow(QMainWindow):
         self.statusBar().showMessage(f"Opened {opened} output folder(s). Missing: {missing}.")
 
     def _on_library_rebind_media(self, entry) -> None:
-        """Rebind media for transcript."""
         media_path_text, _ = QFileDialog.getOpenFileName(
             self,
             "Bind media to transcript",
@@ -383,10 +347,11 @@ class NewMainWindow(QMainWindow):
         self.statusBar().showMessage(f"Bound media: {media_path.name}")
 
     def _on_library_remove_entry(self, entry) -> None:
-        """Remove entry from library."""
         removed, disk_removed = remove_library_entry_and_output_dir(self._library_store, entry)
         if removed and not disk_removed:
-            self.statusBar().showMessage(f"Removed library entry but could not delete: {entry.output_dir}")
+            self.statusBar().showMessage(
+                f"Removed library entry but could not delete: {entry.output_dir}"
+            )
             self._library_view.refresh_library()
             return
         self._library_view.refresh_library()
@@ -409,241 +374,13 @@ class NewMainWindow(QMainWindow):
             self.statusBar().showMessage(f"Artifact not found: {path}")
 
     def _on_library_cleanup_missing(self) -> None:
-        """Clean up missing library entries."""
-        # First refresh to detect missing entries
         self._library_store.refresh_missing_statuses()
-        # Then remove them
         removed = self._library_store.remove_missing_entries()
         self._library_view.refresh_library()
         self.statusBar().showMessage(f"Removed {len(removed)} missing entries")
 
     def _ensure_library_outputs(self, entry):
         return ensure_library_entry_outputs(self._library_store, entry)
-
-    # QueueView handlers
-    def _on_enqueue_urls(self, text: str) -> None:
-        """Enqueue URLs from text."""
-        try:
-            urls = parse_urls_from_text(text)
-            if not urls:
-                self.statusBar().showMessage("No valid URLs found in input")
-                return
-
-            settings = self._settings_to_queue_settings()
-            items = build_url_queue_items(
-                urls,
-                settings=settings,
-                download_options=self._queue_view.get_download_options(),
-            )
-            for item in items:
-                self._queue_store.enqueue(item)
-            self._refresh_queue_view()
-            self.statusBar().showMessage(f"Added {len(items)} URL(s) to queue")
-        except Exception as e:
-            self.statusBar().showMessage(f"Error adding URLs: {e}")
-
-    def _on_enqueue_files(self, paths: list[Path]) -> None:
-        """Enqueue local files."""
-        settings = self._settings_to_queue_settings()
-        items = build_local_queue_items(paths, settings=settings)
-        for item in items:
-            self._queue_store.enqueue(item)
-        self._refresh_queue_view()
-        self.statusBar().showMessage(f"Added {len(items)} file(s) to queue")
-
-    def _on_import_file(self, file_path: str) -> None:
-        """Import URLs from file."""
-        urls = import_urls_from_file(Path(file_path))
-        settings = self._settings_to_queue_settings()
-        items = build_url_queue_items(
-            urls,
-            settings=settings,
-            download_options=self._queue_view.get_download_options(),
-        )
-        for item in items:
-            self._queue_store.enqueue(item)
-        self._refresh_queue_view()
-        self.statusBar().showMessage(f"Imported {len(items)} URL(s) from file")
-
-    def _on_start_queue(self) -> None:
-        """Start queue processing."""
-        if self._queue_thread is not None:
-            self.statusBar().showMessage("Queue is already running")
-            return
-
-        self._queue_thread, self._queue_runner = start_queue_runtime(
-            self,
-            self._queue_store,
-            self._on_queue_item_started,
-            self._on_queue_item_progress,
-            self._on_queue_item_completed,
-            self._on_queue_item_failed,
-            self._on_queue_item_canceled,
-            self._on_queue_finished,
-        )
-
-        self._queue_view.set_queue_running(True)
-        self.statusBar().showMessage("Queue processing started")
-
-    def _on_cancel_queue(self) -> None:
-        """Cancel queue processing."""
-        if self._queue_runner:
-            self._queue_runner.request_cancel_all()
-        self.statusBar().showMessage("Queue cancellation requested")
-
-    def _on_skip_current(self) -> None:
-        """Skip current queue item."""
-        if self._queue_runner:
-            self._queue_runner.request_skip_current()
-        self.statusBar().showMessage("Skip requested")
-
-    def _on_retry_item(self, item_id: str) -> None:
-        """Retry failed item."""
-        self._queue_store.update_item(item_id, status="pending", started_at=None, error_message=None)
-        self._refresh_queue_view()
-        self.statusBar().showMessage("Item marked for retry")
-
-    def _on_remove_items(self, item_ids: list[str]) -> None:
-        """Remove items from queue."""
-        for item_id in item_ids:
-            self._queue_store.remove_item(item_id)
-        self._refresh_queue_view()
-        self.statusBar().showMessage(f"Removed {len(item_ids)} item(s)")
-
-    def _on_clear_completed(self) -> None:
-        """Clear completed items."""
-        removed = self._queue_store.remove_completed()
-        self._refresh_queue_view()
-        self.statusBar().showMessage(f"Cleared {removed} completed item(s)")
-
-    def _on_reorder_queue(self, item_ids: list[str]) -> None:
-        """Reorder queue items."""
-        self._queue_store.reorder_items(item_ids)
-        self._refresh_queue_view()
-
-    def _on_edit_item_settings(self, item_ids: list[str]) -> None:
-        """Edit settings for queue items (supports batch editing)."""
-        if not item_ids:
-            self.statusBar().showMessage("No items selected")
-            return
-
-        # Get first item as template
-        first_item = self._queue_store.get_item(item_ids[0])
-        if first_item is None:
-            self.statusBar().showMessage("Item not found")
-            return
-
-        # Determine label for dialog
-        is_batch = len(item_ids) > 1
-        if is_batch:
-            item_label = f"{len(item_ids)} items"
-        else:
-            item_label = first_item.display_label
-
-        # Show dialog with first item's settings as template
-        dialog = QueueItemSettingsDialog(
-            self, first_item.settings, first_item.source, item_label, is_batch=is_batch
-        )
-        if dialog.exec():
-            result = dialog.get_settings()
-            if result is not None:
-                updated_settings, updated_source = result
-                # Apply to all selected items
-                for item_id in item_ids:
-                    current_item = self._queue_store.get_item(item_id)
-                    if current_item is None:
-                        continue
-                    self._queue_store.update_item(
-                        item_id,
-                        settings=updated_settings,
-                        source=apply_source_edit_options(current_item.source, updated_source),
-                    )
-                self._refresh_queue_view()
-                if is_batch:
-                    self.statusBar().showMessage(f"Updated settings for {len(item_ids)} items")
-                else:
-                    self.statusBar().showMessage("Item settings updated")
-
-    def _on_server_start(self, port: int) -> None:
-        """Start bookmarklet server."""
-        if self._server_thread is not None:
-            self.statusBar().showMessage("Server is already running")
-            return
-
-        self._server_thread, self._server_worker = start_bookmarklet_server_runtime(
-            self,
-            queue_store_path=self._queue_store._path,
-            port=port,
-            default_output_dir=Path(self._settings["output_dir"]),
-            default_output_formats=self._settings["output_formats"],
-            default_model_name=self._settings["model_name"],
-            default_language=self._settings["language"],
-            started=self._on_server_started,
-            stopped=self._on_server_stopped,
-            error=self._on_server_error,
-        )
-
-        self._server_port = port
-        self.statusBar().showMessage(f"Starting server on port {port}...")
-
-    def _on_server_started(self, port: int) -> None:
-        """Handle server start."""
-        self._queue_view.set_server_status(True, port)
-        self.statusBar().showMessage(f"Server started on port {port}")
-
-    def _on_server_stopped(self) -> None:
-        """Handle server stop."""
-        self._server_thread = None
-        self._server_worker = None
-        self._server_port = None
-        self._queue_view.set_server_status(False)
-        self.statusBar().showMessage("Server stopped")
-
-    def _on_server_error(self, error: str) -> None:
-        """Handle server error."""
-        self._queue_view.set_server_status(False)
-        self.statusBar().showMessage(f"Server error: {error}")
-
-    def _on_server_stop(self) -> None:
-        """Stop bookmarklet server."""
-        if self._server_worker:
-            self._server_worker.stop()
-        self.statusBar().showMessage("Stopping server...")
-
-    def _on_queue_finished(self) -> None:
-        """Handle queue processing completion."""
-        self._queue_thread = None
-        self._queue_runner = None
-        self._queue_view.set_queue_running(False)
-        self._refresh_queue_view()
-        self._library_view.refresh_library()
-        self.statusBar().showMessage("Queue processing finished")
-
-    def _on_queue_item_started(self, item) -> None:
-        """Handle queue item started."""
-        self._queue_view.on_item_started(item)
-        self._refresh_queue_view()
-
-    def _on_queue_item_progress(self, event) -> None:
-        """Handle queue item progress."""
-        self._queue_view.on_item_progress(event)
-
-    def _on_queue_item_completed(self, data: tuple) -> None:
-        """Handle queue item completed."""
-        item, result = data
-        if result.outputs:
-            for artifacts in result.outputs:
-                for path in artifacts.paths:
-                    if path.suffix.lower() == ".json":
-                        self._add_transcript_to_library_with_label(
-                            path,
-                            item.title or item.display_label,
-                            artifacts,
-                            result.job.output_dir,
-                        )
-        self._queue_view.on_item_completed(data)
-        self._refresh_queue_view()
-        self._library_view.refresh_library()
 
     def _add_transcript_to_library_with_label(
         self,
@@ -652,7 +389,6 @@ class NewMainWindow(QMainWindow):
         artifacts=None,
         output_dir: Path | None = None,
     ) -> None:
-        """Add transcript to library with an explicit display label."""
         try:
             upsert_library_entry_from_artifacts(
                 self._library_store,
@@ -661,76 +397,5 @@ class NewMainWindow(QMainWindow):
                 artifacts=artifacts,
                 output_dir=output_dir or transcript_path.parent,
             )
-        except Exception as e:
-            self.statusBar().showMessage(f"Failed to add to library: {e}")
-
-    def _on_queue_item_failed(self, data: tuple) -> None:
-        """Handle queue item failed."""
-        self._queue_view.on_item_failed(data)
-        self._refresh_queue_view()
-
-    def _on_queue_item_canceled(self, item) -> None:
-        """Handle queue item canceled."""
-        self._queue_view.on_item_canceled(item)
-        self._refresh_queue_view()
-
-    def _refresh_queue_view(self) -> None:
-        """Refresh queue view display."""
-        items = self._queue_store.load_items()
-        self._queue_view.refresh_queue(items)
-
-    def _settings_to_queue_settings(self) -> QueueItemSettings:
-        """Convert app settings to queue item settings."""
-        return QueueItemSettings(
-            output_dir=Path(self._settings["output_dir"]),
-            output_name_base=self._settings.get("output_name_base", ""),
-            provider_name=self._settings.get("provider_name", "local-whisper"),
-            model_name=self._settings["model_name"],
-            language=self._settings["language"],
-            preset=self._settings["preset"],
-            output_formats=self._settings["output_formats"],
-            timestamps=self._settings["timestamps"],
-            word_timestamps=self._settings["word_timestamps"],
-            overwrite=self._settings["overwrite"],
-            network_family=self._settings["network_family"],
-            proxy=self._settings["proxy"],
-            cookies_path=self._settings["cookies_path"],
-            progressive_enabled=self._settings["progressive_enabled"],
-            progressive_resume=self._settings["progressive_resume"],
-            progressive_chunk_seconds=self._settings["progressive_chunk_seconds"],
-            progressive_max_workers=self._settings["progressive_max_workers"],
-            native_threads=self._settings.get("native_threads"),
-        )
-
-    def _setup_queue_file_watcher(self) -> None:
-        """Setup file watcher for queue file."""
-        queue_file = self._queue_store._path
-        queue_file.parent.mkdir(parents=True, exist_ok=True)
-        self._queue_file_watcher = QFileSystemWatcher(self)
-
-        if queue_file.exists():
-            self._queue_file_watcher.addPath(str(queue_file))
-        self._queue_file_watcher.addPath(str(queue_file.parent))
-
-        self._queue_file_watcher.fileChanged.connect(self._on_queue_file_changed)
-        self._queue_file_watcher.directoryChanged.connect(self._on_queue_directory_changed)
-
-    def _watch_queue_file_if_available(self) -> None:
-        """Ensure the queue file is watched after it is created or rewritten."""
-        if self._queue_file_watcher is None:
-            return
-        queue_file = self._queue_store._path
-        if queue_file.exists():
-            watched_files = set(self._queue_file_watcher.files())
-            if str(queue_file) not in watched_files:
-                self._queue_file_watcher.addPath(str(queue_file))
-
-    def _on_queue_file_changed(self, path: str) -> None:
-        """Handle queue file changes (e.g., from bookmarklet server)."""
-        self._watch_queue_file_if_available()
-        self._refresh_queue_view()
-
-    def _on_queue_directory_changed(self, path: str) -> None:
-        """Handle queue file creation from external sources."""
-        self._watch_queue_file_if_available()
-        self._refresh_queue_view()
+        except Exception as exc:
+            self.statusBar().showMessage(f"Failed to add to library: {exc}")

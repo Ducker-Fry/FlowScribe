@@ -11,6 +11,7 @@ from scripts.benchmark_transcription import (
     filter_samples,
     format_run_summary,
     load_samples,
+    read_progressive_metadata,
     render_report,
     run_sample,
     validate_sample,
@@ -89,6 +90,7 @@ def test_build_job_applies_benchmark_model_beam_and_native_threads(tmp_path: Pat
         native_model=model,
         beam_size=1,
         native_threads=8,
+        progressive_enabled=True,
     )
 
     assert native_job.model_name == str(model)
@@ -101,6 +103,7 @@ def test_build_job_applies_benchmark_model_beam_and_native_threads(tmp_path: Pat
     assert local_job.model_name == "small"
     assert local_job.beam_size == 1
     assert local_job.native_threads is None
+    assert local_job.progressive_enabled is True
 
 
 def test_benchmark_config_records_native_decode_settings(tmp_path: Path) -> None:
@@ -166,6 +169,18 @@ def test_run_sample_uses_single_measured_execution(monkeypatch, tmp_path: Path) 
         return {
             "stages": {"download": 0.0, "prepare_audio": 0.1, "transcribe": 0.2, "write_outputs": 0.3},
             "transcript_path": str(job.output_dir / "audio.json"),
+            "progressive_summary": {
+                "progressive_backend": "native-engine",
+                "progressive_mode": "native-engine-progressive",
+                "resume_requested": False,
+                "resume_supported": False,
+                "resume_used": False,
+                "cache_supported": False,
+                "chunk_count": 4,
+                "effective_parallel_chunks": 2,
+                "chunk_seconds": 120.0,
+                "overlap_seconds": 5.0,
+            },
         }
 
     monkeypatch.setattr(benchmark_transcription, "measure_stages", fake_measure_stages)
@@ -176,6 +191,51 @@ def test_run_sample_uses_single_measured_execution(monkeypatch, tmp_path: Path) 
     assert calls == 1
     assert result.total_elapsed_seconds is not None
     assert result.total_elapsed_seconds < 1.0
+    assert result.progressive_summary is not None
+    assert result.progressive_summary["progressive_mode"] == "native-engine-progressive"
+
+
+def test_read_progressive_metadata_prefers_normalized_nested_shape(tmp_path: Path) -> None:
+    transcript = tmp_path / "sample.json"
+    transcript.write_text(
+        """
+{
+  "metadata": {
+    "progressive": {
+      "backend": "python",
+      "mode": "python-progressive",
+      "resume_requested": true,
+      "resume_supported": true,
+      "resume_used": true,
+      "cache_supported": true,
+      "cache_dir_present": true,
+      "chunk_count": 6,
+      "completed_chunks": 6,
+      "failed_chunks": 0,
+      "effective_parallel_chunks": 2,
+      "chunk_seconds": 45.0,
+      "overlap_seconds": 4.0
+    }
+  }
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    summary = read_progressive_metadata(transcript)
+
+    assert summary == {
+        "progressive_backend": "python",
+        "progressive_mode": "python-progressive",
+        "resume_requested": True,
+        "resume_supported": True,
+        "resume_used": True,
+        "cache_supported": True,
+        "chunk_count": 6,
+        "effective_parallel_chunks": 2,
+        "chunk_seconds": 45.0,
+        "overlap_seconds": 4.0,
+    }
 
 
 def test_render_report_marks_skipped_and_failed_runs() -> None:

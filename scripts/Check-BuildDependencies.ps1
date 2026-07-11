@@ -384,6 +384,41 @@ function Test-PythonPackage {
     }
 }
 
+function Test-PythonPackagePresence {
+    param(
+        [string]$PythonCmd,
+        [string]$PackageName,
+        [string]$ImportName = $PackageName
+    )
+
+    try {
+        $checkScript = @"
+import importlib.metadata as metadata
+import importlib.util as util
+
+version = metadata.version('$PackageName')
+if util.find_spec('$ImportName') is None:
+    raise ModuleNotFoundError('$ImportName')
+print(version)
+"@
+        $versionOutput = & $PythonCmd -c $checkScript 2>&1
+
+        if ($LASTEXITCODE -eq 0) {
+            return @{ Success = $true; Version = $versionOutput.Trim() }
+        }
+
+        $message = ($versionOutput | Select-Object -Last 1)
+        if (-not [string]::IsNullOrWhiteSpace($message)) {
+            return @{ Success = $false; Message = $message.ToString().Trim() }
+        }
+
+        return @{ Success = $false; Message = "Package metadata or module spec not found" }
+    }
+    catch {
+        return @{ Success = $false; Message = $_.Exception.Message }
+    }
+}
+
 function Install-PythonPackage {
     param(
         [string]$PythonCmd,
@@ -418,6 +453,30 @@ function Install-PythonPackage {
     catch {
         Write-Error "Exception during installation: $($_.Exception.Message)"
         return $false
+    }
+}
+
+function Get-ParaformerRuntimeSupport {
+    param([string]$PythonCmd)
+
+    $checkScript = "import importlib.metadata as metadata; import importlib.util as util; required=(('funasr','funasr'),('modelscope','modelscope'),('torch','torch')); versions=[]; [versions.append(f'{package_name}={metadata.version(package_name)}') if util.find_spec(import_name) is not None else (_ for _ in ()).throw(ModuleNotFoundError(import_name)) for package_name, import_name in required]; import torch, torchaudio, funasr, modelscope; print('; '.join(versions))"
+    $output = & $PythonCmd -c $checkScript 2>&1
+
+    if ($LASTEXITCODE -eq 0) {
+        return @{
+            Success = $true
+            Message = ($output | Select-Object -Last 1).ToString().Trim()
+        }
+    }
+
+    $message = ($output | Select-Object -Last 1)
+    if ([string]::IsNullOrWhiteSpace($message)) {
+        $message = "unknown reason"
+    }
+
+    return @{
+        Success = $false
+        Message = $message.ToString().Trim()
     }
 }
 
@@ -703,41 +762,42 @@ if ($CheckParaformer) {
     Write-Info "Checking Paraformer dependencies..."
     $paraformerPackages = @(
         @{ PackageName = "funasr"; ImportName = "funasr" },
-        @{ PackageName = "modelscope"; ImportName = "modelscope" }
+        @{ PackageName = "modelscope"; ImportName = "modelscope" },
+        @{ PackageName = "torch"; ImportName = "torch" }
     )
 
     foreach ($package in $paraformerPackages) {
-        $check = Test-PythonPackage `
+        $check = Test-PythonPackagePresence `
             -PythonCmd $Python `
             -PackageName $package.PackageName `
             -ImportName $package.ImportName
 
         if ($check.Success) {
-            Write-Success "$($package.PackageName) $($check.Version) found"
+            Write-Success "$($package.PackageName) $($check.Version) found for packaging"
             continue
         }
 
-        Write-Warning "$($package.PackageName) not found: $($check.Message)"
+        Write-Warning "$($package.PackageName) not available for packaging: $($check.Message)"
         if ($AutoInstall) {
             $install = Install-PythonPackage -PythonCmd $Python -PackageName $package.PackageName
             if (-not $install) {
-                $allChecksPassed = $false
+                Write-Warning "Continuing without optional Paraformer packaging support for $($package.PackageName)."
             }
             continue
         }
 
-        $choice = Get-UserChoice -Prompt "Install $($package.PackageName) now?"
-        if ($choice -eq "Y") {
-            $install = Install-PythonPackage -PythonCmd $Python -PackageName $package.PackageName
-            if (-not $install) {
-                $allChecksPassed = $false
-            }
-        }
-        else {
-            Write-Info "Skipping $($package.PackageName) installation"
-            Write-Info "Install manually with: $Python -m pip install $($package.PackageName)"
-            $allChecksPassed = $false
-        }
+        Write-Info "Paraformer packaging is optional. Build scripts can continue without $($package.PackageName)."
+        Write-Info "Install manually with: $Python -m pip install $($package.PackageName)"
+    }
+
+    $runtimeSupport = Get-ParaformerRuntimeSupport -PythonCmd $Python
+    if ($runtimeSupport.Success) {
+        Write-Success "Paraformer runtime import check passed for packaging ($($runtimeSupport.Message))"
+    }
+    else {
+        Write-Warning "Paraformer runtime import check failed: $($runtimeSupport.Message)"
+        Write-Info "Paraformer packaging is optional. Build scripts can continue, but packaged Paraformer runs may fail until funasr, modelscope, torch, and transitive audio/runtime dependencies are importable together."
+        Write-Info "Recommended verification: $Python -c `"import torch, funasr, modelscope`""
     }
 }
 

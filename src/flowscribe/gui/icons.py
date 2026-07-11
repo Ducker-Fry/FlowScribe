@@ -6,12 +6,13 @@ Icons are based on Material Design Icons (Apache 2.0 license).
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtSvg import QSvgRenderer
+
+from flowscribe.utils.runtime_layout import resolve_runtime_layout
 
 
 def _get_icon_path() -> Path:
@@ -19,13 +20,15 @@ def _get_icon_path() -> Path:
 
     Handles both development (running from source) and production (PyInstaller bundle).
     """
-    if getattr(sys, "frozen", False):
-        # Running in PyInstaller bundle
-        base_path = Path(sys._MEIPASS)  # type: ignore
-        return base_path / "icons"
-    else:
-        # Running from source
-        return Path(__file__).parent.parent.parent.parent / "icons"
+    layout = resolve_runtime_layout()
+    candidates = (
+        layout.code_dir / "icons",
+        layout.app_root / "icons",
+    )
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return layout.app_root / "icons"
 
 
 # Path to application icon
@@ -59,6 +62,7 @@ _ICON_PATHS = {
     "queue-music": "M15,6H3V8H15V6M15,10H3V12H15V10M3,16H11V14H3V16M17,6V14.18C16.69,14.07 16.35,14 16,14A3,3 0 0,0 13,17A3,3 0 0,0 16,20A3,3 0 0,0 19,17V8H22V6H17Z",
     "application": "M19,4C20.11,4 21,4.9 21,6V18A2,2 0 0,1 19,20H5C3.89,20 3,19.1 3,18V6C3,4.89 3.89,4 5,4H19M19,18V8H5V18H19Z",
     "palette": "M17.5,12A1.5,1.5 0 0,1 16,10.5A1.5,1.5 0 0,1 17.5,9A1.5,1.5 0 0,1 19,10.5A1.5,1.5 0 0,1 17.5,12M14.5,8A1.5,1.5 0 0,1 13,6.5A1.5,1.5 0 0,1 14.5,5A1.5,1.5 0 0,1 16,6.5A1.5,1.5 0 0,1 14.5,8M9.5,8A1.5,1.5 0 0,1 8,6.5A1.5,1.5 0 0,1 9.5,5A1.5,1.5 0 0,1 11,6.5A1.5,1.5 0 0,1 9.5,8M6.5,12A1.5,1.5 0 0,1 5,10.5A1.5,1.5 0 0,1 6.5,9A1.5,1.5 0 0,1 8,10.5A1.5,1.5 0 0,1 6.5,12M12,3A9,9 0 0,0 3,12A9,9 0 0,0 12,21A1.5,1.5 0 0,0 13.5,19.5C13.5,19.11 13.35,18.76 13.11,18.5C12.88,18.23 12.73,17.88 12.73,17.5A1.5,1.5 0 0,1 14.23,16H16A5,5 0 0,0 21,11C21,6.58 16.97,3 12,3Z",
+    "help-circle": "M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M12,17A1.25,1.25 0 0,0 10.75,18.25A1.25,1.25 0 0,0 12,19.5A1.25,1.25 0 0,0 13.25,18.25A1.25,1.25 0 0,0 12,17M12,6A4,4 0 0,0 8,10H10A2,2 0 0,1 12,8A2,2 0 0,1 14,10C14,11.5 12.5,12 11.75,13C11.29,13.61 11,14.37 11,15.25V16H13V15.5C13,14.95 13.22,14.45 13.59,14.09C14.5,13.17 16,12.39 16,10A4,4 0 0,0 12,6Z",
     "cog": "M12,8A4,4 0 0,1 16,12A4,4 0 0,1 12,16A4,4 0 0,1 8,12A4,4 0 0,1 12,8M12,10A2,2 0 0,0 10,12A2,2 0 0,0 12,14A2,2 0 0,0 14,12A2,2 0 0,0 12,10M10,22C9.75,22 9.54,21.82 9.5,21.58L9.13,18.93C8.5,18.68 7.96,18.34 7.44,17.94L4.95,18.95C4.73,19.03 4.46,18.95 4.34,18.73L2.34,15.27C2.21,15.05 2.27,14.78 2.46,14.63L4.57,12.97L4.5,12L4.57,11L2.46,9.37C2.27,9.22 2.21,8.95 2.34,8.73L4.34,5.27C4.46,5.05 4.73,4.96 4.95,5.05L7.44,6.05C7.96,5.66 8.5,5.32 9.13,5.07L9.5,2.42C9.54,2.18 9.75,2 10,2H14C14.25,2 14.46,2.18 14.5,2.42L14.87,5.07C15.5,5.32 16.04,5.66 16.56,6.05L19.05,5.05C19.27,4.96 19.54,5.05 19.66,5.27L21.66,8.73C21.79,8.95 21.73,9.22 21.54,9.37L19.43,11L19.5,12L19.43,13L21.54,14.63C21.73,14.78 21.79,15.05 21.66,15.27L19.66,18.73C19.54,18.95 19.27,19.04 19.05,18.95L16.56,17.95C16.04,18.34 15.5,18.68 14.87,18.93L14.5,21.58C14.46,21.82 14.25,22 14,22H10M11.25,4L10.88,6.61C9.68,6.86 8.62,7.5 7.85,8.39L5.44,7.35L4.69,8.65L6.8,10.2C6.4,11.37 6.4,12.64 6.8,13.8L4.68,15.36L5.43,16.66L7.86,15.62C8.63,16.5 9.68,17.14 10.87,17.38L11.24,20H12.76L13.13,17.39C14.32,17.14 15.37,16.5 16.14,15.62L18.57,16.66L19.32,15.36L17.2,13.81C17.6,12.64 17.6,11.37 17.2,10.2L19.31,8.65L18.56,7.35L16.15,8.39C15.38,7.5 14.32,6.86 13.12,6.62L12.75,4H11.25Z",
 }
 
@@ -233,6 +237,11 @@ def get_application_icon(theme: str = "light") -> QIcon:
 def get_palette_icon(theme: str = "light") -> QIcon:
     """Get palette/theme icon."""
     return get_icon("palette", theme)
+
+
+def get_help_icon(theme: str = "light") -> QIcon:
+    """Get help/support icon."""
+    return get_icon("help-circle", theme)
 
 
 def get_app_icon() -> QIcon:

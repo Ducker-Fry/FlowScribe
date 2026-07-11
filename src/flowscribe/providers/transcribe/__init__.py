@@ -13,6 +13,9 @@ __all__ = [
     "LocalWhisperTranscriber",
     "NativeEngineProvider",
     "NativeEngineTranscriber",
+    "PARAFORMER_MODEL_NAME",
+    "ParaformerProvider",
+    "ParaformerTranscriber",
     "ProviderCapabilities",
     "ProviderTranscriptionSettings",
     "TranscriptionProvider",
@@ -32,6 +35,20 @@ def __getattr__(name: str) -> Any:
         from flowscribe.providers.transcribe.native_engine import NativeEngineTranscriber
 
         return NativeEngineTranscriber
+
+    if name in {"PARAFORMER_MODEL_NAME", "ParaformerProvider", "ParaformerTranscriber"}:
+        from flowscribe.providers.transcribe.paraformer import (
+            PARAFORMER_MODEL_NAME,
+            ParaformerTranscriber,
+        )
+        from flowscribe.providers.transcribe.registry import ParaformerProvider
+
+        values = {
+            "PARAFORMER_MODEL_NAME": PARAFORMER_MODEL_NAME,
+            "ParaformerProvider": ParaformerProvider,
+            "ParaformerTranscriber": ParaformerTranscriber,
+        }
+        return values[name]
 
     if name in {
         "LocalWhisperProvider",

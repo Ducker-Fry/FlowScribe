@@ -4,9 +4,15 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+from flowscribe.app.progressive_policy import (
+    ProgressiveExecutionPolicy,
+    build_progressive_metadata,
+)
+from flowscribe.core.errors import TranscriptionError
 from flowscribe.core.models import (
     MediaDurationInfo,
     MediaItem,
@@ -27,6 +33,8 @@ from flowscribe.pipeline.progressive import (
 )
 from flowscribe.core.ports import ArtifactWriter, MediaPreparer, Transcriber
 from flowscribe.media.audio_extractor import PreparedAudioCache
+
+_EMPTY_TRANSCRIPT_FAILURE_MIN_DURATION_SECONDS = 5.0
 
 
 class LocalTranscriptionPipeline:
@@ -104,6 +112,10 @@ class LocalTranscriptionPipeline:
                 transcript = self._deduplicator.deduplicate(transcript)
             if self._transcript_enricher is not None:
                 transcript = self._transcript_enricher(transcript, item)
+            _raise_if_unexpected_empty_transcript(
+                transcript,
+                duration_seconds=prepared_audio.duration_seconds,
+            )
             return transcript
         finally:
             if not self._keep_audio:
@@ -118,7 +130,7 @@ class LocalTranscriptionPipeline:
         resume: bool = False,
         keep_progressive_cache: bool = True,
         max_workers: int = 1,
-        max_failed_chunks: int = 3,
+        max_failed_chunks: int = 5,
         plan_callback: Callable[[MediaDurationInfo, TranscriptionChunkPlan], None] | None = None,
         update_callback: Callable[[ProgressiveTranscriptionUpdate], None] | None = None,
         should_cancel: Callable[[], bool] | None = None,
@@ -162,6 +174,8 @@ class LocalTranscriptionPipeline:
                     transcript=transcript,
                     processed_duration_seconds=state.processed_duration_seconds,
                     cache_dir=state.cache_dir,
+                    resumed_chunks=state.resumed_chunks,
+                    effective_parallel_chunks=state.effective_parallel_chunks,
                 )
             elif self._transcript_enricher is not None:
                 state = ProgressiveTranscriptionState(
@@ -172,6 +186,8 @@ class LocalTranscriptionPipeline:
                     transcript=transcript,
                     processed_duration_seconds=state.processed_duration_seconds,
                     cache_dir=state.cache_dir,
+                    resumed_chunks=state.resumed_chunks,
+                    effective_parallel_chunks=state.effective_parallel_chunks,
                 )
             if not keep_progressive_cache:
                 cache_store.clear()
@@ -183,7 +199,54 @@ class LocalTranscriptionPipeline:
                     transcript=state.transcript,
                     processed_duration_seconds=state.processed_duration_seconds,
                     cache_dir=None,
+                    resumed_chunks=state.resumed_chunks,
+                    effective_parallel_chunks=state.effective_parallel_chunks,
                 )
+            progressive_policy = ProgressiveExecutionPolicy(
+                mode="python-progressive",
+                progressive_requested=resume,
+                progressive_enabled=True,
+                auto_enabled=False,
+                backend="python",
+                resume_requested=resume,
+                resume_supported=True,
+                resume_effective=resume,
+                cache_supported=True,
+                chunk_seconds=chunk_duration_seconds,
+                overlap_seconds=chunk_overlap_seconds,
+                max_workers=max_workers,
+                notes=(),
+            )
+            transcript = replace(
+                state.transcript,
+                metadata={
+                    **state.transcript.metadata,
+                    "progressive": build_progressive_metadata(
+                        progressive_policy,
+                        cache_dir_present=state.cache_dir is not None,
+                        chunk_count=len(state.chunk_plan.chunks),
+                        completed_chunks=state.completed_chunks,
+                        failed_chunks=state.failed_chunks,
+                        effective_parallel_chunks=state.effective_parallel_chunks,
+                        resume_used=state.resumed_chunks > 0,
+                    ),
+                },
+            )
+            state = ProgressiveTranscriptionState(
+                source=state.source,
+                duration_info=state.duration_info,
+                chunk_plan=state.chunk_plan,
+                chunk_results=state.chunk_results,
+                transcript=transcript,
+                processed_duration_seconds=state.processed_duration_seconds,
+                cache_dir=state.cache_dir,
+                resumed_chunks=state.resumed_chunks,
+                effective_parallel_chunks=state.effective_parallel_chunks,
+            )
+            _raise_if_unexpected_empty_transcript(
+                state.transcript,
+                duration_seconds=state.duration_info.duration_seconds,
+            )
             return state
         finally:
             if not self._keep_audio:
@@ -198,7 +261,7 @@ class LocalTranscriptionPipeline:
         resume: bool = False,
         keep_progressive_cache: bool = True,
         max_workers: int = 1,
-        max_failed_chunks: int = 3,
+        max_failed_chunks: int = 5,
         plan_callback: Callable[[MediaDurationInfo, TranscriptionChunkPlan], None] | None = None,
         update_callback: Callable[[ProgressiveTranscriptionUpdate], None] | None = None,
         should_cancel: Callable[[], bool] | None = None,
@@ -227,3 +290,27 @@ def _transcriber_accepts_progress(transcriber: Transcriber) -> bool:
     except (TypeError, ValueError):
         return False
     return "progress" in signature.parameters
+
+
+def _raise_if_unexpected_empty_transcript(
+    transcript: Transcript,
+    *,
+    duration_seconds: float | None,
+) -> None:
+    if transcript.text.strip():
+        return
+    if (
+        duration_seconds is not None
+        and duration_seconds < _EMPTY_TRANSCRIPT_FAILURE_MIN_DURATION_SECONDS
+    ):
+        return
+
+    provider_name = None
+    if transcript.options is not None:
+        provider_name = transcript.options.provider_name
+    provider_label = provider_name or transcript.model_name or "unknown provider"
+    duration_label = "unknown duration" if duration_seconds is None else f"{duration_seconds:.1f}s"
+    raise TranscriptionError(
+        f"Transcription produced no text for {transcript.source.path} "
+        f"({duration_label}, {provider_label})."
+    )

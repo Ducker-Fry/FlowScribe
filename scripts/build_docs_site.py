@@ -13,6 +13,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DOCS_ROOT = PROJECT_ROOT / "docs"
 OUTPUT_ROOT = PROJECT_ROOT / "build" / "docs-site"
+ASSETS_ROOT = DOCS_ROOT / "assets"
 HTML_OUTPUT_ENCODING = "utf-8-sig"
 
 DOC_FILES = (
@@ -279,6 +280,24 @@ def build_docs_site(output_root: Path = OUTPUT_ROOT) -> tuple[Path, ...]:
         # Write a UTF-8 BOM so Windows text readers do not mis-detect Chinese HTML as ANSI/ACP.
         target.write_text(_build_page(title, sources), encoding=HTML_OUTPUT_ENCODING)
         generated.append(target)
+    if ASSETS_ROOT.exists():
+        target_assets_root = output_root / "assets"
+        if target_assets_root.exists():
+            for item in target_assets_root.iterdir():
+                if item.is_dir():
+                    import shutil
+                    shutil.rmtree(item)
+                else:
+                    item.unlink()
+        else:
+            target_assets_root.mkdir(parents=True, exist_ok=True)
+        for source_path in ASSETS_ROOT.iterdir():
+            target_path = target_assets_root / source_path.name
+            if source_path.is_dir():
+                import shutil
+                shutil.copytree(source_path, target_path, dirs_exist_ok=True)
+            else:
+                target_path.write_bytes(source_path.read_bytes())
     return tuple(generated)
 
 

@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
+
+from flowscribe.utils.runtime_layout import resolve_runtime_layout
 
 InstallScope = Literal["user", "machine"]
 
@@ -46,13 +47,14 @@ class ResourcePaths:
 
 
 def _portable_root() -> Path | None:
-    if bool(getattr(sys, "frozen", False)):
-        return Path(sys.executable).resolve().parent
+    layout = resolve_runtime_layout()
+    if layout.frozen:
+        return layout.app_root
     return None
 
 
 def _source_project_root() -> Path:
-    return Path(__file__).resolve().parents[3]
+    return resolve_runtime_layout().source_root
 
 
 def _default_user_resource_root() -> Path:

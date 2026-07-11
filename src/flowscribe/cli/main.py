@@ -6,14 +6,15 @@ import json
 import logging
 import sys
 from dataclasses import asdict
-from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
+from flowscribe.app.progressive_policy import resolve_cli_progressive_policy
 from flowscribe.tasks.models import ProgressEvent, SourceSpec, TranscriptionJob
 from flowscribe.app.service import TranscriptionService
 from flowscribe.cli.args import parse_args
 from flowscribe.cli.doctor import run_doctor
+from flowscribe.cli.payloads import event_payload as _shared_event_payload, result_payload as _shared_result_payload
 from flowscribe import __version__
 from flowscribe.core.errors import (
     CancellationError,
@@ -26,7 +27,18 @@ from flowscribe.core.errors import (
 )
 from flowscribe.input.file_filter import SUPPORTED_MEDIA_EXTENSIONS
 from flowscribe.input.url_inspector import UrlInspector
+from flowscribe.input.url_tool_bridge import select_url_inspector_cls
 from flowscribe.media.inspector import LocalMediaInspector
+from flowscribe.execution.factory import build_execution_backend
+from flowscribe.execution.remote_client import RemoteServerClient
+from flowscribe.execution.remote_config import (
+    RemoteServerProfile,
+    get_remote_server_profile,
+    load_remote_server_profiles,
+    remove_remote_server_profile,
+    resolve_remote_server,
+    upsert_remote_server_profile,
+)
 from flowscribe.output.time_format import format_timestamp
 from flowscribe.search.transcript_search import search_transcript_file
 from flowscribe.model_manager import (
@@ -80,6 +92,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_model_command(options)
     if options.command == "install":
         return run_install_command(options)
+    if options.command == "remote":
+        return run_remote_command(options)
     if options.command == "version":
         print(f"FlowScribe {__version__}")
         print(f"Python {sys.version.split()[0]}")
@@ -306,8 +320,15 @@ def run_model_command(options) -> int:
 
 
 def run_transcribe(options) -> int:
-    job = _job_from_transcribe_options(options)
-    result = TranscriptionService().run(job, progress=_build_cli_progress_handler(options))
+    try:
+        job = _job_from_transcribe_options(options)
+        backend = _build_execution_backend(options)
+        if getattr(options, "execution_mode", "local") == "remote" and getattr(options, "submit_only", False):
+            return _submit_remote_job(options, backend, job)
+        result = backend.run(job, progress=_build_cli_progress_handler(options))
+    except FlowScribeError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
 
     if options.json_output:
         print(json.dumps(_result_payload(result), ensure_ascii=False, indent=2))
@@ -323,8 +344,15 @@ def run_transcribe(options) -> int:
 
 
 def run_url(options) -> int:
-    job = _job_from_url_options(options)
-    result = TranscriptionService().run(job, progress=_build_cli_progress_handler(options))
+    try:
+        job = _job_from_url_options(options)
+        backend = _build_execution_backend(options)
+        if getattr(options, "execution_mode", "local") == "remote" and getattr(options, "submit_only", False):
+            return _submit_remote_job(options, backend, job)
+        result = backend.run(job, progress=_build_cli_progress_handler(options))
+    except FlowScribeError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
     if options.json_output:
         print(json.dumps(_result_payload(result), ensure_ascii=False, indent=2))
     elif not options.non_interactive:
@@ -370,14 +398,22 @@ def run_serve(options) -> int:
     print(f"  GET  http://{options.host}:{options.port}/bookmarklet.js - Get bookmarklet script")
     print("")
     print("Agent Task API:")
+    print(f"  POST http://{options.host}:{options.port}/v1/uploads                - Upload local media for remote execution")
     print(f"  POST http://{options.host}:{options.port}/v1/tasks                  - Submit single task")
     print(f"  GET  http://{options.host}:{options.port}/v1/tasks/{{task_id}}      - Get task status")
     print(f"  GET  http://{options.host}:{options.port}/v1/tasks/{{task_id}}/events - Stream task events")
     print(f"  GET  http://{options.host}:{options.port}/v1/tasks/{{task_id}}/result - Get final result")
+    print(f"  GET  http://{options.host}:{options.port}/v1/artifacts/{{artifact_id}} - Download output artifact")
+    print(f"  GET  http://{options.host}:{options.port}/v1/server                - Inspect remote capabilities")
     print("")
     print("Task Persistence:")
     print("  Agent task history is stored in agent-tasks.json next to the queue store.")
-    print("  Completed, failed, and canceled tasks remain queryable after server restart.")
+    if options.task_retention_hours is None:
+        print("  Completed, failed, and canceled tasks remain queryable until manually cleaned up.")
+    else:
+        print(
+            f"  Completed, failed, and canceled tasks remain queryable for {options.task_retention_hours:g} hour(s) before cleanup."
+        )
     print("  Accepted or running tasks interrupted by restart are recovered as failed.")
     print("")
     print("Status reports will be shown every 30 seconds")
@@ -395,6 +431,8 @@ def run_serve(options) -> int:
             default_output_formats=options.output_formats,
             default_model_name=options.model_name,
             default_language=options.language,
+            api_token=options.api_token,
+            task_retention_hours=options.task_retention_hours,
         )
         server.start()
         return 0
@@ -416,7 +454,7 @@ def run_serve(options) -> int:
 def run_inspect(options) -> int:
     try:
         if _is_http_url(options.source):
-            inspection = UrlInspector(
+            inspection = select_url_inspector_cls(UrlInspector)(
                 timeout_seconds=options.timeout_seconds,
                 network_family=options.network_family,
                 cookies_path=options.cookies,
@@ -514,6 +552,167 @@ def run_search(options) -> int:
     return 0
 
 
+def run_remote_command(options) -> int:
+    if options.subcommand == "add-server":
+        profile = RemoteServerProfile(
+            name=options.name,
+            base_url=options.base_url,
+            token=options.token,
+            remote_cookies_path=options.remote_cookies_path,
+            enabled=options.enabled,
+            verify_tls=options.verify_tls,
+            timeout_seconds=options.timeout_seconds,
+            download_artifacts_by_default=options.download_artifacts_by_default,
+        )
+        upsert_remote_server_profile(profile)
+        payload = {
+            "ok": True,
+            "profile": _remote_profile_payload(profile),
+        }
+        if options.json_output:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            print(f"Saved remote server profile: {profile.name} -> {profile.base_url}")
+        return 0
+
+    if options.subcommand == "list-servers":
+        profiles = load_remote_server_profiles()
+        payload = [_remote_profile_payload(profile) for profile in profiles]
+        if options.json_output:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            if not profiles:
+                print("No remote server profiles configured.")
+            for profile in profiles:
+                status = "enabled" if profile.enabled else "disabled"
+                print(f"- {profile.name} ({status}) -> {profile.base_url}")
+        return 0
+
+    if options.subcommand == "show-server":
+        profile = get_remote_server_profile(options.name)
+        if profile is None:
+            print(f"Remote server profile not found: {options.name}", file=sys.stderr)
+            return 1
+        payload = _remote_profile_payload(profile)
+        if options.json_output:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            print(f"Name: {profile.name}")
+            print(f"URL: {profile.base_url}")
+            if profile.remote_cookies_path:
+                print(f"Remote cookies path: {profile.remote_cookies_path}")
+            print(f"Enabled: {'yes' if profile.enabled else 'no'}")
+            print(f"Verify TLS: {'yes' if profile.verify_tls else 'no'}")
+            print(f"Timeout: {profile.timeout_seconds}")
+            print(
+                f"Download artifacts: {'yes' if profile.download_artifacts_by_default else 'no'}"
+            )
+        return 0
+
+    if options.subcommand == "remove-server":
+        removed = remove_remote_server_profile(options.name)
+        if options.json_output:
+            print(json.dumps({"ok": removed, "name": options.name}, ensure_ascii=False, indent=2))
+        elif removed:
+            print(f"Removed remote server profile: {options.name}")
+        else:
+            print(f"Remote server profile not found: {options.name}", file=sys.stderr)
+        return 0 if removed else 1
+
+    if options.subcommand == "status":
+        try:
+            client = _remote_client_for_target(options.server_target)
+            payload = client.get_task_status(options.task_id)
+        except (FlowScribeError, ValueError) as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 2
+        if options.json_output:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            print(f"Task: {payload.get('task_id', options.task_id)}")
+            print(f"Status: {payload.get('status', 'unknown')}")
+            if payload.get("error"):
+                print(f"Error: {payload['error']}")
+        return 0
+
+    if options.subcommand == "events":
+        try:
+            client = _remote_client_for_target(options.server_target)
+            events = client.get_task_events(options.task_id)
+        except (FlowScribeError, ValueError) as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 2
+        if options.json_output:
+            print(json.dumps({"task_id": options.task_id, "events": events}, ensure_ascii=False, indent=2))
+        else:
+            for event in events:
+                message = event.get("message") or ""
+                stage = event.get("stage") or event.get("event_type") or "event"
+                print(f"[{stage}] {message}")
+        return 0
+
+    if options.subcommand == "result":
+        try:
+            client = _remote_client_for_target(options.server_target)
+            payload = client.get_task_result(options.task_id)
+            download_artifacts = _resolve_remote_result_download_artifacts(options)
+            if download_artifacts:
+                backend = _remote_backend_for_target(
+                    options.server_target,
+                    download_artifacts=True,
+                )
+                progress = (lambda event: None) if options.json_output else _print_cli_progress
+                payload = backend.download_result_artifacts(
+                    payload,
+                    options.output_dir,
+                    overwrite=True,
+                    progress=progress,
+                )
+        except (FlowScribeError, ValueError) as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 2
+        if options.json_output:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            print(f"Task: {options.task_id}")
+            if payload.get("ok", True):
+                print("Result: available")
+            for output in payload.get("outputs", []):
+                if isinstance(output, dict):
+                    for path in output.get("paths", []):
+                        print(f"Output: {path}")
+        return 0
+
+    print(f"Unsupported remote subcommand: {options.subcommand}", file=sys.stderr)
+    return 2
+
+
+def _submit_remote_job(options, backend, job: TranscriptionJob) -> int:
+    if not hasattr(backend, "submit"):
+        print("Error: selected backend does not support submit-only mode.", file=sys.stderr)
+        return 2
+    submissions = backend.submit(job, progress=_build_cli_progress_handler(options))
+    payload = {
+        "ok": True,
+        "submitted": [
+            {
+                "task_id": item.task_id,
+                "status": item.status,
+                "source": item.source,
+                "source_kind": item.source_kind,
+                "local_task_id": item.local_task_id,
+            }
+            for item in submissions
+        ],
+    }
+    if options.json_output or options.non_interactive:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        for item in submissions:
+            print(f"Submitted remote task: {item.task_id} ({item.status})")
+    return 0
+
+
 def _search_payload(options, hits) -> dict:
     return {
         "transcript": str(options.transcript),
@@ -542,10 +741,8 @@ def _search_payload(options, hits) -> dict:
 
 
 def _job_from_transcribe_options(options) -> TranscriptionJob:
-    progressive_enabled, progressive_note = _resolve_cli_progressive_mode_for_transcribe(options)
-    if progressive_note and not options.non_interactive and not options.json_output:
-        print(progressive_note)
     provider_name, model_name = _resolve_cli_provider_and_model(options)
+    policy = _resolve_cli_progressive_mode_for_transcribe(options, provider_name=provider_name)
     return TranscriptionJob(
         sources=tuple(
             SourceSpec(kind="local", value=str(input_path), recursive=options.recursive)
@@ -568,7 +765,8 @@ def _job_from_transcribe_options(options) -> TranscriptionJob:
         output_formats=options.output_formats,
         overwrite=options.overwrite,
         keep_audio=options.keep_audio,
-        progressive_enabled=progressive_enabled,
+        progressive_enabled=policy.progressive_enabled,
+        progressive_auto_enabled=policy.auto_enabled,
         progressive_resume=options.progressive_resume,
         progressive_chunk_seconds=options.progressive_chunk_seconds,
         progressive_chunk_overlap_seconds=options.progressive_chunk_overlap_seconds,
@@ -581,15 +779,12 @@ def _job_from_transcribe_options(options) -> TranscriptionJob:
 def _job_from_url_options(options) -> TranscriptionJob:
     from flowscribe.tasks.models import DownloadOptions
 
-    progressive_enabled, progressive_note = _resolve_cli_progressive_mode_for_url(options)
-    if progressive_note and not options.non_interactive and not options.json_output:
-        print(progressive_note)
-
     download_opts = DownloadOptions(
         quality=options.download_quality,
         prefer_format=options.download_format,
     )
     provider_name, model_name = _resolve_cli_provider_and_model(options)
+    policy = _resolve_cli_progressive_mode_for_url(options, provider_name=provider_name)
 
     source = SourceSpec(
         kind="url",
@@ -624,7 +819,8 @@ def _job_from_url_options(options) -> TranscriptionJob:
         network_family=options.network_family,
         cookies_path=options.cookies,
         proxy=options.proxy,
-        progressive_enabled=progressive_enabled,
+        progressive_enabled=policy.progressive_enabled,
+        progressive_auto_enabled=policy.auto_enabled,
         progressive_resume=options.progressive_resume,
         progressive_chunk_seconds=options.progressive_chunk_seconds,
         progressive_chunk_overlap_seconds=options.progressive_chunk_overlap_seconds,
@@ -643,6 +839,60 @@ def _resolve_cli_provider_and_model(options) -> tuple[str, str]:
     if provider_name == "paraformer" and model_name == "small":
         model_name = PARAFORMER_MODEL_NAME
     return provider_name, model_name
+
+
+def _build_execution_backend(options):
+    return build_execution_backend(
+        execution_mode=getattr(options, "execution_mode", "local"),
+        server_target=getattr(options, "server_target", None),
+        remote_token=getattr(options, "remote_token", None),
+        remote_poll_seconds=getattr(options, "remote_poll_seconds", 1.0),
+        download_artifacts=getattr(options, "download_artifacts", None),
+        service_factory=lambda: TranscriptionService(),
+    )
+
+
+def _remote_client_for_target(server_target: str | None) -> RemoteServerClient:
+    if not server_target:
+        raise FlowScribeError("Remote server profile name or base URL is required.")
+    resolved = resolve_remote_server(server_target)
+    if not resolved.enabled:
+        raise FlowScribeError(f"Remote server profile is disabled: {resolved.name}")
+    return RemoteServerClient(
+        resolved.base_url,
+        token=resolved.token,
+        verify_tls=resolved.verify_tls,
+        timeout_seconds=resolved.timeout_seconds,
+    )
+
+
+def _remote_backend_for_target(server_target: str | None, *, download_artifacts: bool):
+    return build_execution_backend(
+        execution_mode="remote",
+        server_target=server_target,
+        download_artifacts=download_artifacts,
+        service_factory=lambda: TranscriptionService(),
+    )
+
+
+def _resolve_remote_result_download_artifacts(options) -> bool:
+    if options.download_artifacts is not None:
+        return options.download_artifacts
+    resolved = resolve_remote_server(options.server_target)
+    return resolved.download_artifacts_by_default
+
+
+def _remote_profile_payload(profile: RemoteServerProfile) -> dict:
+    return {
+        "name": profile.name,
+        "base_url": profile.base_url,
+        "has_token": bool(profile.token),
+        "remote_cookies_path": profile.remote_cookies_path,
+        "enabled": profile.enabled,
+        "verify_tls": profile.verify_tls,
+        "timeout_seconds": profile.timeout_seconds,
+        "download_artifacts_by_default": profile.download_artifacts_by_default,
+    }
 
 
 def _print_cli_progress(event: ProgressEvent) -> None:
@@ -672,96 +922,40 @@ def _cli_progress_line(event: ProgressEvent) -> str:
     if event.capability == "subtitle" and event.message:
         return event.message
     if event.processed_duration_seconds is not None:
+        progressive = _progressive_metadata_from_event(event)
         parts = [event.message]
         if event.total_duration_seconds is not None:
             parts.append(
                 f"Progress {format_timestamp(event.processed_duration_seconds)} / "
                 f"{format_timestamp(event.total_duration_seconds)}"
             )
-        if event.chunk_index is not None and event.chunk_count is not None:
-            parts.append(f"Chunk {event.chunk_index}/{event.chunk_count}")
+        chunk_index = event.chunk_index
+        chunk_count = event.chunk_count
+        if chunk_index is not None and chunk_count is not None:
+            parts.append(f"Chunk {chunk_index}/{chunk_count}")
+        elif progressive.get("completed_chunks") is not None and progressive.get("chunk_count") is not None:
+            parts.append(
+                f"Chunks {progressive['completed_chunks']}/{progressive['chunk_count']}"
+            )
+        backend = progressive.get("backend")
+        if backend in {"python", "native-engine"}:
+            parts.append(f"Backend {backend}")
         if event.realtime_factor is not None:
             parts.append(f"Speed {event.realtime_factor:.1f}x")
         if event.eta_seconds is not None:
             parts.append(f"ETA {format_timestamp(event.eta_seconds)}")
-        if event.resumed:
+        if bool(progressive.get("resume_used")) or event.resumed:
             parts.append("resumed")
         return " | ".join(parts)
     return event.message
 
 
 def _event_payload(event: ProgressEvent) -> dict:
-    return {
-        "event_type": event.event_type or "progress",
-        "timestamp": event.timestamp or datetime.utcnow().isoformat(timespec="milliseconds") + "Z",
-        "sequence": event.sequence,
-        "task_id": event.task_id,
-        "stage": event.stage,
-        "message": event.message,
-        "source": event.source,
-        "current": event.current,
-        "total": event.total,
-        "path": str(event.path) if event.path is not None else None,
-        "processed_duration_seconds": event.processed_duration_seconds,
-        "total_duration_seconds": event.total_duration_seconds,
-        "eta_seconds": event.eta_seconds,
-        "realtime_factor": event.realtime_factor,
-        "chunk_index": event.chunk_index,
-        "chunk_count": event.chunk_count,
-        "completed_chunks": event.completed_chunks,
-        "failed_chunks": event.failed_chunks,
-        "resumed": event.resumed,
-        "capability": event.capability,
-        "percent": event.percent,
-        "raw_metadata": dict(event.raw_metadata),
-    }
+    return _shared_event_payload(event)
 
 
 def _result_payload(result) -> dict:
-    return {
-        "ok": result.ok,
-        "canceled": result.canceled,
-        "succeeded": result.succeeded,
-        "failed": result.failed,
-        "elapsed_seconds": result.elapsed_seconds,
-        "tasks": [
-            {
-                "task_id": spec.task_id,
-                "resume_token": spec.resume_token,
-                "checkpoint_id": spec.checkpoint_id,
-                "cache_key": spec.cache_key,
-                "source": {
-                    "kind": spec.source.kind,
-                    "value": spec.source.value,
-                    "locator": spec.source.resolved_locator,
-                },
-            }
-            for spec in result.task_specs
-        ],
-        "outputs": [
-            {
-                "paths": [str(path) for path in output.paths],
-                "json_path": str(output.json_path) if output.json_path is not None else None,
-                "media_path": str(output.media_path) if output.media_path is not None else None,
-                "media_kind": output.media_kind,
-                "requested_media_kind": output.requested_media_kind,
-                "source_kind": output.source_kind,
-                "source_value": output.source_value,
-                "transcription_strategy": output.transcription_strategy,
-                "subtitle_language": output.subtitle_language,
-            }
-            for output in result.outputs
-        ],
-        "errors": [
-            {
-                "code": error.code,
-                "message": error.message,
-                "source": error.source,
-                "recoverable": error.recoverable,
-            }
-            for error in result.errors
-        ],
-    }
+    return _shared_result_payload(result)
 
 
 def _exit_code_for_result(result) -> int:
@@ -805,54 +999,73 @@ def _print_url_strategy_summary(result) -> None:
             print("Strategy: fell back to audio transcription.")
 
 
-def _resolve_cli_progressive_mode_for_transcribe(options) -> tuple[bool, str | None]:
-    if options.progressive_mode == "enabled":
-        return True, "Progressive transcription enabled by CLI flag."
-    if options.progressive_mode == "disabled":
-        return False, "Using classic one-shot transcription by CLI flag."
-    if options.recursive or len(options.inputs) != 1:
-        return False, "Using classic one-shot transcription for batch/local multi-source CLI runs."
-
+def _resolve_cli_progressive_mode_for_transcribe(options, *, provider_name: str):
+    duration_seconds = None
     input_path = options.inputs[0]
-    if not input_path.is_file():
-        return False, None
-    try:
-        inspection = LocalMediaInspector(timeout_seconds=10).inspect(input_path)
-    except FlowScribeError:
-        return False, None
-    if inspection.duration_seconds is not None and inspection.duration_seconds >= CLI_PROGRESSIVE_AUTO_THRESHOLD_SECONDS:
-        return True, (
-            "Auto-enabled progressive transcription for long local media "
-            f"({format_timestamp(inspection.duration_seconds)} >= "
-            f"{format_timestamp(CLI_PROGRESSIVE_AUTO_THRESHOLD_SECONDS)})."
-        )
-    return False, None
-
-
-def _resolve_cli_progressive_mode_for_url(options) -> tuple[bool, str | None]:
-    if options.progressive_mode == "enabled":
-        return True, "Progressive transcription enabled by CLI flag."
-    if options.progressive_mode == "disabled":
-        return False, "Using classic one-shot transcription by CLI flag."
-    try:
-        inspection = UrlInspector(
-            timeout_seconds=min(15, options.download_timeout_seconds),
-            network_family=options.network_family,
-            cookies_path=options.cookies,
-            proxy=options.proxy,
-        ).inspect(options.url)
-    except FlowScribeError:
-        return False, None
     if (
-        inspection.duration_seconds is not None
-        and inspection.duration_seconds >= CLI_PROGRESSIVE_AUTO_THRESHOLD_SECONDS
+        options.progressive_mode == "auto"
+        and not options.recursive
+        and len(options.inputs) == 1
+        and input_path.is_file()
     ):
-        return True, (
-            "Auto-enabled progressive transcription for long URL media "
-            f"({format_timestamp(inspection.duration_seconds)} >= "
-            f"{format_timestamp(CLI_PROGRESSIVE_AUTO_THRESHOLD_SECONDS)})."
-        )
-    return False, None
+        try:
+            inspection = LocalMediaInspector(timeout_seconds=10).inspect(input_path)
+            duration_seconds = inspection.duration_seconds
+        except FlowScribeError:
+            duration_seconds = None
+    return resolve_cli_progressive_policy(
+        provider_name=provider_name,
+        progressive_mode=options.progressive_mode,
+        progressive_resume=options.progressive_resume,
+        chunk_seconds=options.progressive_chunk_seconds,
+        overlap_seconds=options.progressive_chunk_overlap_seconds,
+        max_workers=options.progressive_max_workers,
+        language=options.language,
+        preset=options.preset,
+        source_kind="local",
+        source_count=len(options.inputs),
+        recursive=options.recursive,
+        duration_seconds=duration_seconds,
+        auto_threshold_seconds=CLI_PROGRESSIVE_AUTO_THRESHOLD_SECONDS,
+    )
+
+
+def _resolve_cli_progressive_mode_for_url(options, *, provider_name: str):
+    duration_seconds = None
+    if options.progressive_mode == "auto":
+        try:
+            inspection = select_url_inspector_cls(UrlInspector)(
+                timeout_seconds=min(15, options.download_timeout_seconds),
+                network_family=options.network_family,
+                cookies_path=options.cookies,
+                proxy=options.proxy,
+            ).inspect(options.url)
+            duration_seconds = inspection.duration_seconds
+        except FlowScribeError:
+            duration_seconds = None
+    return resolve_cli_progressive_policy(
+        provider_name=provider_name,
+        progressive_mode=options.progressive_mode,
+        progressive_resume=options.progressive_resume,
+        chunk_seconds=options.progressive_chunk_seconds,
+        overlap_seconds=options.progressive_chunk_overlap_seconds,
+        max_workers=options.progressive_max_workers,
+        language=options.language,
+        preset=options.preset,
+        source_kind="url",
+        duration_seconds=duration_seconds,
+        auto_threshold_seconds=CLI_PROGRESSIVE_AUTO_THRESHOLD_SECONDS,
+    )
+
+
+def _progressive_metadata_from_event(event: ProgressEvent) -> dict:
+    raw_metadata = event.raw_metadata
+    if not isinstance(raw_metadata, dict):
+        return {}
+    progressive = raw_metadata.get("progressive")
+    if not isinstance(progressive, dict):
+        return {}
+    return progressive
 
 
 def _is_http_url(value: str) -> bool:

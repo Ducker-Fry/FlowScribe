@@ -1,73 +1,75 @@
-﻿"""Core domain models and pipeline orchestration."""
+"""Core domain models and pipeline orchestration."""
 
-from flowscribe.pipeline.deduplication import TranscriptDeduplicator
-from flowscribe.core.errors import (
-    FlowScribeError,
-    InputError,
-    MediaPreparationError,
-    OutputError,
-    TranscriptionError,
-)
-from flowscribe.core.models import (
-    ChunkTranscriptionResult,
-    MediaDurationInfo,
-    MediaItem,
-    OutputArtifacts,
-    PreparedAudio,
-    ProgressiveTranscriptionState,
-    ProgressiveTranscriptionUpdate,
-    Transcript,
-    TranscriptSegment,
-    TranscriptWord,
-    TranscriptionChunk,
-    TranscriptionChunkPlan,
-    TranscriptionOptions,
-)
-from flowscribe.pipeline.transcription import LocalTranscriptionPipeline
-from flowscribe.core.ports import ArtifactWriter, MediaPreparer, Transcriber
-from flowscribe.pipeline.progressive import (
-    ChunkMergePolicy,
-    ClipTranscriber,
-    ConservativeChunkMergePolicy,
-    FixedDurationChunkPlanner,
-    PreparedAudioDurationProbe,
-    ProgressiveChunkCache,
-    ProgressiveTranscriptConsistencyChecker,
-    ProgressiveTranscriptionExecutor,
-    tuned_chunk_overlap_seconds,
-)
+from __future__ import annotations
 
-__all__ = [
-    "ArtifactWriter",
-    "ChunkMergePolicy",
+_MODEL_EXPORTS = {
     "ChunkTranscriptionResult",
+    "MediaDurationInfo",
+    "MediaItem",
+    "OutputArtifacts",
+    "PreparedAudio",
+    "ProgressiveTranscriptionState",
+    "ProgressiveTranscriptionUpdate",
+    "Transcript",
+    "TranscriptSegment",
+    "TranscriptWord",
+    "TranscriptionChunk",
+    "TranscriptionChunkPlan",
+    "TranscriptionOptions",
+}
+_ERROR_EXPORTS = {
+    "FlowScribeError",
+    "InputError",
+    "MediaPreparationError",
+    "OutputError",
+    "TranscriptionError",
+}
+_PORT_EXPORTS = {"ArtifactWriter", "MediaPreparer", "Transcriber"}
+_PIPELINE_EXPORTS = {"LocalTranscriptionPipeline", "TranscriptDeduplicator"}
+_PROGRESSIVE_EXPORTS = {
+    "ChunkMergePolicy",
     "ClipTranscriber",
     "ConservativeChunkMergePolicy",
     "FixedDurationChunkPlanner",
-    "FlowScribeError",
-    "InputError",
-    "LocalTranscriptionPipeline",
-    "MediaDurationInfo",
-    "MediaItem",
-    "MediaPreparer",
-    "MediaPreparationError",
-    "OutputArtifacts",
-    "OutputError",
-    "PreparedAudio",
     "PreparedAudioDurationProbe",
     "ProgressiveChunkCache",
     "ProgressiveTranscriptConsistencyChecker",
     "ProgressiveTranscriptionExecutor",
-    "ProgressiveTranscriptionState",
-    "ProgressiveTranscriptionUpdate",
-    "Transcript",
-    "TranscriptDeduplicator",
-    "TranscriptSegment",
-    "TranscriptWord",
-    "Transcriber",
-    "TranscriptionChunk",
-    "TranscriptionChunkPlan",
-    "TranscriptionError",
-    "TranscriptionOptions",
     "tuned_chunk_overlap_seconds",
-]
+}
+
+__all__ = sorted(
+    _MODEL_EXPORTS
+    | _ERROR_EXPORTS
+    | _PORT_EXPORTS
+    | _PIPELINE_EXPORTS
+    | _PROGRESSIVE_EXPORTS
+)
+
+
+def __getattr__(name: str):
+    if name in _MODEL_EXPORTS:
+        from flowscribe.core import models
+
+        return getattr(models, name)
+    if name in _ERROR_EXPORTS:
+        from flowscribe.core import errors
+
+        return getattr(errors, name)
+    if name in _PORT_EXPORTS:
+        from flowscribe.core import ports
+
+        return getattr(ports, name)
+    if name == "LocalTranscriptionPipeline":
+        from flowscribe.pipeline.transcription import LocalTranscriptionPipeline
+
+        return LocalTranscriptionPipeline
+    if name == "TranscriptDeduplicator":
+        from flowscribe.pipeline.deduplication import TranscriptDeduplicator
+
+        return TranscriptDeduplicator
+    if name in _PROGRESSIVE_EXPORTS:
+        from flowscribe.pipeline import progressive
+
+        return getattr(progressive, name)
+    raise AttributeError(name)

@@ -156,3 +156,20 @@ Goal: polish the project as a public portfolio-quality tool.
 - Demo media workflows.
 - Maintainer documentation.
 - Clear legal and ethical boundaries.
+
+## Beyond v1.0 Distributed And Edge Execution
+
+Goal: let FlowScribe use more kinds of remote workers, not just a stronger
+desktop or Linux box.
+
+- Keep the current client/server boundary stable so a Windows client can target
+  different remote execution nodes.
+- Support model selection based on server capability instead of assuming every
+  node can run the same default model.
+- Explore low-power and edge-style servers such as mini PCs, spare laptops,
+  phones, or tablets when runtime support is practical.
+- Preserve the core value of the CS design: keep the primary workstation free
+  for interactive work while another node spends CPU and RAM on transcription.
+
+Status: exploratory. The remote HTTP task path exists today, but mobile or
+tablet server packaging is future planning rather than a released capability.

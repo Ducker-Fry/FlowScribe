@@ -6,7 +6,13 @@ This guide is for users who want to run FlowScribe without setting up Python or 
 
 ## Download
 
-Open the latest release page:
+Open the latest Gitee release page if GitHub is slow or blocked:
+
+```text
+https://gitee.com/Ducker-Fry/FlowScribe/releases
+```
+
+GitHub remains available as a mirror:
 
 ```text
 https://github.com/Ducker-Fry/FlowScribe/releases
@@ -23,7 +29,7 @@ FlowScribeSetup-offline-x64.exe
 
 - `FlowScribe-vX.Y.Z-windows-x64.zip`: portable CLI package
 - `FlowScribeGUI-vX.Y.Z-windows-x64.zip`: portable GUI package
-- `FlowScribeSetup-online-x64.exe`: installer that downloads packaged app files during setup
+- `FlowScribeSetup-online-x64.exe`: installer that downloads packaged app files during setup from the configured release mirror
 - `FlowScribeSetup-offline-x64.exe`: installer that includes packaged app files locally
 
 ## Install

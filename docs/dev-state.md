@@ -52,12 +52,13 @@ The long-term goal is an open-source, portfolio-quality project that can:
 
 **Architecture**: QStackedWidget with toolbar navigation (v0.3.0 refactor)
 
-- **NewMainWindow** (375 lines): Simplified from legacy 1198-line MainWindow
+- **NewMainWindow**: Simplified shell around toolbar navigation, stacked views, queue watcher, and server/runtime coordination
 - **SingleTaskView**: Local files, URLs, system audio capture, "Open Transcript" button
 - **LibraryView**: Transcript library with filtering, sorting, and actions
 - **QueueView**: Batch queue with local files + URLs, bookmarklet server integration
 - **SettingsDialog**: Standalone settings dialog
 - **Modular utilities**: Focused modules for formatting, state, library, artifacts
+- **Provider options**: `local-whisper`, `native-engine`, `paraformer`
 
 Key features:
 - Drag-and-drop local source handling
@@ -86,7 +87,7 @@ Supported formats: `txt`, `md`, `json`, `srt`, `vtt`
 
 ### Automation
 
-- `pytest` test suite (44 test files)
+- `pytest` test suite (87 test files)
 - `ruff` linting
 - GitHub Actions CI
 - GitHub Actions Release workflow
@@ -95,8 +96,8 @@ Supported formats: `txt`, `md`, `json`, `srt`, `vtt`
 
 ## v1.0.0 Development Roadmap
 
-FlowScribe is entering v1.0.0 after completing the GUI refactor (v0.3.0) that
-simplified the interface from 1198 lines to 375 lines with modular architecture.
+FlowScribe is entering v1.0.0 after the GUI refactor (v0.3.0) that moved the
+desktop app to a `NewMainWindow` plus standalone-view architecture.
 
 ### v1.0.0 Focus Areas
 
@@ -203,9 +204,9 @@ When starting a new conversation, open:
 
 For v1.0.0 development work:
 
-4. **Performance optimization**: `src/flowscribe/core/progressive/`, `src/flowscribe/transcription/providers.py`
+4. **Performance optimization**: `src/flowscribe/core/progressive/`, `src/flowscribe/providers/transcribe/registry.py`
 5. **GUI enhancement**: `src/flowscribe/gui/new_main_window.py`, `src/flowscribe/gui/views/`, `src/flowscribe/gui/dialogs/`
-6. **Chinese optimization**: `src/flowscribe/nlp/`, `src/flowscribe/transcription/providers.py`
+6. **Chinese optimization**: `src/flowscribe/nlp/`, `src/flowscribe/providers/transcribe/stable_paraformer.py`
 
 For packaging or release work:
 

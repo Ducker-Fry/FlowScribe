@@ -8,19 +8,19 @@ from collections.abc import Callable
 from pathlib import Path
 from shutil import move
 
+from flowscribe.app.progressive_policy import (
+    ProgressiveExecutionPolicy,
+    job_with_progressive_policy,
+    progressive_failure_note,
+)
 from flowscribe.capabilities import SubtitleCapability
 from flowscribe.core.errors import FlowScribeError
 from flowscribe.core.models import MediaItem, OutputArtifacts
 from flowscribe.input.url_downloader import UrlAudioDownloader
-from flowscribe.pipeline.progressive import tuned_chunk_overlap_seconds
 from flowscribe.pipeline.runtime_factory import (
     build_transcription_pipeline,
     process_with_optional_progress,
     settings_from_job,
-)
-from flowscribe.providers.transcribe.registry import (
-    is_native_engine_provider_name,
-    supports_python_progressive_provider_name,
 )
 from flowscribe.tasks.models import ProgressEvent, SourceSpec, TaskSpec, TranscriptionJob
 
@@ -32,21 +32,29 @@ class UrlTranscriptionPipeline:
         self,
         *,
         emit_progress: Callable[[Callable[[ProgressEvent], None], Callable[[], bool], ProgressEvent], None],
+        emit_policy_notes: Callable[..., None],
         emit_progressive_plan: Callable[..., None],
         emit_progressive_update: Callable[..., None],
+        emit_progressive_summary: Callable[..., None],
+        capture_progressive_native_event: Callable[..., ProgressEvent],
         ensure_not_canceled: Callable[[Callable[[], bool]], None],
         source_progress_wrapper: Callable[[ProgressEvent, str, int, int], ProgressEvent],
         update_json_media_binding: Callable[[OutputArtifacts, Path, str], None],
+        provider_runtime_validator: Callable[[TranscriptionJob, object], None] | None = None,
         downloader_cls=UrlAudioDownloader,
         pipeline_builder=build_transcription_pipeline,
         subtitle_runner: Callable[..., object] | None = None,
     ) -> None:
         self._emit_progress = emit_progress
+        self._emit_policy_notes = emit_policy_notes
         self._emit_progressive_plan = emit_progressive_plan
         self._emit_progressive_update = emit_progressive_update
+        self._emit_progressive_summary = emit_progressive_summary
+        self._capture_progressive_native_event = capture_progressive_native_event
         self._ensure_not_canceled = ensure_not_canceled
         self._source_progress_wrapper = source_progress_wrapper
         self._update_json_media_binding = update_json_media_binding
+        self._provider_runtime_validator = provider_runtime_validator
         self._downloader_cls = downloader_cls
         self._pipeline_builder = pipeline_builder
         self._subtitle_runner = subtitle_runner
@@ -55,6 +63,7 @@ class UrlTranscriptionPipeline:
         self,
         *,
         job: TranscriptionJob,
+        policy: ProgressiveExecutionPolicy,
         task_spec: TaskSpec,
         source: SourceSpec,
         progress: Callable[[ProgressEvent], None],
@@ -62,7 +71,8 @@ class UrlTranscriptionPipeline:
         current: int,
         total: int,
     ) -> OutputArtifacts:
-        settings = settings_from_job(job, recursive=False)
+        execution_job = job_with_progressive_policy(job, policy)
+        settings = settings_from_job(execution_job, recursive=False)
         subtitle_result = self._run_subtitle_capability(
             task_spec,
             progress,
@@ -94,15 +104,54 @@ class UrlTranscriptionPipeline:
                     raw_metadata={"fallback": "audio-transcription"},
                 ),
             )
+        self._emit_policy_notes(
+            progress,
+            should_cancel,
+            policy=policy,
+            source=source.value,
+            current=current,
+            total=total,
+            task_id=task_spec.task_id,
+        )
+
+        if self._provider_runtime_validator is not None:
+            self._emit_progress(
+                progress,
+                should_cancel,
+                ProgressEvent(
+                    stage="validate",
+                    message="Preparing transcription engine (loading models)...",
+                    source=source.value,
+                    current=current,
+                    total=total,
+                    task_id=task_spec.task_id,
+                    capability="transcribe",
+                ),
+            )
+            self._provider_runtime_validator(execution_job, settings)
 
         downloader = self._downloader_cls(
             download_dir=settings.work_dir / ".url-media",
-            max_bytes=job.max_download_mb * 1024 * 1024,
-            max_duration_seconds=job.max_duration_seconds,
-            timeout_seconds=job.download_timeout_seconds,
-            network_family=job.network_family,
-            cookies_path=job.cookies_path,
-            proxy=job.proxy,
+            max_bytes=execution_job.max_download_mb * 1024 * 1024,
+            max_duration_seconds=execution_job.max_duration_seconds,
+            timeout_seconds=execution_job.download_timeout_seconds,
+            network_family=execution_job.network_family,
+            cookies_path=execution_job.cookies_path,
+            proxy=execution_job.proxy,
+            progress_callback=lambda message: self._emit_progress(
+                progress,
+                should_cancel,
+                ProgressEvent(
+                    stage="download",
+                    message=message,
+                    source=source.value,
+                    current=current,
+                    total=total,
+                    task_id=task_spec.task_id,
+                    capability="transcribe",
+                ),
+            ),
+            should_cancel=should_cancel,
         )
 
         self._emit_progress(
@@ -148,58 +197,110 @@ class UrlTranscriptionPipeline:
                     capability="transcribe",
                 ),
             )
-            pipeline = self._pipeline_builder(job, settings)
+            pipeline = self._pipeline_builder(execution_job, settings)
             self._ensure_not_canceled(should_cancel)
             item = MediaItem(path=download.path)
-            if (
-                job.progressive_enabled
-                and supports_python_progressive_provider_name(job.provider_name)
-                and hasattr(pipeline, "process_progressive")
-            ):
+            if policy.mode == "python-progressive" and hasattr(pipeline, "process_progressive"):
+                run_state = {"resume_used": False}
                 run_started_at = time.perf_counter()
-                artifacts, _ = pipeline.process_progressive(
+                artifacts, state = pipeline.process_progressive(
                     item,
-                    chunk_duration_seconds=job.progressive_chunk_seconds,
-                    chunk_overlap_seconds=tuned_chunk_overlap_seconds(
-                        requested_overlap_seconds=job.progressive_chunk_overlap_seconds,
-                        language=job.language,
-                        preset=job.preset,
-                    ),
-                    resume=job.progressive_resume,
+                    chunk_duration_seconds=policy.chunk_seconds,
+                    chunk_overlap_seconds=policy.overlap_seconds,
+                    resume=policy.resume_effective,
                     keep_progressive_cache=True,
-                    max_workers=job.progressive_max_workers,
+                    max_workers=policy.max_workers,
+                    max_failed_chunks=10,
                     plan_callback=lambda duration_info, chunk_plan: self._emit_progressive_plan(
                         progress,
                         should_cancel,
+                        policy=policy,
                         item=item,
                         duration_info=duration_info,
                         chunk_plan=chunk_plan,
+                        task_id=task_spec.task_id,
+                        current=current,
+                        total=total,
                     ),
                     update_callback=lambda update: self._emit_progressive_update(
                         progress,
                         should_cancel,
+                        policy=policy,
                         item=item,
                         update=update,
                         run_started_at=run_started_at,
+                        task_id=task_spec.task_id,
+                        current=current,
+                        total=total,
+                        run_state=run_state,
                     ),
                     should_cancel=should_cancel,
+                )
+                self._emit_progressive_summary(
+                    progress,
+                    should_cancel,
+                    policy=policy,
+                    source=str(download.path),
+                    task_id=task_spec.task_id,
+                    current=current,
+                    total=total,
+                    chunk_count=len(state.chunk_plan.chunks),
+                    completed_chunks=state.completed_chunks,
+                    failed_chunks=state.failed_chunks,
+                    effective_parallel_chunks=state.effective_parallel_chunks,
+                    total_duration_seconds=state.duration_info.duration_seconds,
+                    processed_duration_seconds=state.processed_duration_seconds,
+                    cache_dir_present=state.cache_dir is not None,
+                    resume_used=run_state["resume_used"],
+                )
+            elif policy.mode == "native-engine-progressive":
+                run_state = {
+                    "resume_used": False,
+                    "chunk_count": None,
+                    "completed_chunks": None,
+                    "failed_chunks": None,
+                    "effective_parallel_chunks": None,
+                    "processed_duration_seconds": None,
+                    "total_duration_seconds": None,
+                }
+                artifacts = process_with_optional_progress(
+                    pipeline,
+                    item,
+                    should_cancel=should_cancel,
+                    progress=lambda event: self._emit_progress(
+                        progress,
+                        should_cancel,
+                        self._capture_progressive_native_event(
+                            self._source_progress_wrapper(event, str(download.path), current, total),
+                            run_state=run_state,
+                        ),
+                    ),
+                )
+                self._emit_progressive_summary(
+                    progress,
+                    should_cancel,
+                    policy=policy,
+                    source=str(download.path),
+                    task_id=task_spec.task_id,
+                    current=current,
+                    total=total,
+                    chunk_count=run_state["chunk_count"],
+                    completed_chunks=run_state["completed_chunks"],
+                    failed_chunks=run_state["failed_chunks"],
+                    effective_parallel_chunks=run_state["effective_parallel_chunks"],
+                    total_duration_seconds=run_state["total_duration_seconds"],
+                    processed_duration_seconds=run_state["processed_duration_seconds"],
+                    cache_dir_present=False,
+                    resume_used=False,
                 )
             else:
                 artifacts = process_with_optional_progress(
                     pipeline,
                     item,
                     should_cancel=should_cancel,
-                    progress=(
-                        lambda event: self._emit_progress(
-                            progress,
-                            should_cancel,
-                            self._source_progress_wrapper(event, str(download.path), current, total),
-                        )
-                    )
-                    if is_native_engine_provider_name(job.provider_name)
-                    else None,
+                    progress=None,
                 )
-            preserved_media_path = self._preserve_url_media(download, source=source, job=job)
+            preserved_media_path = self._preserve_url_media(download, source=source, job=execution_job)
             artifacts = OutputArtifacts(
                 paths=artifacts.paths,
                 media_path=preserved_media_path,
@@ -214,6 +315,8 @@ class UrlTranscriptionPipeline:
                 source_value=source.value,
                 auto_bind_media=source.auto_bind_media,
                 transcription_strategy="audio-transcription",
+                source_locator=source.resolved_locator,
+                original_filename=Path(source.value).name if Path(source.value).name else None,
             )
 
             if preserved_media_path is not None and source.auto_bind_media:
@@ -232,6 +335,22 @@ class UrlTranscriptionPipeline:
                         capability="transcribe",
                     ),
                 )
+        except FlowScribeError:
+            if policy.mode != "classic":
+                self._emit_progress(
+                    progress,
+                    should_cancel,
+                    ProgressEvent(
+                        stage="prepare",
+                        message=progressive_failure_note(policy),
+                        source=source.value,
+                        current=current,
+                        total=total,
+                        task_id=task_spec.task_id,
+                        capability="transcribe",
+                    ),
+                )
+            raise
         finally:
             shutil.rmtree(download.cleanup_dir, ignore_errors=True)
         return artifacts

@@ -92,3 +92,47 @@ def test_select_all_syncs_card_checkbox():
     checkbox = card.findChild(QPushButton)
     assert checkbox is not None
     assert checkbox.isChecked()
+
+
+def test_remove_button_emits_only_target_item_after_reorder():
+    """Remove action should follow the visible row order without drag side effects."""
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication([])
+
+    items = [
+        QueueItem(
+            item_id="item-a",
+            source=SourceSpec(kind="local", value=str(Path("samples") / "a.wav")),
+            settings=QueueItemSettings(output_dir=Path("outputs")),
+            status="pending",
+        ),
+        QueueItem(
+            item_id="item-b",
+            source=SourceSpec(kind="local", value=str(Path("samples") / "b.wav")),
+            settings=QueueItemSettings(output_dir=Path("outputs")),
+            status="pending",
+        ),
+    ]
+
+    view = QueueView({})
+    view.refresh_queue(items)
+
+    second_item = view._queue_list.item(1)
+    assert second_item is not None
+    card = view._queue_list.itemWidget(second_item)
+    assert isinstance(card, QueueItemCard)
+    moved_item = view._queue_list.takeItem(1)
+    assert moved_item is second_item
+    view._queue_list.insertItem(0, moved_item)
+    view._queue_list.setItemWidget(moved_item, card)
+    view._on_rows_moved(None, 1, 1, None, 0)
+
+    emitted: list[list[str]] = []
+    view.remove_items_requested.connect(lambda item_ids: emitted.append(item_ids))
+
+    buttons = card.findChildren(QPushButton)
+    remove_button = next(button for button in buttons if button.text() == "Remove")
+    QTest.mouseClick(remove_button, Qt.MouseButton.LeftButton)
+
+    assert emitted == [["item-b"]]

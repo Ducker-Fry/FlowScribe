@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from flowscribe.gui.dialogs.remote_server_dialog import RemoteServerDialog
 from flowscribe.gui.state import SUPPORTED_GUI_FORMATS
 from flowscribe.gui.utils.state import (
     GUI_LANGUAGE_OPTIONS,
@@ -34,6 +35,7 @@ from flowscribe.gui.utils.state import (
     GUI_PROVIDER_OPTIONS,
     GUI_THEME_OPTIONS,
 )
+from flowscribe.gui.widgets import RemoteExecutionWidget
 
 if TYPE_CHECKING:
     from PySide6.QtWidgets import QWidget
@@ -72,6 +74,10 @@ class SettingsDialog(QDialog):
         # Network tab
         network_tab = self._create_network_tab()
         self.tabs.addTab(network_tab, "Network")
+
+        # Remote tab
+        remote_tab = self._create_remote_tab()
+        self.tabs.addTab(remote_tab, "Remote")
 
         # Advanced tab
         advanced_tab = self._create_advanced_tab()
@@ -254,6 +260,46 @@ class SettingsDialog(QDialog):
 
         return tab
 
+    def _create_remote_tab(self) -> QWidget:
+        """Create remote execution defaults and profile management tab."""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setSpacing(12)
+        layout.setContentsMargins(12, 12, 12, 12)
+
+        execution_group = QGroupBox("Remote Execution Defaults")
+        execution_layout = QVBoxLayout(execution_group)
+        self.remote_execution_widget = RemoteExecutionWidget(self, show_manage_button=False)
+        execution_layout.addWidget(self.remote_execution_widget)
+        self.execution_mode_combo = self.remote_execution_widget.execution_mode_combo
+        self.server_target_combo = self.remote_execution_widget.server_target_combo
+        self.remote_token_input = self.remote_execution_widget.remote_token_input
+        self.remote_poll_seconds_spin = self.remote_execution_widget.remote_poll_seconds_spin
+        self.download_artifacts_check = self.remote_execution_widget.download_artifacts_check
+        self.resolved_target_label = self.remote_execution_widget.resolved_target_label
+
+        profile_group = QGroupBox("Remote Server Profiles")
+        profile_layout = QVBoxLayout(profile_group)
+        profile_layout.setSpacing(8)
+
+        self.manage_remote_servers_button = QPushButton("Manage Remote Servers...")
+        self.manage_remote_servers_button.clicked.connect(self._open_remote_server_manager)
+        profile_layout.addWidget(self.manage_remote_servers_button)
+
+        remote_note = QLabel(
+            "Choose a saved profile by name, or type a full base URL for one-off use. "
+            "Queue items inherit these defaults unless you edit them per item."
+        )
+        remote_note.setWordWrap(True)
+        remote_note.setProperty("compactNote", True)
+        profile_layout.addWidget(remote_note)
+
+        layout.addWidget(execution_group)
+        layout.addWidget(profile_group)
+        layout.addStretch(1)
+
+        return tab
+
     def _create_advanced_tab(self) -> QWidget:
         """Create advanced settings tab."""
         tab = QWidget()
@@ -341,6 +387,8 @@ class SettingsDialog(QDialog):
         if cookies_path:
             self.cookies_input.setText(str(cookies_path))
 
+        self.remote_execution_widget.load_settings(settings)
+
         self.progressive_enabled_check.setChecked(
             settings.get("progressive_enabled", True)
         )
@@ -396,6 +444,7 @@ class SettingsDialog(QDialog):
             "network_family": self.network_combo.currentText(),
             "proxy": proxy,
             "cookies_path": cookies_path,
+            **self.remote_execution_widget.settings(),
             "progressive_enabled": self.progressive_enabled_check.isChecked(),
             "progressive_resume": self.progressive_resume_check.isChecked(),
             "progressive_chunk_seconds": float(
@@ -436,6 +485,15 @@ class SettingsDialog(QDialog):
         if file_path:
             self.model_combo.setCurrentText(file_path)
 
+    def _open_remote_server_manager(self) -> None:
+        dialog = RemoteServerDialog(
+            self,
+            selected_target=self.server_target_combo.currentText().strip() or None,
+        )
+        dialog.profiles_changed.connect(self.remote_execution_widget.refresh_remote_server_targets)
+        dialog.exec()
+        self.remote_execution_widget.refresh_remote_server_targets()
+
     def _sync_provider_controls(self) -> None:
         """Adjust model input affordances for the selected transcription engine."""
         provider_name = self.provider_combo.currentData()
@@ -473,11 +531,15 @@ class SettingsDialog(QDialog):
 
     def _apply_settings(self) -> None:
         """Apply settings without closing dialog."""
+        if not self.remote_execution_widget.validate_settings(parent=self, title="Remote Settings"):
+            return
         self._settings = self._collect_settings()
         self.settings_changed.emit(self._settings)
 
     def accept(self) -> None:
         """Accept dialog and save settings."""
+        if not self.remote_execution_widget.validate_settings(parent=self, title="Remote Settings"):
+            return
         self._settings = self._collect_settings()
         self.settings_changed.emit(self._settings)
         super().accept()

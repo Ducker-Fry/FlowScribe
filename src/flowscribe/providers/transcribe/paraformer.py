@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import logging
 import sys
+import wave
 from collections.abc import Callable
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 from flowscribe.config.resources import resolve_resource_paths
@@ -20,9 +21,8 @@ from flowscribe.core.models import (
     TranscriptWord,
     TranscriptionOptions,
 )
-from flowscribe.media.tools import resolve_tool_path
-from flowscribe.model_manager import runtime_model_reference
-from flowscribe.utils.subprocess import hidden_subprocess_kwargs
+from flowscribe.model_manager import paraformer_component_paths, runtime_model_reference
+from flowscribe.utils.subprocess import subprocess_trace_enabled
 
 PARAFORMER_PROVIDER_NAME = "paraformer"
 PARAFORMER_MODEL_NAME = "paraformer-zh"
@@ -35,7 +35,7 @@ PARAFORMER_FUNASR_PUNC_MODEL_ID = "iic/punc_ct-transformer_cn-en-common-vocab471
 
 def _default_models_root() -> Path:
     """Compatibility helper for tests and legacy callers."""
-    if bool(getattr(sys, "frozen", False)):
+    if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent / "models"
     return resolve_resource_paths().models_dir
 
@@ -56,6 +56,31 @@ DEFAULT_EXTERNAL_MODEL_CACHE_ROOT = Path(
     os.environ.get("FLOWSCRIBE_MODEL_CACHE_DIR") or _default_external_model_cache_root()
 )
 LOGGER = logging.getLogger(__name__)
+_SHARED_MODEL_CACHE: dict[tuple[str, str, str, str], Any] = {}
+_SHARED_MODEL_CACHE_LOCK = Lock()
+
+
+def ensure_funasr_runtime_importable() -> None:
+    """Validate the concrete FunASR import path used by runtime transcription."""
+
+    try:
+        from funasr import AutoModel  # noqa: F401
+    except ImportError as exc:
+        raise TranscriptionError(
+            "FunASR is not installed. Run: python -m pip install funasr modelscope"
+        ) from exc
+
+
+def validate_paraformer_runtime(
+    model_name: str = PARAFORMER_MODEL_NAME,
+    *,
+    ensure_model_download: bool = True,
+) -> None:
+    """Raise a clear error before any job starts when Paraformer runtime is unavailable."""
+
+    ensure_funasr_runtime_importable()
+    runtime_model_reference(PARAFORMER_PROVIDER_NAME, model_name or PARAFORMER_MODEL_NAME)
+    paraformer_component_paths(ensure_download=ensure_model_download)
 
 
 class ParaformerTranscriber:
@@ -82,7 +107,8 @@ class ParaformerTranscriber:
         self._preset = preset
         self._word_timestamps = word_timestamps
         self._model = None
-        self._ffmpeg_executable = resolve_tool_path("ffmpeg")
+        self._clip_fallback_window_seconds = 12.0
+        self._clip_min_fallback_window_seconds = 6.0
 
     def transcribe(
         self,
@@ -115,38 +141,120 @@ class ParaformerTranscriber:
         end_seconds: float,
         should_cancel: Callable[[], bool] | None = None,
     ) -> Transcript:
-        clip_audio = self._extract_clip_audio(
+        return self._transcribe_clip_resilient(
             audio,
             start_seconds=start_seconds,
             end_seconds=end_seconds,
+            should_cancel=should_cancel,
         )
+
+    def _transcribe_clip_resilient(
+        self,
+        audio: PreparedAudio,
+        *,
+        start_seconds: float,
+        end_seconds: float,
+        should_cancel: Callable[[], bool] | None = None,
+        subdivision_window_seconds: float | None = None,
+        subdivision_label: str = "",
+        accurate_seek: bool = False,
+        pad_silence_seconds: float = 0.0,
+        file_suffix: str = "",
+    ) -> Transcript:
+        clip_duration_seconds = max(0.0, end_seconds - start_seconds)
         try:
-            return self.transcribe(clip_audio, should_cancel=should_cancel)
+            return self._transcribe_clip_attempt(
+                audio,
+                start_seconds=start_seconds,
+                end_seconds=end_seconds,
+                should_cancel=should_cancel,
+                accurate_seek=accurate_seek,
+                pad_silence_seconds=pad_silence_seconds,
+                file_suffix=file_suffix,
+            )
         except TranscriptionError as exc:
+            if self._should_retry_clip_transcription(exc):
+                if (
+                    subdivision_label
+                    and clip_duration_seconds <= self._clip_min_fallback_window_seconds + 1e-6
+                ):
+                    LOGGER.warning(
+                        "Skipping irrecoverable tiny Paraformer sub-clip after known bad-window failure: "
+                        "source=%s start=%.3f end=%.3f reason=%s",
+                        audio.path,
+                        start_seconds,
+                        end_seconds,
+                        exc,
+                    )
+                    return self._empty_transcript(audio)
+                LOGGER.warning(
+                    "Retrying Paraformer clip transcription with accurate seek and tail padding: "
+                    "source=%s start=%.3f end=%.3f reason=%s",
+                    audio.path,
+                    start_seconds,
+                    end_seconds,
+                    exc,
+                )
+                try:
+                    return self._transcribe_clip_attempt(
+                        audio,
+                        start_seconds=start_seconds,
+                        end_seconds=end_seconds,
+                        should_cancel=should_cancel,
+                        accurate_seek=True,
+                        pad_silence_seconds=0.2,
+                        file_suffix=f"{file_suffix}-retry" if file_suffix else "-retry",
+                    )
+                except TranscriptionError as retry_exc:
+                    exc = retry_exc
+                    fallback = self._transcribe_clip_with_subdivide_fallback(
+                        audio,
+                        start_seconds=start_seconds,
+                        end_seconds=end_seconds,
+                        should_cancel=should_cancel,
+                        subdivision_window_seconds=subdivision_window_seconds,
+                        subdivision_label=subdivision_label,
+                    )
+                    if fallback is not None:
+                        return fallback
             raise TranscriptionError(
                 f"Paraformer clip transcription failed for {audio.path} "
                 f"[{start_seconds}, {end_seconds}]: {exc}"
             ) from exc
+
+    def _transcribe_clip_attempt(
+        self,
+        audio: PreparedAudio,
+        *,
+        start_seconds: float,
+        end_seconds: float,
+        should_cancel: Callable[[], bool] | None = None,
+        accurate_seek: bool = False,
+        pad_silence_seconds: float = 0.0,
+        file_suffix: str = "",
+    ) -> Transcript:
+        clip_audio = self._extract_clip_audio(
+            audio,
+            start_seconds=start_seconds,
+            end_seconds=end_seconds,
+            accurate_seek=accurate_seek,
+            pad_silence_seconds=pad_silence_seconds,
+            file_suffix=file_suffix,
+        )
+        try:
+            return self.transcribe(clip_audio, should_cancel=should_cancel)
         finally:
             clip_audio.path.unlink(missing_ok=True)
 
     def _load_model(self):
         if self._model is None:
             self._configure_external_model_cache()
+            ensure_funasr_runtime_importable()
             from funasr import AutoModel
             runtime_model_reference("paraformer", self._model_name)
 
-            model_path = self._ensure_model_snapshot(
-                self._resolve_model_id(self._model_name),
-                PARAFORMER_MODEL_DIR,
-            )
-            vad_model_path = self._ensure_model_snapshot(
-                PARAFORMER_FUNASR_VAD_MODEL_ID,
-                PARAFORMER_VAD_MODEL_DIR,
-            )
-            punc_model_path = self._ensure_model_snapshot(
-                PARAFORMER_FUNASR_PUNC_MODEL_ID,
-                PARAFORMER_PUNC_MODEL_DIR,
+            model_path, vad_model_path, punc_model_path = paraformer_component_paths(
+                ensure_download=True
             )
             LOGGER.info(
                 "Loading Paraformer model: model=%s vad=%s punc=%s frozen=%s executable=%s",
@@ -156,12 +264,29 @@ class ParaformerTranscriber:
                 bool(getattr(sys, "frozen", False)),
                 sys.executable,
             )
-            self._model = AutoModel(
-                model=str(model_path),
-                vad_model=str(vad_model_path),
-                punc_model=str(punc_model_path),
-                disable_update=True,
+
+            device = self._resolve_device()
+            cache_key = (
+                str(model_path),
+                str(vad_model_path),
+                str(punc_model_path),
+                device,
             )
+            with _SHARED_MODEL_CACHE_LOCK:
+                cached_model = _SHARED_MODEL_CACHE.get(cache_key)
+                if cached_model is None:
+                    LOGGER.info("Using device=%s for FunASR AutoModel", device)
+                    cached_model = AutoModel(
+                        model=str(model_path),
+                        vad_model=str(vad_model_path),
+                        punc_model=str(punc_model_path),
+                        disable_update=True,
+                        device=device,
+                    )
+                    _SHARED_MODEL_CACHE[cache_key] = cached_model
+                else:
+                    LOGGER.info("Reusing cached Paraformer model: device=%s", device)
+            self._model = cached_model
         return self._model
 
     def _generate_kwargs(self, audio: PreparedAudio) -> dict[str, Any]:
@@ -181,6 +306,9 @@ class ParaformerTranscriber:
         *,
         start_seconds: float,
         end_seconds: float,
+        accurate_seek: bool = False,
+        pad_silence_seconds: float = 0.0,
+        file_suffix: str = "",
     ) -> PreparedAudio:
         if end_seconds <= start_seconds:
             raise TranscriptionError("Clip end must be greater than clip start.")
@@ -188,45 +316,94 @@ class ParaformerTranscriber:
         clip_dir.mkdir(parents=True, exist_ok=True)
         clip_path = clip_dir / (
             f"{audio.path.stem}-{_safe_timestamp(start_seconds)}-"
-            f"{_safe_timestamp(end_seconds)}.wav"
+            f"{_safe_timestamp(end_seconds)}{file_suffix}.wav"
         )
         duration_seconds = end_seconds - start_seconds
-        command = [
-            self._ffmpeg_executable,
-            "-y",
-            "-ss",
-            f"{start_seconds:.3f}",
-            "-t",
-            f"{duration_seconds:.3f}",
-            "-i",
-            str(audio.path),
-            "-vn",
-            "-ac",
-            "1",
-            "-ar",
-            str(audio.sample_rate),
-            "-acodec",
-            "pcm_s16le",
-            str(clip_path),
-        ]
+        output_duration_seconds = duration_seconds + max(0.0, pad_silence_seconds)
         try:
-            subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                check=True,
-                **hidden_subprocess_kwargs(),
+            if subprocess_trace_enabled():
+                LOGGER.info(
+                    "Paraformer clip extraction: start=%.3fs end=%.3fs output=%.3fs mode=python-wave accurate_seek=%s pad_silence=%.3fs",
+                    start_seconds,
+                    end_seconds,
+                    output_duration_seconds,
+                    accurate_seek,
+                    max(0.0, pad_silence_seconds),
+                )
+            with wave.open(str(audio.path), "rb") as source_wave:
+                sample_width = source_wave.getsampwidth()
+                frame_rate = source_wave.getframerate()
+                channels = source_wave.getnchannels()
+                total_frames = source_wave.getnframes()
+
+                if frame_rate <= 0 or sample_width <= 0 or channels <= 0:
+                    raise TranscriptionError(
+                        f"Paraformer clip extraction encountered invalid WAV parameters: {audio.path}"
+                    )
+
+                start_frame = max(0, min(total_frames, int(round(start_seconds * frame_rate))))
+                end_frame = max(start_frame, min(total_frames, int(round(end_seconds * frame_rate))))
+                source_wave.setpos(start_frame)
+                audio_frames = source_wave.readframes(end_frame - start_frame)
+
+            pad_frames = int(round(max(0.0, pad_silence_seconds) * frame_rate))
+            if pad_frames > 0:
+                audio_frames += b"\x00" * (pad_frames * channels * sample_width)
+
+            with wave.open(str(clip_path), "wb") as clip_wave:
+                clip_wave.setnchannels(channels)
+                clip_wave.setsampwidth(sample_width)
+                clip_wave.setframerate(frame_rate)
+                clip_wave.writeframes(audio_frames)
+
+            if subprocess_trace_enabled():
+                LOGGER.info(
+                    "Paraformer clip extraction finished: start=%.3fs end=%.3fs clip=%s",
+                    start_seconds,
+                    end_seconds,
+                    clip_path,
+                )
+        except (OSError, wave.Error) as exc:
+            raise TranscriptionError(
+                f"Failed to slice Paraformer clip from prepared WAV {audio.path}: {exc}"
+            ) from exc
+        actual_duration_seconds = self._probe_wave_duration_seconds(clip_path)
+        if actual_duration_seconds is None or actual_duration_seconds <= 0.0:
+            raise TranscriptionError(
+                f"Paraformer clip extraction produced an empty or unreadable clip: {clip_path}"
             )
-        except FileNotFoundError as exc:
-            raise TranscriptionError("ffmpeg was not found. Install ffmpeg and add it to PATH.") from exc
-        except subprocess.CalledProcessError as exc:
-            message = exc.stderr.strip() or exc.stdout.strip() or str(exc)
-            raise TranscriptionError(f"ffmpeg failed while slicing Paraformer clip: {message}") from exc
+        if actual_duration_seconds + 0.25 < duration_seconds:
+            LOGGER.warning(
+                "Paraformer clip shorter than expected after extraction: clip=%s expected=%.3fs actual=%.3fs",
+                clip_path,
+                duration_seconds,
+                actual_duration_seconds,
+            )
         return PreparedAudio(
             source=MediaItem(path=audio.source.path),
             path=clip_path,
             sample_rate=audio.sample_rate,
-            duration_seconds=duration_seconds,
+            duration_seconds=actual_duration_seconds,
+        )
+
+    def _empty_transcript(self, audio: PreparedAudio) -> Transcript:
+        return Transcript(
+            source=audio.source,
+            segments=(),
+            language=self._language or "zh",
+            model_name=self._model_name,
+            options=TranscriptionOptions(
+                model_name=self._model_name,
+                language=self._language,
+                task=self._task,
+                beam_size=self._beam_size,
+                vad_filter=self._vad_filter,
+                initial_prompt=self._initial_prompt,
+                preset=self._preset,
+                word_timestamps=self._word_timestamps,
+                provider_name=PARAFORMER_PROVIDER_NAME,
+            ),
+            metadata={"provider_result_type": "skipped_tiny_bad_clip"},
         )
 
     def _build_transcript(
@@ -261,6 +438,73 @@ class ParaformerTranscriber:
             options=options,
             metadata={"provider_result_type": type(result).__name__},
         )
+
+    def _transcribe_clip_with_subdivide_fallback(
+        self,
+        audio: PreparedAudio,
+        *,
+        start_seconds: float,
+        end_seconds: float,
+        should_cancel: Callable[[], bool] | None = None,
+        subdivision_window_seconds: float | None = None,
+        subdivision_label: str = "",
+    ) -> Transcript | None:
+        clip_duration_seconds = end_seconds - start_seconds
+        window_seconds = min(
+            clip_duration_seconds,
+            subdivision_window_seconds or self._clip_fallback_window_seconds,
+        )
+        if clip_duration_seconds <= self._clip_min_fallback_window_seconds + 1e-6:
+            return None
+
+        LOGGER.warning(
+            "Falling back to subdivided Paraformer clip transcription: "
+            "source=%s start=%.3f end=%.3f window=%.1fs",
+            audio.path,
+            start_seconds,
+            end_seconds,
+            window_seconds,
+        )
+        transcripts: list[Transcript] = []
+        failed_parts = 0
+        window_start = start_seconds
+        part_index = 1
+        while window_start < end_seconds - 1e-6:
+            if should_cancel is not None and should_cancel():
+                raise CancellationError("Transcription canceled.")
+            window_end = min(end_seconds, window_start + window_seconds)
+            try:
+                part = self._transcribe_clip_resilient(
+                    audio,
+                    start_seconds=window_start,
+                    end_seconds=window_end,
+                    should_cancel=should_cancel,
+                    subdivision_window_seconds=max(
+                        self._clip_min_fallback_window_seconds,
+                        window_seconds / 2.0,
+                    ),
+                    subdivision_label=f"{subdivision_label}-part{part_index}",
+                    accurate_seek=True,
+                    pad_silence_seconds=0.2,
+                    file_suffix=f"{subdivision_label}-part{part_index}",
+                )
+                transcripts.append(self._offset_transcript(part, window_start - start_seconds))
+            except TranscriptionError:
+                failed_parts += 1
+                LOGGER.warning(
+                    "Subdivided clip part failed, continuing with remaining parts: "
+                    "source=%s window=[%.3f, %.3f] failed=%d",
+                    audio.path,
+                    window_start,
+                    window_end,
+                    failed_parts,
+                )
+            window_start = window_end
+            part_index += 1
+
+        if not transcripts:
+            return None
+        return self._merge_clip_transcripts(audio, transcripts)
 
     def _segments_from_payload(
         self,
@@ -359,25 +603,6 @@ class ParaformerTranscriber:
         return model_name
 
     @staticmethod
-    def _ensure_model_snapshot(model_id: str, target_dir: Path) -> Path:
-        target_dir.mkdir(parents=True, exist_ok=True)
-        if _looks_like_funasr_model_dir(target_dir):
-            LOGGER.debug("Using existing Paraformer model directory for %s: %s", model_id, target_dir)
-            return target_dir
-
-        try:
-            from modelscope.hub.snapshot_download import snapshot_download
-        except ImportError as exc:
-            raise ImportError("modelscope is required to download Paraformer models") from exc
-
-        snapshot_path = snapshot_download(
-            model_id=model_id,
-            local_dir=str(target_dir),
-            cache_dir=str(DEFAULT_EXTERNAL_MODEL_CACHE_ROOT / "modelscope"),
-        )
-        return Path(snapshot_path)
-
-    @staticmethod
     def _configure_external_model_cache() -> None:
         cache_root = resolve_resource_paths().model_cache_dir
         cache_root.mkdir(parents=True, exist_ok=True)
@@ -415,9 +640,114 @@ class ParaformerTranscriber:
         except (TypeError, ValueError):
             return None
 
+    @staticmethod
+    def _probe_wave_duration_seconds(path: Path) -> float | None:
+        try:
+            with wave.open(str(path), "rb") as wav_file:
+                frame_rate = wav_file.getframerate()
+                frame_count = wav_file.getnframes()
+        except (EOFError, wave.Error, OSError):
+            return None
+        if frame_rate <= 0 or frame_count <= 0:
+            return None
+        return frame_count / float(frame_rate)
 
-def _looks_like_funasr_model_dir(path: Path) -> bool:
-    return (path / "configuration.json").exists() or (path / "config.yaml").exists()
+    @staticmethod
+    def _should_retry_clip_transcription(exc: TranscriptionError) -> bool:
+        message = str(exc).lower()
+        return (
+            "negative dimension" in message
+            or "empty or unreadable clip" in message
+        )
+
+    @staticmethod
+    def _offset_transcript(transcript: Transcript, offset_seconds: float) -> Transcript:
+        if abs(offset_seconds) < 1e-9:
+            return transcript
+        return Transcript(
+            source=transcript.source,
+            segments=tuple(
+                TranscriptSegment(
+                    text=segment.text,
+                    start_seconds=(
+                        None if segment.start_seconds is None else segment.start_seconds + offset_seconds
+                    ),
+                    end_seconds=(
+                        None if segment.end_seconds is None else segment.end_seconds + offset_seconds
+                    ),
+                    raw_words=tuple(
+                        TranscriptWord(
+                            text=word.text,
+                            start_seconds=(
+                                None if word.start_seconds is None else word.start_seconds + offset_seconds
+                            ),
+                            end_seconds=(
+                                None if word.end_seconds is None else word.end_seconds + offset_seconds
+                            ),
+                            confidence=word.confidence,
+                        )
+                        for word in segment.raw_words
+                    ),
+                    words=tuple(
+                        TranscriptWord(
+                            text=word.text,
+                            start_seconds=(
+                                None if word.start_seconds is None else word.start_seconds + offset_seconds
+                            ),
+                            end_seconds=(
+                                None if word.end_seconds is None else word.end_seconds + offset_seconds
+                            ),
+                            confidence=word.confidence,
+                        )
+                        for word in segment.words
+                    ),
+                )
+                for segment in transcript.segments
+            ),
+            language=transcript.language,
+            model_name=transcript.model_name,
+            options=transcript.options,
+            metadata=dict(transcript.metadata),
+            task_id=transcript.task_id,
+            document_id=transcript.document_id,
+            resume_token=transcript.resume_token,
+            checkpoint_id=transcript.checkpoint_id,
+            cache_key=transcript.cache_key,
+            created_at=transcript.created_at,
+        )
+
+    @staticmethod
+    def _merge_clip_transcripts(audio: PreparedAudio, transcripts: list[Transcript]) -> Transcript:
+        first = transcripts[0]
+        return Transcript(
+            source=audio.source,
+            segments=tuple(segment for transcript in transcripts for segment in transcript.segments),
+            language=first.language,
+            model_name=first.model_name,
+            options=first.options,
+            metadata=dict(first.metadata),
+            task_id=first.task_id,
+            document_id=first.document_id,
+            resume_token=first.resume_token,
+            checkpoint_id=first.checkpoint_id,
+            cache_key=first.cache_key,
+            created_at=first.created_at,
+        )
+
+    @staticmethod
+    def _resolve_device() -> str:
+        """Determine the best device for FunASR inference in the current environment.
+
+        Falls back to CPU when CUDA is unavailable or when torch detection fails
+        (e.g., in a PyInstaller-packaged build where CUDA DLLs may not be bundled).
+        """
+        try:
+            import torch
+            if torch.cuda.is_available():
+                return "cuda"
+            return "cpu"
+        except (ImportError, RuntimeError, OSError):
+            return "cpu"
 
 
 def _safe_timestamp(value: float) -> str:

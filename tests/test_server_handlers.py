@@ -174,3 +174,10 @@ def test_agent_task_store_uses_persistent_path(temp_queue_store: Path) -> None:
     expected = temp_queue_store.with_name("agent-tasks.json")
 
     assert handler.task_store._path == expected.resolve()
+
+
+def test_handler_disables_task_retention_when_requested(temp_queue_store: Path) -> None:
+    handler = AddUrlHandler(temp_queue_store, task_retention_hours=0)
+
+    assert handler.task_retention_hours is None
+    assert handler.task_store._task_retention is None

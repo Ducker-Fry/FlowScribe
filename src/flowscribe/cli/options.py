@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Literal
 
 ProgressiveMode = Literal["auto", "enabled", "disabled"]
+ExecutionMode = Literal["local", "remote"]
 
 
 @dataclass(frozen=True)
@@ -35,6 +36,12 @@ class CliOptions:
     progressive_chunk_overlap_seconds: float
     progressive_resume: bool
     progressive_max_workers: int
+    execution_mode: ExecutionMode = "local"
+    server_target: str | None = None
+    remote_token: str | None = None
+    remote_poll_seconds: float = 1.0
+    download_artifacts: bool | None = None
+    submit_only: bool = False
     json_output: bool = False
     event_stream: str | None = None
     non_interactive: bool = False
@@ -108,6 +115,12 @@ class UrlOptions:
     progressive_chunk_overlap_seconds: float
     progressive_resume: bool
     progressive_max_workers: int
+    execution_mode: ExecutionMode = "local"
+    server_target: str | None = None
+    remote_token: str | None = None
+    remote_poll_seconds: float = 1.0
+    download_artifacts: bool | None = None
+    submit_only: bool = False
     download_quality: str = "best"
     download_format: str | None = None
     json_output: bool = False
@@ -128,6 +141,8 @@ class ServeOptions:
     output_formats: tuple[str, ...]
     model_name: str
     language: str | None
+    api_token: str | None = None
+    task_retention_hours: float | None = 24.0
 
 
 @dataclass(frozen=True)
@@ -154,4 +169,23 @@ class InstallCommandOptions:
     docs_dir: Path | None = None
     component_names: tuple[str, ...] = ()
     allow_implicit_model_download: bool = False
+    json_output: bool = False
+
+
+@dataclass(frozen=True)
+class RemoteCommandOptions:
+    command: str
+    subcommand: str
+    name: str | None = None
+    base_url: str | None = None
+    token: str | None = None
+    remote_cookies_path: str | None = None
+    server_target: str | None = None
+    task_id: str | None = None
+    output_dir: Path | None = None
+    enabled: bool = True
+    verify_tls: bool = True
+    timeout_seconds: float = 30.0
+    download_artifacts_by_default: bool = True
+    download_artifacts: bool | None = None
     json_output: bool = False

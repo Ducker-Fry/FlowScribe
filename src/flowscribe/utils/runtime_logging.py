@@ -9,6 +9,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from flowscribe.utils.runtime_layout import resolve_runtime_layout
+
 LOG_DIR_ENV = "FLOWSCRIBE_LOG_DIR"
 LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
@@ -73,6 +75,21 @@ def configure_runtime_logging(
     return log_path
 
 
+def active_log_file_path(app_name: str | None = None) -> Path | None:
+    """Return the currently attached FlowScribe file log path when available."""
+    root_logger = logging.getLogger()
+    normalized_app_name = app_name.lower() if app_name is not None else None
+    for handler in reversed(root_logger.handlers):
+        log_path = getattr(handler, "baseFilename", None)
+        if not log_path:
+            continue
+        path = Path(str(log_path))
+        if normalized_app_name is not None and not path.name.lower().startswith(normalized_app_name.lower()):
+            continue
+        return path
+    return None
+
+
 def select_log_path(
     log_dir: Path,
     app_name: str,
@@ -113,6 +130,7 @@ def flowscribe_log_dir(env: dict[str, str] | None = None) -> Path:
 
 
 def _default_log_dir() -> Path:
-    if bool(getattr(sys, "frozen", False)):
-        return Path(sys.executable).resolve().parent / "logs"
-    return Path(__file__).resolve().parents[3] / "logs"
+    layout = resolve_runtime_layout()
+    if layout.frozen:
+        return layout.app_root / "logs"
+    return layout.source_root / "logs"

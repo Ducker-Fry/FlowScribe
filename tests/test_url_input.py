@@ -239,6 +239,62 @@ def test_page_url_requests_audio_only_with_ytdlp(monkeypatch, tmp_path: Path) ->
     assert result.path.name == "remote-audio.m4a"
 
 
+def test_page_url_ignores_temporary_ytdlp_outputs(monkeypatch, tmp_path: Path) -> None:
+    class FakeYoutubeDL:
+        def __init__(self, options: dict) -> None:
+            self._output = (
+                Path(str(options["outtmpl"]).replace("%(ext)s", "m4a"))
+                if "outtmpl" in options
+                else None
+            )
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback) -> None:
+            return None
+
+        def extract_info(self, url: str, download: bool):
+            return {
+                "duration": 30,
+                "formats": [
+                    {
+                        "url": "https://cdn.example.com/audio.m4a",
+                        "acodec": "aac",
+                        "vcodec": "none",
+                    }
+                ],
+            }
+
+        def download(self, urls: list[str]) -> None:
+            assert self._output is not None
+            self._output.write_bytes(b"final-audio")
+            self._output.with_suffix(".m4a.part").write_bytes(b"x" * 64)
+
+    fake_ytdlp = ModuleType("yt_dlp")
+    fake_ytdlp.YoutubeDL = FakeYoutubeDL
+    fake_utils = ModuleType("yt_dlp.utils")
+    fake_utils.DownloadError = RuntimeError
+    monkeypatch.setitem(sys.modules, "yt_dlp", fake_ytdlp)
+    monkeypatch.setitem(sys.modules, "yt_dlp.utils", fake_utils)
+    monkeypatch.setattr(
+        "flowscribe.input.url_downloader.validate_public_http_url",
+        lambda url, **kwargs: None,
+    )
+    downloader = UrlAudioDownloader(
+        download_dir=tmp_path,
+        max_bytes=1024,
+        max_duration_seconds=60,
+        timeout_seconds=5,
+    )
+    monkeypatch.setattr(downloader, "_ensure_duration", lambda path_or_url: None)
+
+    result = downloader.download_audio("https://example.com/watch?id=123")
+
+    assert result.path.name == "remote-audio.m4a"
+    assert result.path.read_bytes() == b"final-audio"
+
+
 def test_downloader_rejects_missing_cookies_file(monkeypatch, tmp_path: Path) -> None:
     fake_ytdlp = ModuleType("yt_dlp")
     fake_ytdlp.YoutubeDL = object

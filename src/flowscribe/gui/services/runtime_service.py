@@ -10,9 +10,9 @@ from flowscribe.gui.workers.bookmarklet_server_worker import BookmarkletServerWo
 from flowscribe.gui.workers.queue_runner import QueueRunner
 
 
-def start_queue_runtime(owner, store, started, progress, completed, failed, canceled, finished):
+def start_queue_runtime(owner, store, started, progress, completed, failed, canceled, finished, execution_backend_factory=None):
     thread = QThread(owner)
-    runner = QueueRunner(store)
+    runner = QueueRunner(store, execution_backend_factory=execution_backend_factory)
     runner.moveToThread(thread)
     thread.started.connect(runner.run)
     runner.item_started.connect(started)

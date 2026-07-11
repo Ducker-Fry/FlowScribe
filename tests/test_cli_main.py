@@ -175,6 +175,7 @@ def test_job_from_transcribe_options_auto_enables_progressive_for_long_single_fi
     job = _job_from_transcribe_options(options)
 
     assert job.progressive_enabled is True
+    assert job.progressive_auto_enabled is True
     assert job.progressive_resume is False
 
 
@@ -198,6 +199,7 @@ def test_job_from_transcribe_options_keeps_classic_mode_for_multi_input_batch(
     job = _job_from_transcribe_options(options)
 
     assert job.progressive_enabled is False
+    assert job.progressive_auto_enabled is False
 
 
 def test_job_from_url_options_auto_enables_progressive_for_long_media(monkeypatch) -> None:
@@ -225,6 +227,7 @@ def test_job_from_url_options_auto_enables_progressive_for_long_media(monkeypatc
     job = _job_from_url_options(options)
 
     assert job.progressive_enabled is True
+    assert job.progressive_auto_enabled is True
 
 
 def test_cli_progress_line_includes_chunk_metrics() -> None:
@@ -238,12 +241,30 @@ def test_cli_progress_line_includes_chunk_metrics() -> None:
         chunk_index=2,
         chunk_count=4,
         resumed=True,
+        raw_metadata={
+            "progressive": {
+                "backend": "python",
+                "mode": "python-progressive",
+                "resume_requested": True,
+                "resume_supported": True,
+                "resume_used": True,
+                "cache_supported": True,
+                "cache_dir_present": True,
+                "chunk_count": 4,
+                "completed_chunks": 2,
+                "failed_chunks": 0,
+                "effective_parallel_chunks": 1,
+                "chunk_seconds": 30.0,
+                "overlap_seconds": 3.0,
+            }
+        },
     )
 
     line = _cli_progress_line(event)
 
     assert "Progress 00:01:00.000 / 00:03:00.000" in line
     assert "Chunk 2/4" in line
+    assert "Backend python" in line
     assert "Speed 2.5x" in line
     assert "ETA 00:00:30.000" in line
     assert "resumed" in line
@@ -445,6 +466,21 @@ def test_run_serve_reports_port_conflict_for_windows_socket_error(monkeypatch, t
 
     assert exit_code == 1
     assert "Port 8765 is already in use" in stderr.getvalue()
+
+
+def test_parse_serve_args_supports_disabling_task_retention(tmp_path: Path) -> None:
+    options = parse_args(
+        [
+            "serve",
+            "--task-retention-hours",
+            "0",
+            "-o",
+            str(tmp_path / "outputs"),
+        ]
+    )
+
+    assert options.command == "serve"
+    assert options.task_retention_hours is None
 
 
 def test_run_install_write_config_json(monkeypatch, tmp_path: Path) -> None:

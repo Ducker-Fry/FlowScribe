@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from flowscribe.server.agent_api import AgentTaskStore, agent_task_store_path_for
+from flowscribe.server.storage import UploadBlobStore
 from flowscribe.tasks.models import SourceSpec
 from flowscribe.input.url_security import validate_public_http_url
 from flowscribe.tasks.queue_models import (
@@ -41,14 +42,26 @@ class AddUrlHandler:
         default_output_formats: tuple[str, ...] = ("json",),
         default_model_name: str = "small",
         default_language: str | None = None,
+        api_token: str | None = None,
+        task_retention_hours: float | None = 24.0,
+        max_concurrent_remote_tasks: int | None = 1,
     ) -> None:
         self.queue_store_path = queue_store_path
         self.store = BatchQueueStore(queue_store_path)
-        self.task_store = AgentTaskStore(agent_task_store_path_for(queue_store_path))
+        self.upload_store = UploadBlobStore(queue_store_path.with_name("remote-blobs"))
+        self.task_retention_hours = _normalize_task_retention_hours(task_retention_hours)
+        self.task_store = AgentTaskStore(
+            agent_task_store_path_for(queue_store_path),
+            blob_resolver=self.upload_store.resolve,
+            blob_deleter=self.upload_store.delete,
+            task_retention=_retention_timedelta_from_hours(self.task_retention_hours),
+            max_concurrent_tasks=max_concurrent_remote_tasks,
+        )
         self.default_output_dir = default_output_dir or (Path.home() / "Documents" / "FlowScribe")
         self.default_output_formats = default_output_formats
         self.default_model_name = default_model_name
         self.default_language = default_language
+        self.api_token = api_token
 
     def get_status(self) -> dict[str, Any]:
         """Get server and queue status."""
@@ -157,6 +170,9 @@ class AddUrlHandler:
             "results": results,
         }
 
+    def cleanup_expired_remote_data(self) -> int:
+        return self.task_store.prune_expired()
+
     def _create_default_settings(self) -> QueueItemSettings:
         """Create default queue item settings from server configuration."""
         return QueueItemSettings(
@@ -169,3 +185,17 @@ class AddUrlHandler:
             word_timestamps=False,
             overwrite=False,
         )
+
+
+def _normalize_task_retention_hours(value: float | None) -> float | None:
+    if value is None:
+        return None
+    if value <= 0:
+        return None
+    return float(value)
+
+
+def _retention_timedelta_from_hours(value: float | None) -> timedelta | None:
+    if value is None:
+        return None
+    return timedelta(hours=value)

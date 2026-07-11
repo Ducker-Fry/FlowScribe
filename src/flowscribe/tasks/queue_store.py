@@ -191,6 +191,11 @@ def _item_to_payload(item: QueueItem) -> dict:
         },
         "settings": {
             "output_dir": str(item.settings.output_dir),
+            "execution_mode": item.settings.execution_mode,
+            "server_target": item.settings.server_target,
+            "remote_token": item.settings.remote_token,
+            "remote_poll_seconds": item.settings.remote_poll_seconds,
+            "download_artifacts": item.settings.download_artifacts,
             "provider_name": item.settings.provider_name,
             "model_name": item.settings.model_name,
             "language": item.settings.language,
@@ -257,6 +262,11 @@ def _item_from_payload(data: object) -> QueueItem | None:
 
         settings = QueueItemSettings(
             output_dir=Path(settings_data.get("output_dir", "outputs")),
+            execution_mode=settings_data.get("execution_mode", "local"),
+            server_target=settings_data.get("server_target"),
+            remote_token=settings_data.get("remote_token"),
+            remote_poll_seconds=settings_data.get("remote_poll_seconds", 1.0),
+            download_artifacts=settings_data.get("download_artifacts"),
             provider_name=settings_data.get("provider_name", "local-whisper"),
             model_name=settings_data.get("model_name", "small"),
             language=settings_data.get("language"),
