@@ -372,7 +372,7 @@ function Ensure-PackagingVenv {
 
     if ($RequirePyInstaller) {
         Write-Step "Verify packaging virtual environment"
-        & $pythonExe -c "import PyInstaller"
+        & $pythonExe -c "import PyInstaller" 2>$null
         if ($LASTEXITCODE -ne 0) {
             Write-Host "  PyInstaller missing in packaging virtual environment; installing it now." -ForegroundColor Yellow
             & $pythonExe -m pip install --upgrade pip | Out-Host
