@@ -2,7 +2,7 @@
 
 # FlowScribe GUI User Guide
 
-> Version: v0.3.9  
+> Version: v0.3.10  
 > Updated: 2026-06-05  
 > Platform: Windows 10/11
 

@@ -18,7 +18,7 @@ Each JSON file includes a schema version and generator metadata:
   "schema_version": "1.1",
   "generator": {
     "name": "FlowScribe",
-    "version": "0.3.9"
+    "version": "0.3.10"
   }
 }
 ```
@@ -68,7 +68,7 @@ Example:
   "task_id": "lecture-001",
   "generator": {
     "name": "FlowScribe",
-    "version": "0.3.9"
+    "version": "0.3.10"
   },
   "source": "D:\\media\\lecture.mp4",
   "source_info": {
@@ -87,7 +87,7 @@ Example:
   "raw_word_count": 12,
   "provenance": {
     "generator": "FlowScribe",
-    "generator_version": "0.3.9",
+    "generator_version": "0.3.10",
     "provider": "local-whisper",
     "model": "small",
     "language": "zh",
@@ -133,7 +133,7 @@ Tracks how the document was produced:
 ```json
 {
   "generator": "FlowScribe",
-  "generator_version": "0.3.9",
+  "generator_version": "0.3.10",
   "provider": "local-whisper",
   "model": "small",
   "language": "zh",
