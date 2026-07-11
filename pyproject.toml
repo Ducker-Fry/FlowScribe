@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "flowscribe"
-version = "0.3.4"
+version = "0.3.5"
 description = "Local-first media transcription toolkit for turning audio and video into raw readable transcripts."
 readme = "README.md"
 requires-python = ">=3.10"
