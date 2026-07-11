@@ -2,12 +2,13 @@
 
 ## Unreleased
 
-## 0.3.7 - 2026-07-11
+## 0.3.8 - 2026-07-11
 
 - Added remote execution support across CLI and GUI so local clients can submit work to another FlowScribe server and download finished artifacts back to the workstation.
 - Added persisted remote server profiles with base URL, bearer token, timeout, artifact-download preference, and optional server-side cookies path for login-required URL media.
 - Hardened the remote server path for small hosts by switching the control plane to `ThreadingHTTPServer`, rejecting excess heavy remote tasks with HTTP `429`, and isolating downloaded-artifact staging on the server.
 - Improved remote URL media acquisition by ignoring temporary `yt-dlp` partial files when selecting the final downloaded audio artifact.
+- Fixed native-engine service isolation in CI by preventing a unit test from depending on a locally installed `flowscribe-engine` runtime.
 
 ## 0.2.5 - 2026-05-15
 
