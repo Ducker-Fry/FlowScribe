@@ -374,7 +374,19 @@ function Ensure-PackagingVenv {
         Write-Step "Verify packaging virtual environment"
         & $pythonExe -c "import PyInstaller"
         if ($LASTEXITCODE -ne 0) {
-            throw "PyInstaller is not available in packaging virtual environment: $pythonExe"
+            Write-Host "  PyInstaller missing in packaging virtual environment; installing it now." -ForegroundColor Yellow
+            & $pythonExe -m pip install --upgrade pip | Out-Host
+            if ($LASTEXITCODE -ne 0) {
+                throw "Failed to upgrade pip in packaging virtual environment: $pythonExe"
+            }
+            & $pythonExe -m pip install pyinstaller | Out-Host
+            if ($LASTEXITCODE -ne 0) {
+                throw "Failed to install PyInstaller in packaging virtual environment: $pythonExe"
+            }
+            & $pythonExe -c "import PyInstaller"
+            if ($LASTEXITCODE -ne 0) {
+                throw "PyInstaller is not available in packaging virtual environment after installation: $pythonExe"
+            }
         }
     }
 
