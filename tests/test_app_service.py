@@ -347,6 +347,7 @@ def test_transcription_service_returns_canceled_result_when_cancel_requested(
 
     monkeypatch.setattr("flowscribe.app.service.LocalFileSource", FakeLocalFileSource)
     monkeypatch.setattr("flowscribe.app.service._build_pipeline", lambda job, settings: FakePipeline())
+    monkeypatch.setattr("flowscribe.app.service._validate_provider_runtime", lambda job, settings: None)
 
     job = TranscriptionJob(
         sources=(SourceSpec(kind="local", value=str(media)),),
